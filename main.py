@@ -5,6 +5,10 @@ import hmac
 import hashlib
 from typing import List, Dict, Any
 from dotenv import load_dotenv
+import logging 
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -12,38 +16,31 @@ app = FastAPI()
 load_dotenv()
 APP_SECRET = os.getenv("APP_SECRET", "")
 TOKEN = os.getenv("TOKEN", "token")
-received_updates: List[Dict[Any, Any]] = []
 
 
 # Middleware для проверки X-Hub подписи
 @app.middleware("http")
-async def verify_x_hub_signature(request: Request, call_next):
-    if request.method == "POST" and any(
-        request.url.path.endswith(path)
-        for path in ["/facebook", "/instagram", "/threads"]
-    ):
+async def verify_webhook_signature(request: Request, call_next):
+    if request.method == "POST" and request.url.path == "/webhook/instagram":
         signature = request.headers.get("X-Hub-Signature")
         if not signature:
-            raise HTTPException(status_code=401, detail="Missing X-Hub-Signature")
-
-        # Генерируем ожидаемую подпись
+            raise HTTPException(status_code=401, detail="Missing signature")
+        
         body = await request.body()
-        expected_signature = (
-            "sha1=" + hmac.new(APP_SECRET.encode(), body, hashlib.sha1).hexdigest()
-        )
+        expected_signature = "sha1=" + hmac.new(
+            APP_SECRET.encode(),
+            body,
+            hashlib.sha1
+        ).hexdigest()
 
-        # Сравниваем подписи
         if not hmac.compare_digest(signature, expected_signature):
             raise HTTPException(status_code=401, detail="Invalid signature")
-
-        # Возвращаем тело запроса для дальнейшей обработки
+        
+        # Сохраняем тело запроса для дальнейшей обработки
         request.state.body = body
+        return await call_next(request)
+    
     return await call_next(request)
-
-
-# @app.get("/", response_class=HTMLResponse)
-# async def root():
-#     return f"<pre>{received_updates}</pre>"
 
 
 @app.get("/")
