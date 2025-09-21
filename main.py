@@ -51,11 +51,14 @@ async def verify_webhook_signature(request: Request, call_next):
                 ).hexdigest()
 
             if not hmac.compare_digest(signature, expected_signature):
-                logging.error(f"Signature verification failed. Expected: {expected_signature}, Received: {signature}")
+                logging.error(f"Signature verification failed!")
+                logging.error(f"Expected: {expected_signature}")
+                logging.error(f"Received: {signature}")
                 logging.error(f"App secret: {settings.app_secret}")
                 logging.error(f"Body length: {len(body)}")
-                # For development, log the error but don't block the request
-                logging.warning("Allowing request despite signature verification failure (development mode)")
+                logging.error(f"Body preview: {body[:100]}...")
+                logging.error(f"Signature header used: {'X-Hub-Signature-256' if signature_256 else 'X-Hub-Signature'}")
+                raise HTTPException(status_code=401, detail="Invalid signature")
             else:
                 logging.info("Signature verification successful")
         else:

@@ -11,13 +11,13 @@ class CommentAuthor(BaseModel):
 
 class CommentMedia(BaseModel):
     id: str
-    media_product_type: str
+    media_product_type: str | None = None
 
 class CommentValue(BaseModel):
     from_: CommentAuthor = Field(alias="from")
     media: CommentMedia
     id: str
-    parent_id: str | None
+    parent_id: str | None = None
     text: str
 
 class CommentChange(BaseModel):

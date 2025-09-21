@@ -47,6 +47,7 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
         logger.info("Webhook data validated successfully")
     except Exception as e:
         logger.error(f"Invalid payload: {e}")
+        logger.error(f"Raw payload: {request.state.body.decode()}")
         raise HTTPException(status_code=400, detail="Invalid payload")
 
     try:
@@ -69,16 +70,19 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                             skipped_comments += 1
                             continue
                         
-                        # Create new comment
-                        comment = InstagramComment(
-                            id=comment_id,
-                            media_id=change.value.media.id,
-                            user_id=change.value.from_.id,
-                            username=change.value.from_.username,
-                            text=change.value.text,
-                            created_at=datetime.datetime.fromtimestamp(entry.time),
-                            raw_data=change.value.model_dump()
-                        )
+                        # Create new comment with error handling for missing fields
+                        comment_data = {
+                            "id": comment_id,
+                            "media_id": change.value.media.id,
+                            "user_id": change.value.from_.id,
+                            "username": change.value.from_.username,
+                            "text": change.value.text,
+                            "created_at": datetime.datetime.fromtimestamp(entry.time),
+                            "raw_data": change.value.model_dump()
+                        }
+                        
+                        logger.info(f"Creating comment with data: {comment_data}")
+                        comment = InstagramComment(**comment_data)
                         
                         session.add(comment)
                         await session.commit()
@@ -90,6 +94,12 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                         await session.rollback()
                         logger.info(f"Comment {comment_id} was inserted by another process, skipping")
                         skipped_comments += 1
+                        continue
+                    except Exception as e:
+                        # Handle any other errors in comment processing
+                        await session.rollback()
+                        logger.error(f"Error processing comment {comment_id}: {e}")
+                        logger.error(f"Comment data: {change.value.model_dump()}")
                         continue
 
         logger.info(f"Webhook processing completed: {processed_comments} new comments, {skipped_comments} duplicates skipped")
