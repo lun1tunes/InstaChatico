@@ -94,6 +94,6 @@ async def handle_threads_update(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("PORT", "4291"))
+    port = int(os.getenv("PORT"))
     host = os.getenv("HOST", "0.0.0.0")  # Allow external connections
-    uvicorn.run("main:app", host=host, port=port, reload=os.getenv("ENV") == "development")
+    uvicorn.run("main:app", host=host, port=port, reload=True)
