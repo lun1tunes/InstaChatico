@@ -7,7 +7,7 @@ from .base import Base
 
 class InstagramComment(Base):
     media_id: Mapped[int]
-    user_id: Mapped[str]
+    user_id: Mapped[int]
     username: Mapped[str]
     text: Mapped[str]
     created_at: Mapped[datetime]
