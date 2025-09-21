@@ -6,18 +6,18 @@ class WebhookVerification(BaseModel):
     hub_verify_token: str
 
 class CommentAuthor(BaseModel):
-    id: int
+    id: str
     username: str
 
 class CommentMedia(BaseModel):
-    id: int
+    id: str
     media_product_type: str
 
 class CommentValue(BaseModel):
     from_: CommentAuthor = Field(alias="from")
     media: CommentMedia
-    id: int
-    parent_id: int | None
+    id: str
+    parent_id: str | None
     text: str
 
 class CommentChange(BaseModel):
@@ -25,7 +25,7 @@ class CommentChange(BaseModel):
     value: CommentValue
 
 class WebhookEntry(BaseModel):
-    id: int
+    id: str
     time: int
     changes: list[CommentChange]
 

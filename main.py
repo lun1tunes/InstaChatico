@@ -24,20 +24,23 @@ app.include_router(router=router_v1, prefix=settings.api_v1_prefix)
 # Middleware для проверки X-Hub подписи
 @app.middleware("http")
 async def verify_webhook_signature(request: Request, call_next):
-    if request.method == "POST" and request.url.path == "/webhook/instagram":
+    if request.method == "POST" and request.url.path == "/api/v1/webhook/":
         signature = request.headers.get("X-Hub-Signature")
-        if not signature:
-            raise HTTPException(status_code=401, detail="Missing signature")
-        
         body = await request.body()
-        expected_signature = "sha1=" + hmac.new(
-            settings.app_secret.encode(),
-            body,
-            hashlib.sha1
-        ).hexdigest()
+        
+        if signature:
+            # Validate signature if present
+            expected_signature = "sha1=" + hmac.new(
+                settings.app_secret.encode(),
+                body,
+                hashlib.sha1
+            ).hexdigest()
 
-        if not hmac.compare_digest(signature, expected_signature):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+            if not hmac.compare_digest(signature, expected_signature):
+                raise HTTPException(status_code=401, detail="Invalid signature")
+        else:
+            # Log warning if signature is missing
+            logging.warning("Webhook request received without X-Hub-Signature header")
         
         # Сохраняем тело запроса для дальнейшей обработки
         request.state.body = body
