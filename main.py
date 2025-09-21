@@ -31,7 +31,7 @@ async def verify_webhook_signature(request: Request, call_next):
         
         body = await request.body()
         expected_signature = "sha1=" + hmac.new(
-            APP_SECRET.encode(),
+            settings.app_secret.encode(),
             body,
             hashlib.sha1
         ).hexdigest()

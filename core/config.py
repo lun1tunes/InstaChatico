@@ -14,8 +14,8 @@ class DbSettings(BaseModel):
 
 class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
-    app_secret = os.getenv("APP_SECRET", "")
-    app_webhook_verify_token = os.getenv("TOKEN", "token")
+    app_secret: str = os.getenv("APP_SECRET", "app_secret")
+    app_webhook_verify_token: str = os.getenv("TOKEN", "token")
     db: DbSettings = DbSettings()
 
 
