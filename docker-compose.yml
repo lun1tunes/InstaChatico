@@ -89,6 +89,18 @@ services:
     networks:
       - instagram_network
     command: celery -A core.celery_app beat --loglevel=info
+    
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: instagram_dozzle
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    networks:
+      - instagram_network
+    environment:
+      - DOZZLE_NO_ANALYTICS=true
 
 volumes:
   postgres_data:
