@@ -38,11 +38,13 @@ async def webhook_verification(request: Request):
     logger.info(f"Verification completed successfully")
     return PlainTextResponse(hub_challenge)
 
+@router.post("")
 @router.post("/")
 async def process_webhook(request: Request, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
     try:
         logger.info("Processing webhook request")
-        payload = json.loads(request.state.body.decode())
+        body_bytes = getattr(request.state, "body", None) or await request.body()
+        payload = json.loads(body_bytes.decode())
         logger.info(f"Parsed payload: {payload}")
         webhook_data = WebhookPayload(**payload)
         logger.info("Webhook data validated successfully")
@@ -146,3 +148,4 @@ async def get_comment_status(comment_id: str, session: AsyncSession = Depends(db
         "created_at": comment.created_at,
         "classification": classification_info
     }
+# print(1)

@@ -24,7 +24,7 @@ app.include_router(router=router_v1, prefix=settings.api_v1_prefix)
 # Middleware для проверки X-Hub подписи
 @app.middleware("http")
 async def verify_webhook_signature(request: Request, call_next):
-    if request.method == "POST" and request.url.path == "/api/v1/webhook/":
+    if request.method == "POST" and request.url.path.rstrip("/") == "/api/v1/webhook":
         # Instagram uses X-Hub-Signature-256 (SHA256) instead of X-Hub-Signature (SHA1)
         signature_256 = request.headers.get("X-Hub-Signature-256")
         signature_1 = request.headers.get("X-Hub-Signature")

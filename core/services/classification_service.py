@@ -86,7 +86,7 @@ class CommentClassificationService:
                 confidence = 80
             
             # Валидация категории
-            valid_categories = {'positive', 'negative', 'spam', 'question'}
+            valid_categories = {'Positive Feedback', 'Critical Feedback', 'Urgent Issue / Complaint', 'Question / Inquiry', 'Spam / Irrelevant'}
             if classification not in valid_categories:
                 classification = "unknown"
                 confidence = 0
