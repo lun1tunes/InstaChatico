@@ -1,7 +1,7 @@
 import asyncio
 from typing import Dict, Any
 from langchain.prompts import PromptTemplate
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage
 import logging
 from ..config import settings
