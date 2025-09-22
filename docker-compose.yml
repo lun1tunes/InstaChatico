@@ -89,18 +89,38 @@ services:
     networks:
       - instagram_network
     command: celery -A core.celery_app beat --loglevel=info
-    
+
   dozzle:
     image: amir20/dozzle:latest
     container_name: instagram_dozzle
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-      - "8080:8080"
     networks:
-      - instagram_network
+      - traefik_network
     environment:
       - DOZZLE_NO_ANALYTICS=true
+      - DOZZLE_USERNAME=${DOZZLE_USERNAME}
+      - DOZZLE_PASSWORD=${DOZZLE_PASSWORD}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dozzle.rule=Host(`logs.yourdomain.com`)"
+      - "traefik.http.routers.dozzle.entrypoints=web"
+      - "traefik.http.services.dozzle.loadbalancer.server.port=8080"
+      - "traefik.docker.network=traefik_network"
+
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:8080"
+    networks:
+      - traefik_network
 
 volumes:
   postgres_data:
@@ -110,4 +130,6 @@ volumes:
 
 networks:
   instagram_network:
+    driver: bridge  
+  traefik_network:
     driver: bridge
