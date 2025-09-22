@@ -21,8 +21,8 @@ class OpenAISettings(BaseModel):
 
 class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
-    app_secret: str = os.getenv("APP_SECRET", "app_secret")
-    app_webhook_verify_token: str = os.getenv("TOKEN", "token")
+    app_secret: str = os.getenv("APP_SECRET", "app_secret").strip()
+    app_webhook_verify_token: str = os.getenv("TOKEN", "token").strip()
     db: DbSettings = DbSettings()
     celery: CelerySettings = CelerySettings()
     openai: OpenAISettings = OpenAISettings()
