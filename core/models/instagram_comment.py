@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from .base import Base
 
 class InstagramComment(Base):
-    __tablename__ = "instagramcomments"
+    __tablename__ = "instagram_comments"
     
     id: Mapped[str] = mapped_column(primary_key=True)
     media_id: Mapped[str]
