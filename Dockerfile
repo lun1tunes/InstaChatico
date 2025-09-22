@@ -15,10 +15,10 @@ RUN pip install poetry
 
 # Устанавливаем зависимости
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-dev --no-interaction --no-ansi
+    poetry install --only main --no-interaction --no-ansi
 
 # Копируем исходный код
 COPY . .
 
 # Применяем миграции при запуске (опционально)
-CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]
+# CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]

@@ -19,6 +19,7 @@ psycopg2-binary = "^2.9.9"
 langchain = {extras = ["openai"], version = "^0.3.27"}
 celery = "^5.5.3"
 redis = "^6.4.0"
+langchain-community = "^0.3.29"
 
 
 [build-system]
