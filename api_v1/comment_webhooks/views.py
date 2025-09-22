@@ -10,6 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from core.models import db_helper
 from core.config import settings
 from core.models.instagram_comment import InstagramComment
+from core.models.comment_classification import CommentClassification, ProcessingStatus
+from core.tasks.classification_tasks import classify_comment_task
 from . import crud
 from .schemas import WebhookPayload
 
@@ -35,7 +37,6 @@ async def webhook_verification(request: Request):
     
     logger.info(f"Verification completed successfully")
     return PlainTextResponse(hub_challenge)
-
 
 @router.post("/")
 async def process_webhook(request: Request, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
@@ -66,11 +67,17 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                         # Check if comment already exists
                         existing_comment = await session.get(InstagramComment, comment_id)
                         if existing_comment:
-                            logger.info(f"Comment {comment_id} already exists, skipping")
+                            logger.info(f"Comment {comment_id} already exists, checking classification")
+                            
+                            # Если комментарий есть, но классификация не завершена - перезапускаем
+                            if not existing_comment.classification or existing_comment.classification.processing_status != ProcessingStatus.COMPLETED:
+                                classify_comment_task.delay(comment_id)
+                                logger.info(f"Queued classification for existing comment {comment_id}")
+                            
                             skipped_comments += 1
                             continue
                         
-                        # Create new comment with error handling for missing fields
+                        # Create new comment
                         comment_data = {
                             "id": comment_id,
                             "media_id": change.value.media.id,
@@ -84,19 +91,25 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                         logger.info(f"Creating comment with data: {comment_data}")
                         comment = InstagramComment(**comment_data)
                         
+                        # Создаем запись классификации
+                        classification = CommentClassification(comment_id=comment_id)
+                        comment.classification = classification
+                        
                         session.add(comment)
                         await session.commit()
-                        logger.info(f"Comment {comment_id} saved successfully")
+                        
+                        # Ставим задачу классификации в Celery
+                        classify_comment_task.delay(comment_id)
+                        
+                        logger.info(f"Comment {comment_id} saved and queued for classification")
                         processed_comments += 1
                         
                     except IntegrityError as e:
-                        # Handle race condition where comment was inserted between check and insert
                         await session.rollback()
                         logger.info(f"Comment {comment_id} was inserted by another process, skipping")
                         skipped_comments += 1
                         continue
                     except Exception as e:
-                        # Handle any other errors in comment processing
                         await session.rollback()
                         logger.error(f"Error processing comment {comment_id}: {e}")
                         logger.error(f"Comment data: {change.value.model_dump()}")
@@ -109,3 +122,27 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
         logger.error(f"Unexpected error processing webhook: {e}")
         await session.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/comment/{comment_id}/status")
+async def get_comment_status(comment_id: str, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
+    """Получение статуса классификации комментария"""
+    comment = await session.get(InstagramComment, comment_id)
+    
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    classification_info = None
+    if comment.classification:
+        classification_info = {
+            "processing_status": comment.classification.processing_status.value,
+            "classification": comment.classification.classification,
+            "confidence": comment.classification.confidence,
+            "processed_at": comment.classification.processing_completed_at
+        }
+    
+    return {
+        "comment_id": comment.id,
+        "text": comment.text,
+        "created_at": comment.created_at,
+        "classification": classification_info
+    }
