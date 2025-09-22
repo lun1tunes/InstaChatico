@@ -2,11 +2,11 @@ import asyncio
 import logging
 from datetime import datetime
 from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from ..celery_app import celery_app
-from ..models import CommentClassification, InstagramComment, ProcessingStatus, db_helper
+from ..models import CommentClassification, InstagramComment, ProcessingStatus
 from ..services.classification_service import CommentClassificationService
 from ..config import settings
 
@@ -15,11 +15,20 @@ logger = logging.getLogger(__name__)
 @celery_app.task(bind=True, max_retries=3)
 def classify_comment_task(self, comment_id: str):
     """Синхронная обертка для асинхронной задачи классификации"""
-    return asyncio.run(classify_comment_async(comment_id, self))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(classify_comment_async(comment_id, self))
+    finally:
+        loop.close()
 
 async def classify_comment_async(comment_id: str, task_instance=None):
     """Асинхронная задача классификации комментария"""
-    async with db_helper.session_factory() as session:  # type: ignore[attr-defined]
+    # Create a fresh engine and session for this task
+    engine = create_async_engine(settings.db.url, echo=settings.db.echo)
+    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    
+    async with session_factory() as session:
         try:
             # Получаем комментарий
             result = await session.execute(
@@ -99,15 +108,26 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 pass
             
             return {"status": "error", "reason": str(exc)}
+        finally:
+            await engine.dispose()
 
 @celery_app.task
 def retry_failed_classifications():
     """Повторная обработка неудачных классификаций"""
-    return asyncio.run(retry_failed_classifications_async())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(retry_failed_classifications_async())
+    finally:
+        loop.close()
 
 async def retry_failed_classifications_async():
     """Асинхронная обработка повторных попыток"""
-    async with db_helper.session_factory() as session:  # type: ignore[attr-defined]
+    # Create a fresh engine and session for this task
+    engine = create_async_engine(settings.db.url, echo=settings.db.echo)
+    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    
+    async with session_factory() as session:
         try:
             # Находим комментарии для повторной обработки
             result = await session.execute(
@@ -128,3 +148,5 @@ async def retry_failed_classifications_async():
         except Exception as e:
             logger.error(f"Error in retry task: {e}")
             return {"error": str(e)}
+        finally:
+            await engine.dispose()
