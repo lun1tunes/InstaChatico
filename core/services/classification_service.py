@@ -86,7 +86,10 @@ class CommentClassificationService:
                 confidence = 80
             
             # Валидация категории
-            valid_categories = {'Positive Feedback', 'Critical Feedback', 'Urgent Issue / Complaint', 'Question / Inquiry', 'Spam / Irrelevant'}
+            valid_categories = {
+                'positive feedback', 'critical feedback', 'urgent issue / complaint', 
+                'question / inquiry', 'spam / irrelevant'
+            }
             if classification not in valid_categories:
                 classification = "unknown"
                 confidence = 0
@@ -128,17 +131,18 @@ class CommentClassificationService:
     
     def _estimate_sentiment(self, classification: str, confidence: int) -> int:
         sentiment_map = {
-            'positive': confidence,
-            'negative': -confidence,
-            'spam': -50,
-            'question': 0,
+            'positive feedback': confidence,
+            'critical feedback': -confidence,
+            'urgent issue / complaint': -confidence,
+            'question / inquiry': 0,
+            'spam / irrelevant': -50,
             'unknown': 0
         }
         return sentiment_map.get(classification, 0)
     
     def _estimate_toxicity(self, classification: str, confidence: int) -> int:
-        if classification == 'negative':
+        if classification in ['critical feedback', 'urgent issue / complaint']:
             return min(100, confidence + 20)
-        elif classification == 'spam':
+        elif classification == 'spam / irrelevant':
             return 60
         return 0
