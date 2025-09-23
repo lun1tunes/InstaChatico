@@ -116,15 +116,25 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             await session.commit()
             
             logger.info(f"Answer generated for comment {comment_id}: {answer_result.get('answer', 'ERROR')[:100]}...")
+            logger.info(f"Answer result keys: {answer_result.keys()}")
+            logger.info(f"Answer result: {answer_result}")
             
             # Trigger Instagram reply if answer was successfully generated
             if answer_result.get('answer') and not answer_result.get('error'):
                 try:
-                    from .instagram_reply_tasks import send_instagram_reply_task
+                    # Import the task from the celery app to avoid circular imports
+                    from ..celery_app import celery_app
                     logger.info(f"Triggering Instagram reply for comment {comment_id}")
-                    send_instagram_reply_task.delay(comment_id, answer_result['answer'])
+                    logger.info(f"Celery app: {celery_app}")
+                    logger.info(f"Task name: core.tasks.instagram_reply_tasks.send_instagram_reply_task")
+                    logger.info(f"Args: {[comment_id, answer_result['answer']]}")
+                    result = celery_app.send_task('core.tasks.instagram_reply_tasks.send_instagram_reply_task', 
+                                                args=[comment_id, answer_result['answer']])
+                    logger.info(f"Task queued with ID: {result.id}")
                 except Exception as e:
                     logger.error(f"Failed to trigger Instagram reply for comment {comment_id}: {e}")
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
             
             return {
                 "status": "success",

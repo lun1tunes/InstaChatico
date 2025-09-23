@@ -15,6 +15,10 @@ class InstagramGraphAPIService:
         
         if not self.access_token:
             raise ValueError("Instagram access token is required")
+        
+        # Log token info for debugging (without exposing the actual token)
+        logger.info(f"Instagram service initialized with token: {self.access_token[:10]}...{self.access_token[-4:] if len(self.access_token) > 14 else '***'}")
+        logger.info(f"Base URL: {self.base_url}")
     
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
         """
@@ -28,18 +32,24 @@ class InstagramGraphAPIService:
             Dict containing the API response
         """
         # Use the Instagram Graph API endpoint for posting replies to comments
-        url = f"{self.base_url}/{comment_id}/replies"
+        # Include access_token as query parameter in URL
+        url = f"{self.base_url}/{comment_id}/replies?access_token={self.access_token}"
         
-        # Instagram Graph API expects form-encoded data
+        # Instagram Graph API expects form-encoded data for POST requests
         data = {
-            "message": message,
-            "access_token": self.access_token
+            "message": message
         }
         
         try:
+            logger.info(f"Sending reply to comment {comment_id} with URL: {url}")
+            logger.info(f"Request data: {data}")
+            
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, data=data) as response:
                     response_data = await response.json()
+                    
+                    logger.info(f"Response status: {response.status}")
+                    logger.info(f"Response data: {response_data}")
                     
                     if response.status == 200:
                         logger.info(f"Successfully sent reply to comment {comment_id}")
@@ -58,6 +68,8 @@ class InstagramGraphAPIService:
                         
         except Exception as e:
             logger.error(f"Exception while sending reply to comment {comment_id}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {
                 "success": False,
                 "error": str(e),
@@ -110,28 +122,35 @@ class InstagramGraphAPIService:
     
     async def validate_token(self) -> Dict[str, Any]:
         """
-        Validate the Instagram access token
+        Validate the Instagram access token using Instagram Graph API debug endpoint
         
         Returns:
             Dict containing validation result
         """
-        url = f"{self.base_url}/me"
+        # Use Instagram Graph API debug endpoint to validate token
+        url = f"{self.base_url}/debug_token"
         
         params = {
-            "access_token": self.access_token,
-            "fields": "id,name"
+            "input_token": self.access_token,
+            "access_token": self.access_token
         }
         
         try:
+            logger.info(f"Validating Instagram token with URL: {url}")
+            logger.info(f"Token: {self.access_token[:10]}...{self.access_token[-4:] if len(self.access_token) > 14 else '***'}")
+            
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     response_data = await response.json()
+                    
+                    logger.info(f"Token validation response status: {response.status}")
+                    logger.info(f"Token validation response: {response_data}")
                     
                     if response.status == 200:
                         logger.info("Instagram access token is valid")
                         return {
                             "success": True,
-                            "page_info": response_data,
+                            "token_info": response_data,
                             "status_code": response.status
                         }
                     else:
@@ -144,6 +163,57 @@ class InstagramGraphAPIService:
                         
         except Exception as e:
             logger.error(f"Exception while validating Instagram token: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": str(e),
+                "status_code": None
+            }
+    
+    async def get_page_info(self) -> Dict[str, Any]:
+        """
+        Get Instagram page information using the access token
+        
+        Returns:
+            Dict containing page information
+        """
+        url = f"{self.base_url}/me"
+        
+        params = {
+            "access_token": self.access_token,
+            "fields": "id,name,username"
+        }
+        
+        try:
+            logger.info(f"Getting page info with URL: {url}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    response_data = await response.json()
+                    
+                    logger.info(f"Page info response status: {response.status}")
+                    logger.info(f"Page info response: {response_data}")
+                    
+                    if response.status == 200:
+                        logger.info("Successfully retrieved page info")
+                        return {
+                            "success": True,
+                            "page_info": response_data,
+                            "status_code": response.status
+                        }
+                    else:
+                        logger.error(f"Failed to get page info: {response_data}")
+                        return {
+                            "success": False,
+                            "error": response_data,
+                            "status_code": response.status
+                        }
+                        
+        except Exception as e:
+            logger.error(f"Exception while getting page info: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {
                 "success": False,
                 "error": str(e),

@@ -51,6 +51,8 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TOKEN=${TOKEN}
+      - INSTA_TOKEN=${INSTA_TOKEN}
+      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v18.0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,6 +70,8 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - INSTA_TOKEN=${INSTA_TOKEN}
+      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v18.0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,7 +79,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=info --concurrency=4 -Q llm_queue"
+    command: sh -c "python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=info --concurrency=4 -Q llm_queue,instagram_queue"
 
   celery_beat:
     build: .
@@ -85,6 +89,8 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - INSTA_TOKEN=${INSTA_TOKEN}
+      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v18.0}
     depends_on:
       postgres:
         condition: service_healthy

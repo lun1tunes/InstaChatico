@@ -157,3 +157,59 @@ async def process_pending_replies(session: AsyncSession = Depends(db_helper.scop
     
     result = await process_pending_replies_async()
     return result
+
+@router.get("/validate-token")
+async def validate_instagram_token():
+    """
+    Validate the Instagram access token and return token information.
+    """
+    try:
+        from core.services.instagram_service import InstagramGraphAPIService
+        instagram_service = InstagramGraphAPIService()
+        validation_result = await instagram_service.validate_token()
+        
+        if validation_result["success"]:
+            return {
+                "status": "success",
+                "message": "Instagram access token is valid",
+                "token_info": validation_result["token_info"]
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Instagram access token validation failed",
+                "error": validation_result["error"]
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to validate Instagram token: {str(e)}"
+        }
+
+@router.get("/page-info")
+async def get_instagram_page_info():
+    """
+    Get Instagram page information using the access token.
+    """
+    try:
+        from core.services.instagram_service import InstagramGraphAPIService
+        instagram_service = InstagramGraphAPIService()
+        page_info_result = await instagram_service.get_page_info()
+        
+        if page_info_result["success"]:
+            return {
+                "status": "success",
+                "message": "Successfully retrieved Instagram page info",
+                "page_info": page_info_result["page_info"]
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Failed to get Instagram page info",
+                "error": page_info_result["error"]
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get Instagram page info: {str(e)}"
+        }

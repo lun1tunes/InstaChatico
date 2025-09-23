@@ -92,6 +92,24 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                     # Run the async function directly
                     answer_result = await generate_answer_async(comment_id)
                     logger.info(f"Answer generated for question comment {comment_id}: {answer_result}")
+                    
+                    # Trigger Instagram reply if answer was successfully generated
+                    if answer_result.get('answer') and not answer_result.get('error'):
+                        try:
+                            # Import the task from the celery app to avoid circular imports
+                            from ..celery_app import celery_app
+                            logger.info(f"Triggering Instagram reply for comment {comment_id}")
+                            logger.info(f"Celery app: {celery_app}")
+                            logger.info(f"Task name: core.tasks.instagram_reply_tasks.send_instagram_reply_task")
+                            logger.info(f"Args: {[comment_id, answer_result['answer']]}")
+                            result = celery_app.send_task('core.tasks.instagram_reply_tasks.send_instagram_reply_task', 
+                                                        args=[comment_id, answer_result['answer']])
+                            logger.info(f"Task queued with ID: {result.id}")
+                        except Exception as e:
+                            logger.error(f"Failed to trigger Instagram reply for comment {comment_id}: {e}")
+                            import traceback
+                            logger.error(f"Traceback: {traceback.format_exc()}")
+                            
                 except Exception as e:
                     logger.error(f"Failed to generate answer for comment {comment_id}: {e}")
                     import traceback
