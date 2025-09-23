@@ -1,12 +1,28 @@
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, Literal
 from langchain.prompts import PromptTemplate
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
+from pydantic import BaseModel, Field
 import logging
 from ..config import settings
 
 logger = logging.getLogger(__name__)
+
+class ClassificationResult(BaseModel):
+    """Pydantic model for structured classification output"""
+    classification: Literal[
+        "positive feedback",
+        "critical feedback", 
+        "urgent issue / complaint",
+        "question / inquiry",
+        "spam / irrelevant"
+    ] = Field(description="The classification category for the comment")
+    confidence: int = Field(ge=0, le=100, description="Confidence score from 0 to 100")
+    reasoning: str = Field(description="Brief explanation of why this classification was chosen")
+    contains_question: bool = Field(description="Whether the comment contains a question")
+    sentiment_score: int = Field(ge=-100, le=100, description="Sentiment score from -100 (negative) to 100 (positive)")
+    toxicity_score: int = Field(ge=0, le=100, description="Toxicity score from 0 (safe) to 100 (toxic)")
 
 class CommentClassificationService:
     def __init__(self, api_key: str = None):
@@ -15,41 +31,58 @@ class CommentClassificationService:
             openai_api_key=self.api_key,
             model=settings.openai.model,
             temperature=0.1,
-            max_tokens=100,
+            max_tokens=500,  # Increased for structured output
             streaming=False
         )
+        
+        # Note: Using JSON parsing instead of structured output for compatibility
         
         self.classification_prompt = PromptTemplate(
             input_variables=["comment_text"],
             template="""
-            Ты — AI-ассистент, который помогает владельцам бизнеса анализировать комментарии в Instagram. Классифицируй следующий комментарий строго в одну из категорий, наиболее полезных для бизнеса.
-            **Категории:**
-            1.  **Positive Feedback** (Позитивный отзыв): Выражение благодарности, одобрения, восхищения продуктом/услугой или упоминание положительного опыта. Может содержать рекомендацию.
-                *   *Примеры: "Супер товар, спасибо!", "Обожаю вашу кофейню, лучший бариста в городе!", "Заказ пришел мгновенно, всем советую".*
-            2.  **Critical Feedback** (Критический отзыв): Конструктивная критика или негативный отзыв о продукте, услуге, доставке, обслуживании. Без прямых оскорблений.
-                *   *Примеры: "Платье село после стирки", "Ждал курьера 2 часа", "В этом филиале персонал не очень внимательный".*
-            3.  **Urgent Issue / Complaint** (Срочная проблема / Жалоба): Жалоба, требующая немедленного решения (проблемы с заказом, доставкой, брак). Часто содержит эмоционально окрашенные слова или призыв "исправьте!", "верните деньги!".
-                *   *Примеры: "Я не получил заказ №34521, где он?!", "В продукте был посторонний предмет, это опасно!", "Верните деньги, я передумал!".*
-            4.  **Question / Inquiry** (Вопрос / Запрос): Прямой вопрос о продукте, услуге, наличии, ценах, доставке, сотрудничестве. Требует предоставления информации.
-                *   *Примеры: "А эта модель есть в синем цвете?", "Доставляете ли вы в область?", "Какой у вас график работы в праздники?".*
-            5.  **Spam / Irrelevant** (Спам / Не относящееся к делу): Реклама сторонних услуг, флуд, оскорбления, не имеющие отношения к бизнесу комментарии, ссылки, промокоды конкурентов.
-                *   *Примеры: "Заходи на мой канал о похудении!", "Продам аккаунт", Бессмысленный набор символов.*
-                
-            **Инструкции по классификации:**
-            -   Приоритет: Если комментарий содержит и вопрос, и жалобу, классифицируй его как **Urgent Issue / Complaint**.
-            -   Разграничение критики и жалобы: **Critical Feedback** — это общая критика, **Urgent Issue / Complaint** — это конкретная проблема, требующая решения.
-            -   Вопрос vs. Отзыв: Если комментарий выглядит как риторический вопрос ("как можно было так испортить хороший продукт?"), это **Critical Feedback**, а не вопрос.
-
-            Верни ответ только в формате: `категория|уверенность(0-100)`
+            You are an AI assistant that helps business owners analyze Instagram comments. Classify the following comment strictly into one of the categories most useful for business operations.
             
-            Комментарий: {comment_text}
+            **Categories:**
+            1.  **positive feedback**: Expressions of gratitude, approval, admiration for products/services, or mentions of positive experiences. May include recommendations.
+                *Examples: "Great product, thanks!", "Love your coffee shop, best barista in town!", "Order arrived instantly, I recommend to everyone".*
+            2.  **critical feedback**: Constructive criticism or negative reviews about products, services, delivery, customer service. Without direct insults.
+                *Examples: "Dress shrunk after washing", "Waited for courier for 2 hours", "Staff at this branch is not very attentive".*
+            3.  **urgent issue / complaint**: Complaints requiring immediate resolution (order problems, delivery issues, defects). Often contains emotionally charged words or calls to "fix this!", "refund my money!".
+                *Examples: "I didn't receive order #34521, where is it?!", "There was a foreign object in the product, this is dangerous!", "Refund my money, I changed my mind!".*
+            4.  **question / inquiry**: Direct questions about BUSINESS-RELATED topics only: products, services, availability, prices, delivery, business hours, collaboration, technical specifications, warranty, returns, etc. Questions about weather, movies, personal life, or unrelated topics should be classified as spam/irrelevant.
+                *Examples: "Is this model available in blue?", "Do you deliver to my region?", "What are your business hours on holidays?", "What's the warranty period?", "Can I return this item?".*
+            5.  **spam / irrelevant**: Advertisements for other services, spam, insults, comments unrelated to business, competitor links/promo codes, personal questions about weather/cinema/life, off-topic discussions.
+                *Examples: "Check out my weight loss channel!", "Selling account", "What's the weather like today?", "Did you see the new movie?", Random character strings.*
+                
+            **Classification Instructions:**
+            -   Priority: If a comment contains both a question and a complaint, classify it as **urgent issue / complaint**.
+            -   Distinction between criticism and complaint: **critical feedback** is general criticism, **urgent issue / complaint** is a specific problem requiring resolution.
+            -   Question vs. Review: If a comment looks like a rhetorical question ("how could you ruin such a good product?"), it's **critical feedback**, not a question.
+            -   Business Focus: Only classify as **question / inquiry** if the question is DIRECTLY related to the business, products, or services. Personal questions, weather, entertainment, or general chit-chat should be **spam / irrelevant**.
+            
+            **Additional Requirements:**
+            - confidence: Rate confidence in classification from 0 to 100
+            - reasoning: Briefly explain why this specific category was chosen. IMPORTANT: Provide the reasoning in the same language as the comment (if comment is in Russian, respond in Russian; if in English, respond in English, etc.)
+            - contains_question: Determine if the comment contains a direct question (even if it's not the main category)
+            - sentiment_score: Rate overall tone from -100 (very negative) to 100 (very positive)
+            - toxicity_score: Rate toxicity from 0 (safe) to 100 (very toxic)
+            
+            Comment: {comment_text}
+            
+            CRITICAL LANGUAGE REQUIREMENT: The reasoning field MUST be written in the EXACT SAME LANGUAGE as the comment above. 
+            Examples:
+            - If comment is "What is the price?" (English) → reasoning should be in English: "The comment asks about pricing..."
+            - If comment is "Какая цена?" (Russian) → reasoning should be in Russian: "Комментарий спрашивает о цене..."
+            - If comment is "¿Cuál es el precio?" (Spanish) → reasoning should be in Spanish: "El comentario pregunta sobre el precio..."
+            
+            Return response in JSON format with fields: classification, confidence, reasoning, contains_question, sentiment_score, toxicity_score
             """
         )
     
     async def classify_comment(self, comment_text: str) -> Dict[str, Any]:
-        """Асинхронная классификация комментария"""
+        """Asynchronous comment classification using JSON output"""
         try:
-            # Санитизация ввода
+            # Input sanitization
             sanitized_text = self._sanitize_input(comment_text)
             
             if len(sanitized_text) > 1000:
@@ -57,25 +90,46 @@ class CommentClassificationService:
             
             prompt = self.classification_prompt.format(comment_text=sanitized_text)
             
-            # Асинхронный вызов LLM
+            # Asynchronous LLM call
             response = await self.llm.agenerate([[HumanMessage(content=prompt)]])
-            result = response.generations[0][0].text.strip()
+            result_text = response.generations[0][0].text.strip()
             
-            return self._parse_classification_result(result, comment_text)
+            # Attempt JSON parsing
+            try:
+                import json
+                json_result = json.loads(result_text)
+                
+                # Validation and creation of ClassificationResult
+                classification_result = ClassificationResult(**json_result)
+                
+                return {
+                    "classification": classification_result.classification,
+                    "confidence": classification_result.confidence,
+                    "contains_question": classification_result.contains_question,
+                    "sentiment_score": classification_result.sentiment_score,
+                    "toxicity_score": classification_result.toxicity_score,
+                    "reasoning": classification_result.reasoning,
+                    "llm_raw_response": result_text,
+                    "error": None
+                }
+                
+            except (json.JSONDecodeError, ValueError) as json_error:
+                logger.warning(f"JSON parsing failed: {json_error}, falling back to manual parsing")
+                return self._parse_classification_result(result_text, comment_text)
             
         except Exception as e:
             logger.error(f"Classification error: {e}")
             return self._create_error_response(str(e))
     
     def _sanitize_input(self, text: str) -> str:
-        """Базовая санитизация текста"""
+        """Basic text sanitization"""
         import html
         sanitized = html.escape(text)
         sanitized = ' '.join(sanitized.split())
         return sanitized
     
     def _parse_classification_result(self, result: str, original_text: str) -> Dict[str, Any]:
-        """Парсинг результата от LLM"""
+        """Parsing LLM result"""
         try:
             if '|' in result:
                 classification, confidence_str = result.split('|', 1)
@@ -85,7 +139,7 @@ class CommentClassificationService:
                 classification = result.strip().lower()
                 confidence = 80
             
-            # Валидация категории
+            # Category validation
             valid_categories = {
                 'positive feedback', 'critical feedback', 'urgent issue / complaint', 
                 'question / inquiry', 'spam / irrelevant'
@@ -94,7 +148,7 @@ class CommentClassificationService:
                 classification = "unknown"
                 confidence = 0
             
-            # Дополнительный анализ
+            # Additional analysis
             contains_question = self._detect_question(original_text)
             sentiment_score = self._estimate_sentiment(classification, confidence)
             toxicity_score = self._estimate_toxicity(classification, confidence)
@@ -105,6 +159,7 @@ class CommentClassificationService:
                 "contains_question": contains_question,
                 "sentiment_score": sentiment_score,
                 "toxicity_score": toxicity_score,
+                "reasoning": f"Manual parsing: {classification} with {confidence}% confidence",
                 "llm_raw_response": result,
                 "error": None
             }
@@ -120,6 +175,7 @@ class CommentClassificationService:
             "contains_question": False,
             "sentiment_score": 0,
             "toxicity_score": 0,
+            "reasoning": f"Error occurred: {error_message}",
             "llm_raw_response": None,
             "error": error_message
         }
