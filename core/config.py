@@ -21,8 +21,8 @@ class OpenAISettings(BaseModel):
 
 class InstagramSettings(BaseModel):
     access_token: str = os.getenv("INSTA_TOKEN", "")
-    api_version: str = os.getenv("INSTAGRAM_API_VERSION", "v18.0")
-    base_url: str = f"https://graph.facebook.com/{os.getenv('INSTAGRAM_API_VERSION', 'v18.0')}"
+    api_version: str = os.getenv("INSTAGRAM_API_VERSION", "v23.0")
+    base_url: str = f"https://graph.instagram.com/{os.getenv('INSTAGRAM_API_VERSION', 'v23.0')}"
 
 class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"

@@ -57,6 +57,7 @@ class QuestionAnswer(Base):
     reply_status: Mapped[str | None] = mapped_column(String(50), nullable=True)  # sent, failed, pending
     reply_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     reply_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reply_id: Mapped[str | None] = mapped_column(String(100), nullable=True)  # Instagram reply ID to prevent infinite loops
     
     # Relationship to classification (through comment_id)
     classification: Mapped[CommentClassification] = relationship(

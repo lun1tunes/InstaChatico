@@ -1,3 +1,4 @@
+
 import asyncio
 import aiohttp
 import logging
@@ -11,7 +12,8 @@ class InstagramGraphAPIService:
     
     def __init__(self, access_token: str = None):
         self.access_token = access_token or settings.instagram.access_token
-        self.base_url = settings.instagram.base_url
+        # Use graph.instagram.com instead of graph.facebook.com for Instagram API
+        self.base_url = f"https://graph.instagram.com/{settings.instagram.api_version}"
         
         if not self.access_token:
             raise ValueError("Instagram access token is required")
@@ -22,7 +24,7 @@ class InstagramGraphAPIService:
     
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
         """
-        Send a reply to an Instagram comment using Graph API
+        Send a reply to an Instagram comment using Instagram Graph API
         
         Args:
             comment_id: The ID of the Instagram comment to reply to (from instagram_comments table)
@@ -32,20 +34,22 @@ class InstagramGraphAPIService:
             Dict containing the API response
         """
         # Use the Instagram Graph API endpoint for posting replies to comments
-        # Include access_token as query parameter in URL
-        url = f"{self.base_url}/{comment_id}/replies?access_token={self.access_token}"
+        # Match the working Postman request: POST https://graph.instagram.com/v23.0/{comment_id}/replies?message={message}
+        url = f"{self.base_url}/{comment_id}/replies"
         
-        # Instagram Graph API expects form-encoded data for POST requests
-        data = {
+        # Instagram Graph API expects access_token as query parameter and message in the URL
+        params = {
+            "access_token": self.access_token,
             "message": message
         }
         
         try:
             logger.info(f"Sending reply to comment {comment_id} with URL: {url}")
-            logger.info(f"Request data: {data}")
+            logger.info(f"Request params: {params}")
             
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=data) as response:
+                # Use POST request with query parameters to match your working Postman request
+                async with session.post(url, params=params) as response:
                     response_data = await response.json()
                     
                     logger.info(f"Response status: {response.status}")
@@ -53,9 +57,13 @@ class InstagramGraphAPIService:
                     
                     if response.status == 200:
                         logger.info(f"Successfully sent reply to comment {comment_id}")
+                        # Extract reply_id from response to prevent infinite loops
+                        reply_id = response_data.get("id") if isinstance(response_data, dict) else None
+                        logger.info(f"Extracted reply_id: {reply_id} from response: {response_data}")
                         return {
                             "success": True,
                             "response": response_data,
+                            "reply_id": reply_id,
                             "status_code": response.status
                         }
                     else:
@@ -128,7 +136,7 @@ class InstagramGraphAPIService:
             Dict containing validation result
         """
         # Use Instagram Graph API debug endpoint to validate token
-        url = f"{self.base_url}/debug_token"
+        url = f"https://graph.facebook.com/{settings.instagram.api_version}/debug_token"
         
         params = {
             "input_token": self.access_token,

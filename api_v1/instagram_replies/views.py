@@ -213,3 +213,91 @@ async def get_instagram_page_info():
             "status": "error",
             "message": f"Failed to get Instagram page info: {str(e)}"
         }
+
+@router.get("/debug/reply-ids")
+async def debug_reply_ids(session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
+    """
+    Debug endpoint to check stored reply IDs in the database.
+    """
+    try:
+        # Get all question answers with reply_ids
+        result = await session.execute(
+            select(QuestionAnswer.reply_id, QuestionAnswer.comment_id, QuestionAnswer.reply_sent)
+            .where(QuestionAnswer.reply_id.isnot(None))
+        )
+        reply_ids = result.all()
+        
+        return {
+            "status": "success",
+            "reply_ids": [
+                {
+                    "reply_id": row.reply_id,
+                    "comment_id": row.comment_id,
+                    "reply_sent": row.reply_sent
+                }
+                for row in reply_ids
+            ],
+            "count": len(reply_ids)
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get reply IDs: {str(e)}"
+        }
+
+@router.post("/cleanup/duplicate-replies")
+async def cleanup_duplicate_replies(session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
+    """
+    Cleanup endpoint to remove duplicate replies (keep only the first one for each comment).
+    """
+    try:
+        from sqlalchemy import func, and_
+        
+        # Find comments with multiple replies
+        duplicate_query = await session.execute(
+            select(QuestionAnswer.comment_id, func.count(QuestionAnswer.id).label('count'))
+            .where(QuestionAnswer.reply_sent == True)
+            .group_by(QuestionAnswer.comment_id)
+            .having(func.count(QuestionAnswer.id) > 1)
+        )
+        duplicates = duplicate_query.all()
+        
+        cleaned_count = 0
+        for comment_id, count in duplicates:
+            # Keep the first reply, delete the rest
+            replies_to_keep = await session.execute(
+                select(QuestionAnswer.id)
+                .where(and_(QuestionAnswer.comment_id == comment_id, QuestionAnswer.reply_sent == True))
+                .order_by(QuestionAnswer.reply_sent_at.asc())
+                .limit(1)
+            )
+            keep_id = replies_to_keep.scalar()
+            
+            # Delete the rest
+            delete_result = await session.execute(
+                select(QuestionAnswer)
+                .where(and_(
+                    QuestionAnswer.comment_id == comment_id,
+                    QuestionAnswer.reply_sent == True,
+                    QuestionAnswer.id != keep_id
+                ))
+            )
+            replies_to_delete = delete_result.scalars().all()
+            
+            for reply in replies_to_delete:
+                await session.delete(reply)
+                cleaned_count += 1
+        
+        await session.commit()
+        
+        return {
+            "status": "success",
+            "message": f"Cleaned up {cleaned_count} duplicate replies",
+            "duplicate_comments": len(duplicates)
+        }
+    except Exception as e:
+        await session.rollback()
+        return {
+            "status": "error",
+            "message": f"Failed to cleanup duplicates: {str(e)}"
+        }

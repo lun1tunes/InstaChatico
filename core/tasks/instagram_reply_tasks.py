@@ -63,6 +63,22 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                 logger.info(f"Reply already sent for comment {comment_id}")
                 return {"status": "skipped", "reason": "reply_already_sent"}
 
+            # Additional check: Look for existing reply_id to prevent duplicates
+            if comment.question_answer.reply_id:
+                logger.info(f"Reply already exists with ID {comment.question_answer.reply_id} for comment {comment_id}")
+                return {"status": "skipped", "reason": "reply_id_already_exists"}
+
+            # Final check before sending: Query database again to prevent race conditions
+            final_check = await session.execute(
+                select(QuestionAnswer.reply_sent, QuestionAnswer.reply_id)
+                .where(QuestionAnswer.comment_id == comment_id)
+            )
+            final_result = final_check.first()
+            
+            if final_result and (final_result.reply_sent or final_result.reply_id):
+                logger.info(f"Reply already sent or exists for comment {comment_id} (race condition prevented)")
+                return {"status": "skipped", "reason": "race_condition_prevented"}
+
             # Initialize Instagram service
             instagram_service = InstagramGraphAPIService()
             
@@ -70,13 +86,25 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
             reply_result = await instagram_service.send_reply_to_comment(comment_id, answer_text)
             
             if reply_result["success"]:
-                # Mark reply as sent in the database
-                comment.question_answer.reply_sent = True
-                comment.question_answer.reply_sent_at = datetime.utcnow()
-                comment.question_answer.reply_status = "sent"
-                comment.question_answer.reply_response = reply_result.get("response", {})
-                
-                await session.commit()
+                try:
+                    # Mark reply as sent in the database
+                    comment.question_answer.reply_sent = True
+                    comment.question_answer.reply_sent_at = datetime.utcnow()
+                    comment.question_answer.reply_status = "sent"
+                    comment.question_answer.reply_response = reply_result.get("response", {})
+                    reply_id = reply_result.get("reply_id")
+                    comment.question_answer.reply_id = reply_id  # Store reply_id to prevent infinite loops
+                    
+                    logger.info(f"Storing reply_id: {reply_id} for comment {comment_id}")
+                    
+                    await session.commit()
+                except Exception as e:
+                    # Handle potential duplicate reply_id constraint violation
+                    if "uq_question_answers_reply_id" in str(e) or "duplicate key" in str(e).lower():
+                        logger.warning(f"Duplicate reply_id {reply_id} detected for comment {comment_id}, skipping")
+                        return {"status": "skipped", "reason": "duplicate_reply_id_constraint"}
+                    else:
+                        raise e
                 
                 logger.info(f"Successfully sent Instagram reply for comment {comment_id}")
                 return {

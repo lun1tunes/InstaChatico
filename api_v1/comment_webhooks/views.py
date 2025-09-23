@@ -11,7 +11,9 @@ from core.models import db_helper
 from core.config import settings
 from core.models.instagram_comment import InstagramComment
 from core.models.comment_classification import CommentClassification, ProcessingStatus
+from core.models.question_answer import QuestionAnswer
 from core.tasks.classification_tasks import classify_comment_task
+from sqlalchemy import select
 from . import crud
 from .schemas import WebhookPayload
 
@@ -64,6 +66,24 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                 if change.field == "comments":
                     comment_id = change.value.id
                     logger.info(f"Processing comment: {comment_id}")
+                    
+                    # Debug: Log the full webhook data structure
+                    logger.info(f"Webhook data for comment {comment_id}: {change.value.model_dump()}")
+                    
+                    # Check if this is a reply (has parent_id) - if so, skip it completely to prevent infinite loops
+                    if hasattr(change.value, 'parent_id') and change.value.parent_id:
+                        logger.info(f"Comment {comment_id} is a reply to {change.value.parent_id} - SKIPPING to prevent infinite loops")
+                        skipped_comments += 1
+                        continue
+                    
+                    # Additional safety check: Check if this comment_id exists as a reply_id in our database
+                    reply_check = await session.execute(
+                        select(QuestionAnswer).where(QuestionAnswer.reply_id == comment_id)
+                    )
+                    if reply_check.scalar_one_or_none():
+                        logger.info(f"Comment {comment_id} is our own reply (found in reply_id), skipping to prevent infinite loop")
+                        skipped_comments += 1
+                        continue
                     
                     try:
                         # Check if comment already exists

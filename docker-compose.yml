@@ -7,6 +7,7 @@ services:
       POSTGRES_USER: instagram_user
       POSTGRES_PASSWORD: instagram_password
       POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_INITDB_ARGS: "--auth-host=trust --auth-local=trust"
     ports:
       - "5432:5432"
     volumes:
@@ -52,7 +53,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TOKEN=${TOKEN}
       - INSTA_TOKEN=${INSTA_TOKEN}
-      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v18.0}
+      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,7 +72,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - INSTA_TOKEN=${INSTA_TOKEN}
-      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v18.0}
+      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,7 +91,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - INSTA_TOKEN=${INSTA_TOKEN}
-      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v18.0}
+      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
     depends_on:
       postgres:
         condition: service_healthy
