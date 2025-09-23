@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import redis
 from datetime import datetime
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -23,12 +24,26 @@ logger = logging.getLogger(__name__)
 @celery_app.task(bind=True, max_retries=3)
 def send_instagram_reply_task(self, comment_id: str, answer_text: str):
     """Synchronous wrapper for asynchronous Instagram reply sending"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # Redis-based lock to prevent duplicate processing
+    redis_client = redis.Redis.from_url(settings.celery.broker_url)
+    lock_key = f"instagram_reply_lock:{comment_id}"
+    
+    # Try to acquire lock with 30 second timeout
+    if not redis_client.set(lock_key, "processing", nx=True, ex=30):
+        logger.info(f"Reply task for comment {comment_id} is already being processed, skipping")
+        return {"status": "skipped", "reason": "already_processing"}
+    
     try:
-        loop.run_until_complete(send_instagram_reply_async(comment_id, answer_text, self))
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(send_instagram_reply_async(comment_id, answer_text, self))
+            return result
+        finally:
+            loop.close()
     finally:
-        loop.close()
+        # Release the lock
+        redis_client.delete(lock_key)
 
 async def send_instagram_reply_async(comment_id: str, answer_text: str, task_instance=None):
     """Asynchronous task for sending Instagram private reply"""
@@ -68,16 +83,30 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                 logger.info(f"Reply already exists with ID {comment.question_answer.reply_id} for comment {comment_id}")
                 return {"status": "skipped", "reason": "reply_id_already_exists"}
 
-            # Final check before sending: Query database again to prevent race conditions
-            final_check = await session.execute(
-                select(QuestionAnswer.reply_sent, QuestionAnswer.reply_id)
-                .where(QuestionAnswer.comment_id == comment_id)
-            )
-            final_result = final_check.first()
-            
-            if final_result and (final_result.reply_sent or final_result.reply_id):
-                logger.info(f"Reply already sent or exists for comment {comment_id} (race condition prevented)")
-                return {"status": "skipped", "reason": "race_condition_prevented"}
+            # Final check before sending: Use atomic update to prevent race conditions
+            # Try to atomically set a "processing" flag to prevent duplicate processing
+            try:
+                # Use an atomic update to set a processing flag
+                update_result = await session.execute(
+                    select(QuestionAnswer)
+                    .where(
+                        and_(
+                            QuestionAnswer.comment_id == comment_id,
+                            QuestionAnswer.reply_sent == False,
+                            QuestionAnswer.reply_id.is_(None)
+                        )
+                    )
+                    .with_for_update(skip_locked=True)
+                )
+                question_answer = update_result.scalar_one_or_none()
+                
+                if not question_answer:
+                    logger.info(f"Comment {comment_id} already has a reply or is being processed by another worker")
+                    return {"status": "skipped", "reason": "already_processed_or_processing"}
+                    
+            except Exception as e:
+                logger.warning(f"Failed to acquire lock for comment {comment_id}: {e}")
+                return {"status": "skipped", "reason": "lock_acquisition_failed"}
 
             # Initialize Instagram service
             instagram_service = InstagramGraphAPIService()
