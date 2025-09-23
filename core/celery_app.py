@@ -6,8 +6,12 @@ celery_app = Celery(
     'instagram_classifier',
     broker=settings.celery.broker_url,
     backend=settings.celery.result_backend,
-    include=['core.tasks.classification_tasks']
+    include=['core.tasks.classification_tasks', 'core.tasks.answer_tasks']
 )
+
+# Force import of all task modules to ensure they are registered
+import core.tasks.classification_tasks
+import core.tasks.answer_tasks
 
 # Настройки Celery
 celery_app.conf.update(
@@ -18,6 +22,7 @@ celery_app.conf.update(
     enable_utc=True,
     task_routes={
         'core.tasks.classification_tasks.classify_comment_task': {'queue': 'llm_queue'},
+        'core.tasks.answer_tasks.generate_answer_task': {'queue': 'llm_queue'},
     },
     task_soft_time_limit=300,
     task_time_limit=600,
@@ -31,5 +36,13 @@ celery_app.conf.beat_schedule = {
     'retry-failed-classifications': {
         'task': 'core.tasks.classification_tasks.retry_failed_classifications',
         'schedule': crontab(minute='*/15'),
+    },
+    'retry-failed-answers': {
+        'task': 'core.tasks.answer_tasks.retry_failed_answers',
+        'schedule': crontab(minute='*/20'),
+    },
+    'process-pending-questions': {
+        'task': 'core.tasks.answer_tasks.process_pending_questions_task',
+        'schedule': crontab(minute='*'),  # Every minute
     },
 }

@@ -82,6 +82,21 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             
             logger.info(f"Comment {comment_id} classified as {classification_result['classification']}")
             
+            # Trigger answer generation if comment is classified as a question
+            if classification_result['classification'].lower() == "question / inquiry":
+                logger.info(f"Triggering answer generation for question comment {comment_id}")
+                # Use direct async call that works in the same event loop
+                try:
+                    from core.tasks.answer_tasks import generate_answer_async
+                    logger.info(f"Successfully imported generate_answer_async for comment {comment_id}")
+                    # Run the async function directly
+                    answer_result = await generate_answer_async(comment_id)
+                    logger.info(f"Answer generated for question comment {comment_id}: {answer_result}")
+                except Exception as e:
+                    logger.error(f"Failed to generate answer for comment {comment_id}: {e}")
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+            
             return {
                 "status": "success",
                 "comment_id": comment_id,
