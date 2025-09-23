@@ -117,6 +117,15 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             
             logger.info(f"Answer generated for comment {comment_id}: {answer_result.get('answer', 'ERROR')[:100]}...")
             
+            # Trigger Instagram reply if answer was successfully generated
+            if answer_result.get('answer') and not answer_result.get('error'):
+                try:
+                    from .instagram_reply_tasks import send_instagram_reply_task
+                    logger.info(f"Triggering Instagram reply for comment {comment_id}")
+                    send_instagram_reply_task.delay(comment_id, answer_result['answer'])
+                except Exception as e:
+                    logger.error(f"Failed to trigger Instagram reply for comment {comment_id}: {e}")
+            
             return {
                 "status": "success",
                 "comment_id": comment_id,

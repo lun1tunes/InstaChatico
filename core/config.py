@@ -19,6 +19,11 @@ class OpenAISettings(BaseModel):
     rpm_limit: int = int(os.getenv("OPENAI_RPM_LIMIT", "50"))
     tpm_limit: int = int(os.getenv("OPENAI_TPM_LIMIT", "100000"))
 
+class InstagramSettings(BaseModel):
+    access_token: str = os.getenv("INSTA_TOKEN", "")
+    api_version: str = os.getenv("INSTAGRAM_API_VERSION", "v18.0")
+    base_url: str = f"https://graph.facebook.com/{os.getenv('INSTAGRAM_API_VERSION', 'v18.0')}"
+
 class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     app_secret: str = os.getenv("APP_SECRET", "app_secret").strip()
@@ -26,5 +31,6 @@ class Settings(BaseSettings):
     db: DbSettings = DbSettings()
     celery: CelerySettings = CelerySettings()
     openai: OpenAISettings = OpenAISettings()
+    instagram: InstagramSettings = InstagramSettings()
 
 settings = Settings()

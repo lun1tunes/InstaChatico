@@ -47,6 +47,7 @@ services:
       - PORT=${PORT:-4291}
       - DATABASE_URL=${DATABASE_URL}
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - DEVELOPMENT_MODE=true
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TOKEN=${TOKEN}

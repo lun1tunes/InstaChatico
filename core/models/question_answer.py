@@ -51,6 +51,13 @@ class QuestionAnswer(Base):
     # Additional metadata
     meta_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     
+    # Instagram reply tracking
+    reply_sent: Mapped[bool] = mapped_column(default=False)
+    reply_sent_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    reply_status: Mapped[str | None] = mapped_column(String(50), nullable=True)  # sent, failed, pending
+    reply_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reply_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    
     # Relationship to classification (through comment_id)
     classification: Mapped[CommentClassification] = relationship(
         "CommentClassification",

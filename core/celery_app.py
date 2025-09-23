@@ -6,12 +6,13 @@ celery_app = Celery(
     'instagram_classifier',
     broker=settings.celery.broker_url,
     backend=settings.celery.result_backend,
-    include=['core.tasks.classification_tasks', 'core.tasks.answer_tasks']
+    include=['core.tasks.classification_tasks', 'core.tasks.answer_tasks', 'core.tasks.instagram_reply_tasks']
 )
 
 # Force import of all task modules to ensure they are registered
 import core.tasks.classification_tasks
 import core.tasks.answer_tasks
+import core.tasks.instagram_reply_tasks
 
 # Настройки Celery
 celery_app.conf.update(
@@ -23,6 +24,8 @@ celery_app.conf.update(
     task_routes={
         'core.tasks.classification_tasks.classify_comment_task': {'queue': 'llm_queue'},
         'core.tasks.answer_tasks.generate_answer_task': {'queue': 'llm_queue'},
+        'core.tasks.instagram_reply_tasks.send_instagram_reply_task': {'queue': 'instagram_queue'},
+        'core.tasks.instagram_reply_tasks.process_pending_replies_task': {'queue': 'instagram_queue'},
     },
     task_soft_time_limit=300,
     task_time_limit=600,
@@ -44,5 +47,9 @@ celery_app.conf.beat_schedule = {
     'process-pending-questions': {
         'task': 'core.tasks.answer_tasks.process_pending_questions_task',
         'schedule': crontab(minute='*'),  # Every minute
+    },
+    'process-pending-replies': {
+        'task': 'core.tasks.instagram_reply_tasks.process_pending_replies_task',
+        'schedule': crontab(minute='*/5'),  # Every 5 minutes
     },
 }

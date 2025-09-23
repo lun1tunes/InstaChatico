@@ -20,6 +20,7 @@ langchain = {extras = ["openai"], version = "^0.3.27"}
 celery = "^5.5.3"
 redis = "^6.4.0"
 langchain-community = "^0.3.29"
+aiohttp = "^3.9.0"
 
 
 [build-system]
