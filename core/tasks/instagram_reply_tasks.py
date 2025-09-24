@@ -6,15 +6,8 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from celery import Celery
+from ..celery_app import celery_app
 from ..config import settings
-
-# Create a separate celery app instance to avoid circular imports
-celery_app = Celery(
-    'instagram_classifier',
-    broker=settings.celery.broker_url,
-    backend=settings.celery.result_backend,
-)
 
 from ..models import QuestionAnswer, InstagramComment, AnswerStatus
 from ..services.instagram_service import InstagramGraphAPIService

@@ -5,15 +5,8 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from celery import Celery
+from ..celery_app import celery_app
 from ..config import settings
-
-# Create a separate celery app instance to avoid circular imports
-celery_app = Celery(
-    'instagram_classifier',
-    broker=settings.celery.broker_url,
-    backend=settings.celery.result_backend,
-)
 
 from ..models import QuestionAnswer, CommentClassification, InstagramComment, AnswerStatus, ProcessingStatus
 from ..services.answer_service import QuestionAnswerService
@@ -122,8 +115,6 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             # Trigger Instagram reply if answer was successfully generated
             if answer_result.get('answer') and not answer_result.get('error'):
                 try:
-                    # Import the task from the celery app to avoid circular imports
-                    from ..celery_app import celery_app
                     logger.info(f"Triggering Instagram reply for comment {comment_id}")
                     logger.info(f"Celery app: {celery_app}")
                     logger.info(f"Task name: core.tasks.instagram_reply_tasks.send_instagram_reply_task")
