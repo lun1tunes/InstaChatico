@@ -4,19 +4,19 @@ services:
     container_name: instagram_postgres
     environment:
       POSTGRES_DB: instagram_db
-      POSTGRES_USER: instagram_user
-      POSTGRES_PASSWORD: instagram_password
+      POSTGRES_USER: lun1z
+      POSTGRES_PASSWORD: 3b3e3tzp8e
       POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_INITDB_ARGS: "--auth-host=trust --auth-local=trust"
     ports:
-      - "5432:5432"
+      - "59731:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - instagram_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U lun1z -d instagram_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -54,6 +54,7 @@ services:
       - TOKEN=${TOKEN}
       - INSTA_TOKEN=${INSTA_TOKEN}
       - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
+      - APP_SECRET=${APP_SECRET:-default_app_secret}
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,6 +74,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - INSTA_TOKEN=${INSTA_TOKEN}
       - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
+      - APP_SECRET=${APP_SECRET:-default_app_secret}
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,6 +94,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - INSTA_TOKEN=${INSTA_TOKEN}
       - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
+      - APP_SECRET=${APP_SECRET:-default_app_secret}
     depends_on:
       postgres:
         condition: service_healthy

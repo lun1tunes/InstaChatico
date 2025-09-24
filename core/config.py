@@ -7,7 +7,8 @@ load_dotenv()
 
 class DbSettings(BaseModel):
     url: str = os.getenv("DATABASE_URL")
-    echo: bool = True
+    echo: bool = False
+    # echo: bool = True
 
 class CelerySettings(BaseModel):
     broker_url: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
