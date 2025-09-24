@@ -82,7 +82,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=info --concurrency=4 -Q llm_queue,instagram_queue"
+    command: sh -c "python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=info --concurrency=4 -Q ai_queue,instagram_queue,maintenance_queue"
 
   celery_beat:
     build: .

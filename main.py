@@ -1,5 +1,4 @@
 import os
-import logging 
 import hashlib
 import hmac
 
@@ -10,12 +9,26 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from core.config import settings
+from core.logging_config import setup_logging, get_logger
 from api_v1 import router as router_v1
+
+# Initialize logging
+setup_logging(
+    log_level=os.getenv("LOG_LEVEL", "INFO"),
+    log_format=os.getenv("LOG_FORMAT", "structured"),
+    log_file=os.getenv("LOG_FILE")
+)
+
+# Get logger for main application
+logger = get_logger(__name__, "main_app")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    logger.info("Starting InstaChatico application")
     yield
+    logger.info("Shutting down InstaChatico application")
     
 
 app = FastAPI(lifespan=lifespan)
@@ -54,25 +67,43 @@ async def verify_webhook_signature(request: Request, call_next):
                 ).hexdigest()
 
             if not hmac.compare_digest(signature, expected_signature):
-                logging.error("Signature verification failed!")
-                logging.error(f"Body length: {len(body)}")
-                logging.error(f"Signature header used: {'X-Hub-Signature-256' if signature_256 else 'X-Hub-Signature'}")
-                logging.error(f"Signature prefix: {signature[:10]}..." if len(signature) > 10 else "Signature: [REDACTED]")
+                logger.error(
+                    "Webhook signature verification failed",
+                    extra_fields={
+                        "body_length": len(body),
+                        "signature_header": "X-Hub-Signature-256" if signature_256 else "X-Hub-Signature",
+                        "signature_prefix": signature[:10] + "..." if len(signature) > 10 else "[REDACTED]"
+                    },
+                    operation="signature_verification"
+                )
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid signature"}
                 )
             else:
-                logging.info("Signature verification successful")
+                logger.info(
+                    "Webhook signature verification successful",
+                    extra_fields={
+                        "body_length": len(body),
+                        "signature_type": "SHA256" if signature_256 else "SHA1"
+                    },
+                    operation="signature_verification"
+                )
         else:
             # Check if we're in development mode (allow requests without signature for testing)
             development_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
             
             if development_mode:
-                logging.warning("DEVELOPMENT MODE: Allowing webhook request without signature header")
+                logger.warning(
+                    "DEVELOPMENT MODE: Allowing webhook request without signature header",
+                    operation="signature_verification"
+                )
             else:
                 # Block requests without signature headers in production
-                logging.error("Webhook request received without X-Hub-Signature or X-Hub-Signature-256 header - blocking request")
+                logger.error(
+                    "Webhook request received without signature header - blocking request",
+                    operation="signature_verification"
+                )
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Missing signature header"}
@@ -85,7 +116,16 @@ async def verify_webhook_signature(request: Request, call_next):
     return await call_next(request)
 
 if __name__ == "__main__":
-
-    port = int(os.getenv("PORT"))
+    port = int(os.getenv("PORT", "4291"))
     host = os.getenv("HOST", "0.0.0.0")  # Allow external connections
+    
+    logger.info(
+        "Starting InstaChatico server",
+        extra_fields={
+            "host": host,
+            "port": port,
+            "environment": os.getenv("ENVIRONMENT", "development")
+        }
+    )
+    
     uvicorn.run("main:app", host=host, port=port, reload=True)

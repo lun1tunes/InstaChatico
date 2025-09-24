@@ -1,5 +1,6 @@
 """
-Celery worker entry point that ensures all tasks are imported
+Clean Celery worker entry point for InstaChatico.
+Imports all tasks and provides the Celery app for workers.
 """
 import os
 import sys
@@ -7,12 +8,19 @@ import sys
 # Add the app directory to Python path
 sys.path.insert(0, '/app')
 
-# Import all task modules to ensure they are registered
-import core.tasks.classification_tasks
-import core.tasks.answer_tasks
+# Initialize logging first
+from core.logging_config import setup_logging
+setup_logging(
+    log_level=os.getenv("LOG_LEVEL", "INFO"),
+    log_format="structured"
+)
 
-# Import the celery app
-from core.celery_app import celery_app
+# Import the configured Celery app
+from core.celery_config import celery_app
 
-# Export the celery app for Celery to use
+# Import all task modules to ensure they are registered with Celery
+# This is required for Celery to discover and execute tasks
+import core.tasks
+
+# Export the celery app for Celery workers to use
 app = celery_app
