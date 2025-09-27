@@ -65,4 +65,5 @@ class QuestionAnswer(Base):
         foreign_keys=[comment_id],
         primaryjoin="QuestionAnswer.comment_id == CommentClassification.comment_id",
         passive_deletes=True,
+        overlaps="question_answer",
     )

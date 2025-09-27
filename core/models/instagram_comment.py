@@ -36,4 +36,5 @@ class InstagramComment(Base):
         primaryjoin="InstagramComment.id == QuestionAnswer.comment_id",
         uselist=False,
         passive_deletes=True,
+        overlaps="classification",
     )
