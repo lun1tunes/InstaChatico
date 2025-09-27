@@ -118,6 +118,10 @@ Analyze the comment carefully and provide accurate classification with detailed 
         instructions=enhanced_instructions,
         output_type=ClassificationResult,
         model=settings.openai.model,
+        model_settings=ModelSettings(
+            temperature=0.1,
+            max_tokens=500
+        ),
     )
 
 # Convenience function to get a pre-configured agent
