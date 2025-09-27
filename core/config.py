@@ -29,6 +29,10 @@ class InstagramSettings(BaseModel):
 class TelegramSettings(BaseModel):
     bot_token: str = os.getenv("TG_TOKEN", "")
     chat_id: str = os.getenv("TG_CHAT_ID", "")
+    
+class DocsSettings(BaseModel):
+    username: str = os.getenv("DOCS_USERNAME", "")
+    password: str = os.getenv("DOCS_PASSWORD", "")
 
 class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
@@ -39,5 +43,6 @@ class Settings(BaseSettings):
     openai: OpenAISettings = OpenAISettings()
     instagram: InstagramSettings = InstagramSettings()
     telegram: TelegramSettings = TelegramSettings()
-
+    docs: DocsSettings = DocsSettings() 
+    
 settings = Settings()

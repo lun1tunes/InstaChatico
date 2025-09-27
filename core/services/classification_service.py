@@ -3,8 +3,8 @@ from typing import Dict, Any
 import logging
 from agents import Runner
 from ..config import settings
-from ..agents import comment_classification_agent, ClassificationResult, get_comment_classification_agent
-comment_classification_agent = get_comment_classification_agent()
+from ..agents import comment_classification_agent, ClassificationResult
+
 logger = logging.getLogger(__name__)
 
 class CommentClassificationService:

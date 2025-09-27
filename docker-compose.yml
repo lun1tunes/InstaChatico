@@ -55,6 +55,8 @@ services:
       - INSTA_TOKEN=${INSTA_TOKEN}
       - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
       - APP_SECRET=${APP_SECRET:-default_app_secret}
+      - DOCS_USERNAME=${DOCS_USERNAME}
+      - DOCS_PASSWORD=${DOCS_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy

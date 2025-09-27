@@ -120,7 +120,6 @@ class TelegramService:
             "chat_id": self.chat_id,
             "text": message,
             "parse_mode": parse_mode,
-            "disable_web_page_preview": True
         }
         
         try:
