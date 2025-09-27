@@ -1,10 +1,9 @@
-import asyncio
 import time
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 import logging  
 from agents import Runner
 from ..config import settings
-from ..agents import comment_response_agent, AnswerResult, get_comment_response_agent
+from ..agents import comment_response_agent, get_comment_response_agent
 comment_response_agent = get_comment_response_agent()
 logger = logging.getLogger(__name__)
 

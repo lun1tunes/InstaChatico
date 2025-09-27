@@ -63,6 +63,7 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             # Сохраняем результат
             classification.classification = classification_result['classification']
             classification.confidence = classification_result['confidence']
+            classification.reasoning = classification_result['reasoning']
             classification.llm_raw_response = classification_result['llm_raw_response']
             classification.meta_data = {
                 'contains_question': classification_result['contains_question'],

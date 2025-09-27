@@ -4,7 +4,7 @@ Telegram API endpoints for testing and management
 
 import logging
 from fastapi import APIRouter, HTTPException
-from core.services.telegram_service import TelegramService
+from core.services.telegram_alert_service import TelegramAlertService
 from core.tasks.telegram_tasks import test_telegram_connection
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/telegram", tags=["Telegram"])
 async def test_telegram_bot_connection():
     """Test Telegram bot connection and configuration"""
     try:
-        telegram_service = TelegramService()
+        telegram_service = TelegramAlertService()
         result = await telegram_service.test_connection()
         
         if result.get("success"):
@@ -55,7 +55,7 @@ async def test_telegram_notification():
             "timestamp": "2024-01-01T12:00:00Z"
         }
         
-        telegram_service = TelegramService()
+        telegram_service = TelegramAlertService()
         result = await telegram_service.send_urgent_issue_notification(test_comment_data)
         
         if result.get("success"):

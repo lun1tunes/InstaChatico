@@ -39,6 +39,7 @@ class CommentClassification(Base):
     
     classification: Mapped[str | None] = mapped_column(String(50), nullable=True)
     confidence: Mapped[int | None] = mapped_column(nullable=True)
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     llm_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     meta_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     

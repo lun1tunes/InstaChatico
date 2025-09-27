@@ -1,8 +1,8 @@
-
-import asyncio
-import aiohttp
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict
+
+import aiohttp
+
 from ..config import settings
 
 logger = logging.getLogger(__name__)

@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from ..celery_app import celery_app
 from ..models import InstagramComment, CommentClassification
-from ..services.telegram_service import TelegramService
+from ..services.telegram_alert_service import TelegramAlertService
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
                 "comment_text": comment.text,
                 "classification": comment.classification.classification,
                 "confidence": comment.classification.confidence,
-                "reasoning": comment.classification.meta_data.get('reasoning', 'No reasoning available'),
+                "reasoning": comment.classification.reasoning,
                 "sentiment_score": comment.classification.meta_data.get('sentiment_score', 0),
                 "toxicity_score": comment.classification.meta_data.get('toxicity_score', 0),
                 "media_id": comment.media_id,
@@ -74,7 +74,7 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
             }
             
             # Send Telegram notification
-            telegram_service = TelegramService()
+            telegram_service = TelegramAlertService()
             notification_result = await telegram_service.send_urgent_issue_notification(comment_data)
             
             if notification_result.get("success"):
@@ -129,7 +129,7 @@ def test_telegram_connection(self):
 async def test_telegram_connection_async():
     """Async test task to verify Telegram bot connection"""
     try:
-        telegram_service = TelegramService()
+        telegram_service = TelegramAlertService()
         result = await telegram_service.test_connection()
         
         if result.get("success"):

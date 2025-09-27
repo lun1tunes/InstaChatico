@@ -1,9 +1,10 @@
-import asyncio
-from typing import Dict, Any
 import logging
+from typing import Any, Dict
+
 from agents import Runner
+
+from ..agents import comment_classification_agent
 from ..config import settings
-from ..agents import comment_classification_agent, ClassificationResult
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class CommentClassificationService:
         """Enhanced text sanitization"""
         import html
         import re
-        
+
         # Basic HTML escaping
         sanitized = html.escape(text)
         

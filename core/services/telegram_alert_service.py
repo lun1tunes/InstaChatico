@@ -6,15 +6,16 @@ when Instagram comments are classified as urgent issues or complaints.
 """
 
 import logging
+from typing import Any, Dict
+
 import aiohttp
-import asyncio
-from typing import Dict, Any, Optional
+
 from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-class TelegramService:
-    """Service for sending notifications to Telegram"""
+class TelegramAlertService:
+    """Service for sending alert notifications to Telegram"""
     
     def __init__(self, bot_token: str = None, chat_id: str = None):
         self.bot_token = bot_token or settings.telegram.bot_token
@@ -205,6 +206,6 @@ class TelegramService:
             }
 
 # Convenience function to get a pre-configured service
-def get_telegram_service() -> TelegramService:
-    """Get a pre-configured Telegram service using default settings"""
-    return TelegramService()
+def get_telegram_service() -> TelegramAlertService:
+    """Get a pre-configured Telegram alert service using default settings"""
+    return TelegramAlertService()
