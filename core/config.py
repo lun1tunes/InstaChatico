@@ -26,6 +26,10 @@ class InstagramSettings(BaseModel):
     api_version: str = os.getenv("INSTAGRAM_API_VERSION", "v23.0")
     base_url: str = f"https://graph.instagram.com/{os.getenv('INSTAGRAM_API_VERSION', 'v23.0')}"
 
+class TelegramSettings(BaseModel):
+    bot_token: str = os.getenv("TG_TOKEN", "")
+    chat_id: str = os.getenv("TG_CHAT_ID", "")
+
 class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     app_secret: str = os.getenv("APP_SECRET", "app_secret").strip()
@@ -34,5 +38,6 @@ class Settings(BaseSettings):
     celery: CelerySettings = CelerySettings()
     openai: OpenAISettings = OpenAISettings()
     instagram: InstagramSettings = InstagramSettings()
+    telegram: TelegramSettings = TelegramSettings()
 
 settings = Settings()
