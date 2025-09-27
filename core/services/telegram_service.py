@@ -6,7 +6,8 @@ when Instagram comments are classified as urgent issues or complaints.
 """
 
 import logging
-import requests
+import aiohttp
+import asyncio
 from typing import Dict, Any, Optional
 from ..config import settings
 
@@ -20,7 +21,7 @@ class TelegramService:
         self.chat_id = chat_id or settings.telegram.chat_id
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
     
-    def send_urgent_issue_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def send_urgent_issue_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Send urgent issue notification to Telegram
         
@@ -42,7 +43,7 @@ class TelegramService:
             message = self._format_urgent_message(comment_data)
             
             # Send message to Telegram
-            response = self._send_message(message)
+            response = await self._send_message(message)
             
             if response.get("ok"):
                 logger.info(f"Urgent issue notification sent successfully for comment {comment_data.get('comment_id', 'unknown')}")
@@ -81,38 +82,62 @@ class TelegramService:
         username = comment_data.get('username', 'Unknown user')
         timestamp = comment_data.get('timestamp', 'Unknown time')
         
-        # Create formatted message
-        message = f"""🚨 *URGENT ISSUE DETECTED* 🚨
+        # Create formatted message with HTML formatting (more reliable than Markdown)
+        def escape_html(text: str) -> str:
+            if not text:
+                return ""
+            # Escape HTML special characters
+            return (text.replace("&", "&amp;")
+                     .replace("<", "&lt;")
+                     .replace(">", "&gt;")
+                     .replace('"', "&quot;")
+                     .replace("'", "&#x27;"))
+        
+        # Escape HTML special characters
+        html_username = escape_html(username)
+        html_comment_id = escape_html(comment_id)
+        html_media_id = escape_html(media_id)
+        html_timestamp = escape_html(timestamp)
+        html_classification = escape_html(classification)
+        html_comment_text = escape_html(comment_text)
+        html_reasoning = escape_html(reasoning)
+        
+        # Truncate very long messages to avoid Telegram limits
+        if len(html_comment_text) > 1000:
+            html_comment_text = html_comment_text[:997] + "..."
+        
+        if len(html_reasoning) > 500:
+            html_reasoning = html_reasoning[:497] + "..."
+        
+        message = f"""🚨 <b>URGENT ISSUE DETECTED</b> 🚨
 
-📱 *Instagram Comment Alert*
+📱 <b>Instagram Comment Alert</b>
 
-👤 *User:* @{username}
-🆔 *Comment ID:* `{comment_id}`
-📸 *Media ID:* `{media_id}`
-⏰ *Time:* {timestamp}
+👤 <b>Instagram Username:</b> {html_username}
+⏰ <b>Time:</b> {html_timestamp}
+🆔 <b>Comment ID:</b> <code>{html_comment_id}</code>
+📸 <b>Media ID:</b> <code>{html_media_id}</code>
 
-💬 *Comment Text:*
-```
-{comment_text}
-```
+💬 <b>Comment Text:</b>
+<pre>{html_comment_text}</pre>
 
-🤖 *AI Analysis:*
-• *Classification:* {classification}
-• *Confidence:* {confidence}%
-• *Sentiment:* {sentiment_score}/100
-• *Toxicity:* {toxicity_score}/100
+🤖 <b>AI Analysis:</b>
+• <b>Classification:</b> {html_classification}
+• <b>Confidence:</b> {confidence}%
+• <b>Sentiment:</b> {sentiment_score}/100
+• <b>Toxicity:</b> {toxicity_score}/100
 
-🧠 *AI Reasoning:*
-{reasoning}
+🧠 <b>AI Reasoning:</b>
+{html_reasoning}
 
-⚠️ *Action Required:* This comment has been classified as an urgent issue or complaint that requires immediate attention.
+⚠️ <b>Action Required:</b> This comment has been classified as an urgent issue or complaint that requires immediate attention.
 
 #urgent #instagram #complaint #customer_service"""
 
         return message
     
-    def _send_message(self, message: str, parse_mode: str = "Markdown") -> Dict[str, Any]:
-        """Send message to Telegram chat"""
+    async def _send_message(self, message: str, parse_mode: str = "HTML") -> Dict[str, Any]:
+        """Send message to Telegram chat using aiohttp"""
         
         url = f"{self.base_url}/sendMessage"
         
@@ -120,21 +145,27 @@ class TelegramService:
             "chat_id": self.chat_id,
             "text": message,
             "parse_mode": parse_mode,
+            "disable_web_page_preview": True
         }
         
         try:
-            response = requests.post(url, json=payload, timeout=30)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request failed: {e}")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Telegram API error {response.status}: {error_text}")
+                        return {"ok": False, "description": f"HTTP {response.status}: {error_text}"}
+        except aiohttp.ClientError as e:
+            logger.error(f"aiohttp request failed: {e}")
             return {"ok": False, "description": str(e)}
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             return {"ok": False, "description": str(e)}
     
-    def test_connection(self) -> Dict[str, Any]:
-        """Test Telegram bot connection"""
+    async def test_connection(self) -> Dict[str, Any]:
+        """Test Telegram bot connection using aiohttp"""
         try:
             if not self.bot_token or not self.chat_id:
                 return {
@@ -143,21 +174,28 @@ class TelegramService:
                 }
             
             url = f"{self.base_url}/getMe"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
             
-            bot_info = response.json()
-            if bot_info.get("ok"):
-                return {
-                    "success": True,
-                    "bot_info": bot_info.get("result", {}),
-                    "chat_id": self.chat_id
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": bot_info.get("description", "Unknown error")
-                }
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        bot_info = await response.json()
+                        if bot_info.get("ok"):
+                            return {
+                                "success": True,
+                                "bot_info": bot_info.get("result", {}),
+                                "chat_id": self.chat_id
+                            }
+                        else:
+                            return {
+                                "success": False,
+                                "error": bot_info.get("description", "Unknown error")
+                            }
+                    else:
+                        error_text = await response.text()
+                        return {
+                            "success": False,
+                            "error": f"HTTP {response.status}: {error_text}"
+                        }
                 
         except Exception as e:
             logger.error(f"Error testing Telegram connection: {e}")

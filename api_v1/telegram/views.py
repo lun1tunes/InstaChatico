@@ -16,7 +16,7 @@ async def test_telegram_bot_connection():
     """Test Telegram bot connection and configuration"""
     try:
         telegram_service = TelegramService()
-        result = telegram_service.test_connection()
+        result = await telegram_service.test_connection()
         
         if result.get("success"):
             return {
@@ -56,7 +56,7 @@ async def test_telegram_notification():
         }
         
         telegram_service = TelegramService()
-        result = telegram_service.send_urgent_issue_notification(test_comment_data)
+        result = await telegram_service.send_urgent_issue_notification(test_comment_data)
         
         if result.get("success"):
             return {

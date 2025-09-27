@@ -75,7 +75,7 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
             
             # Send Telegram notification
             telegram_service = TelegramService()
-            notification_result = telegram_service.send_urgent_issue_notification(comment_data)
+            notification_result = await telegram_service.send_urgent_issue_notification(comment_data)
             
             if notification_result.get("success"):
                 logger.info(f"Telegram notification sent successfully for comment {comment_id}")
@@ -116,12 +116,21 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
         finally:
             await engine.dispose()
 
-@celery_app.task
-def test_telegram_connection():
+@celery_app.task(bind=True)
+def test_telegram_connection(self):
     """Test task to verify Telegram bot connection"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(test_telegram_connection_async())
+    finally:
+        loop.close()
+
+async def test_telegram_connection_async():
+    """Async test task to verify Telegram bot connection"""
     try:
         telegram_service = TelegramService()
-        result = telegram_service.test_connection()
+        result = await telegram_service.test_connection()
         
         if result.get("success"):
             logger.info("Telegram connection test successful")
