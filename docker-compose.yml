@@ -106,23 +106,20 @@ services:
       - instagram_network
     command: celery -A celery_worker beat --loglevel=info
 
-  # dozzle:
-  #   image: amir20/dozzle:latest
-  #   container_name: instagram_dozzle
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   networks:
-  #     - traefik_network
-  #   environment:
-  #     - DOZZLE_NO_ANALYTICS=true
-  #     - DOZZLE_USERNAME=${DOZZLE_USERNAME}
-  #     - DOZZLE_PASSWORD=${DOZZLE_PASSWORD}
-  #   labels:
-  #     - "traefik.enable=true"
-  #     - "traefik.http.routers.dozzle.rule=Host(`logs.yourdomain.com`)"
-  #     - "traefik.http.routers.dozzle.entrypoints=web"
-  #     - "traefik.http.services.dozzle.loadbalancer.server.port=8080"
-  #     - "traefik.docker.network=traefik_network"
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: instagram_dozzle
+    ports:
+      - "57928:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./dozzle-users.yml:/data/users.yml:ro
+    networks:
+      - instagram_network
+    environment:
+      - DOZZLE_NO_ANALYTICS=true
+      - DOZZLE_AUTH_PROVIDER=simple
+    restart: unless-stopped
 
   # traefik:
   #   image: traefik:v2.10
