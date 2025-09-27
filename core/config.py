@@ -16,7 +16,8 @@ class CelerySettings(BaseModel):
 
 class OpenAISettings(BaseModel):
     api_key: str = os.getenv("OPENAI_API_KEY", "")
-    model: str = os.getenv("OPENAI_MODEL", "gpt-5-nano")
+    model_comment_classification: str = os.getenv("OPENAI_MODEL_CLASSIFICATION", "gpt-5-nano")
+    model_comment_response: str = os.getenv("OPENAI_MODEL_RESPONSE", "gpt-5-mini")
     rpm_limit: int = int(os.getenv("OPENAI_RPM_LIMIT", "50"))
     tpm_limit: int = int(os.getenv("OPENAI_TPM_LIMIT", "100000"))
 

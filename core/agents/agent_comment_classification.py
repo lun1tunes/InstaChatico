@@ -6,10 +6,13 @@ into business-relevant categories. The agent is designed to provide accurate and
 consistent classification with multi-language support.
 """
 
-from typing import Literal
-from pydantic import BaseModel, Field
+from typing import Literal, Optional
+
 from agents import Agent, ModelSettings
+from pydantic import BaseModel, Field
+
 from ..config import settings
+
 
 class ClassificationResult(BaseModel):
     """Pydantic model for structured classification output using OpenAI Agents SDK"""
@@ -117,11 +120,7 @@ Analyze the comment carefully and provide accurate classification with detailed 
         name="InstagramCommentClassifier",
         instructions=enhanced_instructions,
         output_type=ClassificationResult,
-        model=settings.openai.model,
-        model_settings=ModelSettings(
-            temperature=0.1,
-            max_tokens=500
-        ),
+        model=settings.openai.model_comment_classification,
     )
 
 # Convenience function to get a pre-configured agent
