@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from .base import Base
 
@@ -19,6 +20,14 @@ class InstagramComment(Base):
     text: Mapped[str]
     created_at: Mapped[datetime]
     raw_data = mapped_column(JSONB)
+    
+    # Parent comment ID for replies (nullable)
+    parent_id: Mapped[str | None] = mapped_column(
+        String(100), 
+        nullable=True, 
+        index=True,
+        comment="ID of the parent comment if this is a reply, NULL if it's a top-level comment"
+    )
     
     # Relationship to classification
     classification: Mapped[CommentClassification] = relationship(

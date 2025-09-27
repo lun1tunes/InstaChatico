@@ -25,6 +25,7 @@ class InstagramSettings(BaseModel):
     access_token: str = os.getenv("INSTA_TOKEN", "")
     api_version: str = os.getenv("INSTAGRAM_API_VERSION", "v23.0")
     base_url: str = f"https://graph.instagram.com/{os.getenv('INSTAGRAM_API_VERSION', 'v23.0')}"
+    bot_username: str = os.getenv("INSTAGRAM_BOT_USERNAME", "")
 
 class TelegramSettings(BaseModel):
     bot_token: str = os.getenv("TG_TOKEN", "")

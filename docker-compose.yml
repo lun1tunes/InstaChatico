@@ -44,6 +44,7 @@ services:
       - "127.0.0.1:${PORT:-4291}:${PORT:-4291}"
     volumes:
       - ./:/app
+      - conversations_data:/app/conversations
     environment:
       - PORT=${PORT:-4291}
       - DATABASE_URL=${DATABASE_URL}
@@ -71,6 +72,9 @@ services:
   celery_worker:
     build: .
     container_name: instagram_celery_worker
+    volumes:
+      - ./:/app
+      - conversations_data:/app/conversations
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -93,6 +97,9 @@ services:
   celery_beat:
     build: .
     container_name: instagram_celery_beat
+    volumes:
+      - ./:/app
+      - conversations_data:/app/conversations
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -145,6 +152,8 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  conversations_data:
     driver: local
 
 networks:

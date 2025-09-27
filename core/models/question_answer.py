@@ -27,6 +27,9 @@ class QuestionAnswer(Base):
         index=True
     )
     
+    # Session management
+    conversation_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    
     processing_status: Mapped[AnswerStatus] = mapped_column(
         SQLEnum(AnswerStatus, name="answerstatus"),
         default=AnswerStatus.PENDING

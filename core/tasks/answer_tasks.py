@@ -57,6 +57,16 @@ async def generate_answer_async(comment_id: str, task_instance=None):
                 logger.warning(f"Comment {comment_id} classification not completed yet")
                 return {"status": "error", "reason": "classification_not_completed"}
             
+            # Determine conversation_id (first question comment ID)
+            # If this is a reply, use the parent comment ID for conversation grouping
+            # Otherwise, use the current comment ID
+            if comment.parent_id:
+                conversation_id = f"first_question_comment_{comment.parent_id}"
+                logger.info(f"Comment {comment_id} is a reply to {comment.parent_id}, using parent for conversation_id: {conversation_id}")
+            else:
+                conversation_id = f"first_question_comment_{comment_id}"
+                logger.info(f"Comment {comment_id} is top-level, setting conversation_id: {conversation_id}")
+            
             # Создаем или получаем запись ответа
             existing_answer = await session.execute(
                 select(QuestionAnswer).where(QuestionAnswer.comment_id == comment_id)
@@ -73,10 +83,14 @@ async def generate_answer_async(comment_id: str, task_instance=None):
                 answer_record.processing_status = AnswerStatus.PROCESSING
                 answer_record.processing_started_at = datetime.utcnow()
                 answer_record.retry_count = task_instance.request.retries if task_instance else 0
+                # Update conversation_id if not set
+                if not answer_record.conversation_id:
+                    answer_record.conversation_id = conversation_id
             else:
                 # Создаем новую запись
                 answer_record = QuestionAnswer(
                     comment_id=comment_id,
+                    conversation_id=conversation_id,
                     processing_status=AnswerStatus.PROCESSING,
                     processing_started_at=datetime.utcnow(),
                     retry_count=task_instance.request.retries if task_instance else 0
@@ -85,9 +99,11 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             
             await session.commit()
             
-            # Генерируем ответ
+            # Генерируем ответ с использованием сессии
+            logger.debug(f"Initializing QuestionAnswerService for comment: {comment_id}")
             answer_service = QuestionAnswerService()
-            answer_result = await answer_service.generate_answer(comment.text)
+            logger.debug(f"Calling generate_answer with conversation_id: {conversation_id}")
+            answer_result = await answer_service.generate_answer(comment.text, conversation_id)
             
             # Сохраняем результат
             if answer_result.get('error'):

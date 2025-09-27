@@ -19,8 +19,8 @@ class InstagramGraphAPIService:
             raise ValueError("Instagram access token is required")
         
         # Log token info for debugging (without exposing the actual token)
-        logger.info(f"Instagram service initialized with token: {self.access_token[:10]}...{self.access_token[-4:] if len(self.access_token) > 14 else '***'}")
-        logger.info(f"Base URL: {self.base_url}")
+        logger.debug(f"Instagram service initialized with token: {self.access_token[:10]}...{self.access_token[-4:] if len(self.access_token) > 14 else '***'}")
+        logger.debug(f"Base URL: {self.base_url}")
     
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
         """
@@ -44,22 +44,22 @@ class InstagramGraphAPIService:
         }
         
         try:
-            logger.info(f"Sending reply to comment {comment_id} with URL: {url}")
-            logger.info(f"Request params: {params}")
+            logger.debug(f"Sending reply to comment {comment_id} with URL: {url}")
+            logger.debug(f"Request params: {params}")
             
             async with aiohttp.ClientSession() as session:
                 # Use POST request with query parameters to match your working Postman request
                 async with session.post(url, params=params) as response:
                     response_data = await response.json()
                     
-                    logger.info(f"Response status: {response.status}")
-                    logger.info(f"Response data: {response_data}")
+                    logger.debug(f"Response status: {response.status}")
+                    logger.debug(f"Response data: {response_data}")
                     
                     if response.status == 200:
                         logger.info(f"Successfully sent reply to comment {comment_id}")
                         # Extract reply_id from response to prevent infinite loops
                         reply_id = response_data.get("id") if isinstance(response_data, dict) else None
-                        logger.info(f"Extracted reply_id: {reply_id} from response: {response_data}")
+                        logger.debug(f"Extracted reply_id: {reply_id} from response: {response_data}")
                         return {
                             "success": True,
                             "response": response_data,
@@ -67,7 +67,12 @@ class InstagramGraphAPIService:
                             "status_code": response.status
                         }
                     else:
-                        logger.error(f"Failed to send reply to comment {comment_id}: {response_data}")
+                        # Check if it's a rate limiting error
+                        error_data = response_data.get("error", {})
+                        if error_data.get("code") == 2 and "retry" in error_data.get("message", "").lower():
+                            logger.warning(f"Instagram API rate limit for comment {comment_id}, will retry")
+                        else:
+                            logger.error(f"Failed to send reply to comment {comment_id}: {response_data}")
                         return {
                             "success": False,
                             "error": response_data,

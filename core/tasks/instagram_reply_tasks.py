@@ -139,7 +139,9 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                 logger.error(f"Failed to send Instagram reply for comment {comment_id}: {reply_result}")
                 
                 if task_instance and task_instance.request.retries < task_instance.max_retries:
-                    retry_countdown = 2 ** task_instance.request.retries * 60
+                    # Use shorter retry intervals for Instagram API rate limiting
+                    retry_countdown = min(2 ** task_instance.request.retries * 30, 300)  # Max 5 minutes
+                    logger.warning(f"Instagram API error for comment {comment_id}, retry {task_instance.request.retries + 1}/{task_instance.max_retries} in {retry_countdown}s")
                     raise task_instance.retry(countdown=retry_countdown, exc=Exception(reply_result.get("error", "Unknown error")))
                 
                 # Mark as failed after max retries

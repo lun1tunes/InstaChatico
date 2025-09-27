@@ -70,11 +70,28 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                     # Debug: Log the full webhook data structure
                     logger.info(f"Webhook data for comment {comment_id}: {change.value.model_dump()}")
                     
-                    # Check if this is a reply (has parent_id) - if so, skip it completely to prevent infinite loops
+                    # Check if this is a reply and determine if it's from our bot or a user
                     if hasattr(change.value, 'parent_id') and change.value.parent_id:
-                        logger.info(f"Comment {comment_id} is a reply to {change.value.parent_id} - SKIPPING to prevent infinite loops")
-                        skipped_comments += 1
-                        continue
+                        parent_id = change.value.parent_id
+                        comment_username = change.value.from_.username
+                        logger.info(f"Comment {comment_id} is a reply to parent {parent_id} from user: {comment_username}")
+                        
+                        # Check if this comment is from our bot (by username)
+                        if settings.instagram.bot_username and comment_username == settings.instagram.bot_username:
+                            logger.info(f"Comment {comment_id} is from our bot ({comment_username}) - SKIPPING to prevent infinite loops")
+                            skipped_comments += 1
+                            continue
+                        
+                        # Check if the parent comment was replied to by our bot (to prevent infinite loops)
+                        parent_reply_check = await session.execute(
+                            select(QuestionAnswer).where(QuestionAnswer.reply_id == parent_id)
+                        )
+                        if parent_reply_check.scalar_one_or_none():
+                            logger.info(f"Comment {comment_id} is a reply to our bot's comment {parent_id} - SKIPPING to prevent infinite loops")
+                            skipped_comments += 1
+                            continue
+                        else:
+                            logger.info(f"Comment {comment_id} is a user reply to another user's comment {parent_id} - PROCESSING normally")
                     
                     # Additional safety check: Check if this comment_id exists as a reply_id in our database
                     reply_check = await session.execute(
@@ -84,6 +101,9 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                         logger.info(f"Comment {comment_id} is our own reply (found in reply_id), skipping to prevent infinite loop")
                         skipped_comments += 1
                         continue
+                    
+                    # Log the decision for processing
+                    logger.info(f"Comment {comment_id} passed all infinite loop checks - will be processed")
                     
                     try:
                         # Check if comment already exists
@@ -99,6 +119,14 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                             skipped_comments += 1
                             continue
                         
+                        # Extract parent_id if present (for replies)
+                        parent_id = None
+                        if hasattr(change.value, 'parent_id') and change.value.parent_id:
+                            parent_id = change.value.parent_id
+                            logger.info(f"Comment {comment_id} is a reply to parent comment: {parent_id}")
+                        else:
+                            logger.info(f"Comment {comment_id} is a top-level comment (no parent)")
+                        
                         # Create new comment
                         comment_data = {
                             "id": comment_id,
@@ -107,6 +135,7 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                             "username": change.value.from_.username,
                             "text": change.value.text,
                             "created_at": datetime.datetime.fromtimestamp(entry.time),
+                            "parent_id": parent_id,
                             "raw_data": change.value.model_dump()
                         }
                         
