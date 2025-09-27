@@ -57,6 +57,8 @@ services:
       - APP_SECRET=${APP_SECRET:-default_app_secret}
       - DOCS_USERNAME=${DOCS_USERNAME}
       - DOCS_PASSWORD=${DOCS_PASSWORD}
+      - TG_TOKEN=${TG_TOKEN}
+      - TG_CHAT_ID=${TG_CHAT_ID}
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,6 +79,8 @@ services:
       - INSTA_TOKEN=${INSTA_TOKEN}
       - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
       - APP_SECRET=${APP_SECRET:-default_app_secret}
+      - TG_TOKEN=${TG_TOKEN}
+      - TG_CHAT_ID=${TG_CHAT_ID}
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,6 +101,8 @@ services:
       - INSTA_TOKEN=${INSTA_TOKEN}
       - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
       - APP_SECRET=${APP_SECRET:-default_app_secret}
+      - TG_TOKEN=${TG_TOKEN}
+      - TG_CHAT_ID=${TG_CHAT_ID}
     depends_on:
       postgres:
         condition: service_healthy
