@@ -17,21 +17,101 @@ class CommentClassificationService:
         # This ensures we reuse the same agent instance across all service instances
         self.classification_agent = comment_classification_agent
     
-    def _get_session(self, conversation_id: str) -> SQLiteSession:
+    async def _get_session_with_media_context(self, conversation_id: str, media_context: Optional[Dict[str, Any]] = None) -> SQLiteSession:
         """
-        Get or create a SQLiteSession for the given conversation ID
-        
+        Get or create a SQLiteSession with media context for the given conversation ID
+
         Args:
             conversation_id: Unique identifier for the conversation (first question comment ID)
-            
+            media_context: Media information to inject into session context
+
         Returns:
-            SQLiteSession instance for the conversation
+            SQLiteSession instance with media context
         """
-        logger.debug(f"Creating/retrieving SQLiteSession for conversation_id: {conversation_id}")
+        logger.debug(f"Creating/retrieving SQLiteSession with media context for conversation_id: {conversation_id}")
         logger.debug(f"Session database path: {self.db_path}")
         session = SQLiteSession(conversation_id, self.db_path)
-        logger.debug(f"SQLiteSession created successfully for conversation: {conversation_id}")
+
+        # Inject media context into session if available
+        if media_context:
+            await self._inject_media_context_to_session(session, media_context)
+        
+        logger.debug(f"SQLiteSession with media context created successfully for conversation: {conversation_id}")
         return session
+    
+    async def _inject_media_context_to_session(self, session: SQLiteSession, media_context: Dict[str, Any]) -> None:
+        """
+        Inject media context into the session for AI agents
+
+        Args:
+            session: SQLiteSession instance
+            media_context: Media information dictionary
+        """
+        try:
+            # Create a comprehensive media description
+            media_description = self._create_media_description(media_context)
+
+            # Add media context as a system message to the session
+            # This will be available to the AI agent throughout the conversation
+            await session.add_items([{
+                "role": "system",
+                "content": f"MEDIA CONTEXT: {media_description}"
+            }])
+
+            logger.debug(f"Injected media context into session: {media_description[:100]}...")
+
+        except Exception as e:
+            logger.warning(f"Failed to inject media context into session: {e}")
+    
+    def _create_media_description(self, media_context: Dict[str, Any]) -> str:
+        """
+        Create a comprehensive media description from context
+        
+        Args:
+            media_context: Media information dictionary
+            
+        Returns:
+            Formatted media description string
+        """
+        description_parts = []
+        
+        # Basic media info
+        if media_context.get('media_type'):
+            description_parts.append(f"Post Type: {media_context['media_type']}")
+        
+        if media_context.get('username'):
+            description_parts.append(f"Author: @{media_context['username']}")
+        
+        # Post content
+        if media_context.get('caption'):
+            caption = media_context['caption']
+            # Truncate long captions but keep important info
+            if len(caption) > 500:
+                caption = caption[:500] + "..."
+            description_parts.append(f"Post Caption: {caption}")
+        
+        if media_context.get('media_url'):
+            description_parts.append(f"Media URL: {media_context['media_url']}")
+        
+        # Engagement metrics
+        engagement_parts = []
+        if media_context.get('comments_count') is not None:
+            engagement_parts.append(f"{media_context['comments_count']} comments")
+        if media_context.get('like_count') is not None:
+            engagement_parts.append(f"{media_context['like_count']} likes")
+        
+        if engagement_parts:
+            description_parts.append(f"Engagement: {', '.join(engagement_parts)}")
+        
+        # Additional context
+        if media_context.get('is_comment_enabled') is not None:
+            status = "enabled" if media_context['is_comment_enabled'] else "disabled"
+            description_parts.append(f"Comments: {status}")
+        
+        if media_context.get('permalink'):
+            description_parts.append(f"Post URL: {media_context['permalink']}")
+        
+        return "\n".join(description_parts)
     
     def _generate_conversation_id(self, comment_id: str, parent_id: Optional[str] = None) -> str:
         """
@@ -51,11 +131,11 @@ class CommentClassificationService:
             # If this is a top-level comment, use its own ID
             return f"first_question_comment_{comment_id}"
     
-    async def classify_comment(self, comment_text: str, conversation_id: Optional[str] = None) -> Dict[str, Any]:
+    async def classify_comment(self, comment_text: str, conversation_id: Optional[str] = None, media_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Asynchronous comment classification using OpenAI Agents SDK"""
         try:
-            # Format input with conversation context
-            formatted_input = self._format_input_with_context(comment_text, conversation_id)
+            # Format input with conversation and media context
+            formatted_input = self._format_input_with_context(comment_text, conversation_id, media_context)
             
             if len(formatted_input) > 2000:  # Increased limit for context
                 formatted_input = formatted_input[:2000] + "..."
@@ -66,14 +146,14 @@ class CommentClassificationService:
             # Use session if conversation_id is provided
             if conversation_id:
                 logger.debug(f"Starting classification with persistent session for conversation_id: {conversation_id}")
-                # Use SQLiteSession for persistent conversation
-                session = self._get_session(conversation_id)
+                # Use SQLiteSession with media context for persistent conversation
+                session = await self._get_session_with_media_context(conversation_id, media_context)
                 result = await Runner.run(
-                    self.classification_agent, 
+                    self.classification_agent,
                     input=formatted_input,
                     session=session
                 )
-                logger.info(f"Classification completed using SQLiteSession for conversation: {conversation_id}")
+                logger.info(f"Classification completed using SQLiteSession with media context for conversation: {conversation_id}")
             else:
                 logger.debug("Starting classification without session (stateless mode)")
                 # Use regular Runner without session
@@ -131,28 +211,51 @@ class CommentClassificationService:
         
         return sanitized
     
-    def _format_input_with_context(self, comment_text: str, conversation_id: Optional[str] = None) -> str:
+    def _format_input_with_context(self, comment_text: str, conversation_id: Optional[str] = None, media_context: Optional[Dict[str, Any]] = None) -> str:
         """
-        Format the input text with conversation context if available
-        
-        Note: SQLiteSession from OpenAI Agents SDK manages conversation history internally.
-        The session will automatically provide context to the agent when used.
+        Format the input text with conversation and media context
         
         Args:
             comment_text: The comment text to classify
             conversation_id: Optional conversation ID for context
+            media_context: Optional media information for richer context
             
         Returns:
-            Sanitized comment text (context is handled by the session internally)
+            Formatted text with context information
         """
         sanitized_text = self._sanitize_input(comment_text)
         
+        # Build context information
+        context_parts = []
+        
+        # Add media context if available
+        if media_context:
+            media_info = []
+            if media_context.get('caption'):
+                media_info.append(f"Post caption: {media_context['caption'][:200]}...")
+            if media_context.get('media_type'):
+                media_info.append(f"Post type: {media_context['media_type']}")
+            if media_context.get('username'):
+                media_info.append(f"Post author: @{media_context['username']}")
+            if media_context.get('comments_count') is not None:
+                media_info.append(f"Post has {media_context['comments_count']} comments")
+            if media_context.get('like_count') is not None:
+                media_info.append(f"Post has {media_context['like_count']} likes")
+            
+            if media_info:
+                context_parts.append("Media context:")
+                context_parts.extend(media_info)
+        
+        # Add conversation context if available
         if conversation_id:
-            logger.debug(f"Using SQLiteSession for conversation context: {conversation_id}")
-            # SQLiteSession from OpenAI Agents SDK manages conversation history internally
-            # The session will automatically provide context to the agent when used
-            # We just return the sanitized text - the session handles context internally
-            return sanitized_text
+            context_parts.append(f"Conversation ID: {conversation_id}")
+        
+        # Combine all context
+        if context_parts:
+            context_text = "\n".join(context_parts)
+            formatted_input = f"{context_text}\n\nComment to classify: {sanitized_text}"
+            logger.debug(f"Formatted input with context: {formatted_input[:200]}...")
+            return formatted_input
         
         # Return sanitized text without context
         return sanitized_text

@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.orm import selectinload
 
 from ..celery_app import celery_app
-from ..models import CommentClassification, InstagramComment, ProcessingStatus
+from ..models import CommentClassification, InstagramComment, ProcessingStatus, Media
 from ..services.classification_service import CommentClassificationService
+from ..services.media_service import MediaService
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,23 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 logger.warning(f"Comment {comment_id} not found")
                 return {"status": "error", "reason": "comment_not_found"}
             
+            # Ensure media data exists before classification
+            logger.info(f"Ensuring media data exists for comment {comment_id} (media_id: {comment.media_id})")
+            media_service = MediaService()
+            media = await media_service.get_or_create_media(comment.media_id, session)
+            
+            if not media:
+                logger.error(f"Failed to get/create media {comment.media_id} for comment {comment_id}")
+                # Retry the classification task after a delay
+                if task_instance and task_instance.request.retries < task_instance.max_retries:
+                    retry_countdown = 30  # Wait 30 seconds for media to be processed
+                    logger.warning(f"Retrying classification for comment {comment_id} in {retry_countdown} seconds (waiting for media data)")
+                    raise task_instance.retry(countdown=retry_countdown)
+                else:
+                    return {"status": "error", "reason": "media_data_unavailable"}
+            
+            logger.info(f"Media data confirmed for comment {comment_id}: {media.id}")
+            
             # Создаем или получаем запись классификации
             if comment.classification:
                 classification = comment.classification
@@ -63,8 +81,20 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             # Set conversation_id on the comment
             comment.conversation_id = conversation_id
             
-            # Классификация with session management
-            classification_result = await classifier.classify_comment(comment.text, conversation_id)
+            # Prepare media context for classification
+            media_context = {
+                'caption': media.caption,
+                'media_type': media.media_type,
+                'username': media.username,
+                'comments_count': media.comments_count,
+                'like_count': media.like_count,
+                'permalink': media.permalink,
+                'media_url': media.media_url,
+                'is_comment_enabled': media.is_comment_enabled
+            }
+            
+            # Классификация with session management and media context
+            classification_result = await classifier.classify_comment(comment.text, conversation_id, media_context)
             
             # Сохраняем результат
             classification.classification = classification_result['classification']

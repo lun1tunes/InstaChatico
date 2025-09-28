@@ -8,8 +8,9 @@ from sqlalchemy.orm import selectinload
 from ..celery_app import celery_app
 from ..config import settings
 
-from ..models import QuestionAnswer, CommentClassification, InstagramComment, AnswerStatus, ProcessingStatus
+from ..models import QuestionAnswer, CommentClassification, InstagramComment, AnswerStatus, ProcessingStatus, Media
 from ..services.answer_service import QuestionAnswerService
+from ..services.media_service import MediaService
 
 logger = logging.getLogger(__name__)
 
@@ -100,11 +101,35 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             
             await session.commit()
             
-            # Генерируем ответ с использованием сессии
+            # Ensure media data exists for answer generation
+            logger.info(f"Ensuring media data exists for answer generation (comment: {comment_id}, media_id: {comment.media_id})")
+            media_service = MediaService()
+            media = await media_service.get_or_create_media(comment.media_id, session)
+            
+            if not media:
+                logger.error(f"Failed to get/create media {comment.media_id} for answer generation")
+                answer_record.processing_status = AnswerStatus.FAILED
+                answer_record.last_error = "Media data unavailable"
+                await session.commit()
+                return {"status": "error", "reason": "media_data_unavailable"}
+            
+            # Prepare media context for answer generation
+            media_context = {
+                'caption': media.caption,
+                'media_type': media.media_type,
+                'username': media.username,
+                'comments_count': media.comments_count,
+                'like_count': media.like_count,
+                'permalink': media.permalink,
+                'media_url': media.media_url,
+                'is_comment_enabled': media.is_comment_enabled
+            }
+            
+            # Генерируем ответ с использованием сессии и медиа контекста
             logger.debug(f"Initializing QuestionAnswerService for comment: {comment_id}")
             answer_service = QuestionAnswerService()
-            logger.debug(f"Calling generate_answer with conversation_id: {conversation_id}")
-            answer_result = await answer_service.generate_answer(comment.text, conversation_id)
+            logger.debug(f"Calling generate_answer with conversation_id: {conversation_id} and media context")
+            answer_result = await answer_service.generate_answer(comment.text, conversation_id, media_context)
             
             # Сохраняем результат
             if answer_result.get('error'):

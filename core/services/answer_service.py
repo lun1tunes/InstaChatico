@@ -27,21 +27,33 @@ class QuestionAnswerService:
     def _get_session(self, conversation_id: str) -> SQLiteSession:
         """
         Get or create a SQLiteSession for the given conversation ID
-        
+        Note: Media context is already injected by the classification service
+
         Args:
             conversation_id: Unique identifier for the conversation (first question comment ID)
-            
+
         Returns:
-            SQLiteSession instance for the conversation
+            SQLiteSession instance (reuses existing session with media context)
         """
         logger.debug(f"Creating/retrieving SQLiteSession for conversation_id: {conversation_id}")
         logger.debug(f"Session database path: {self.db_path}")
         session = SQLiteSession(conversation_id, self.db_path)
-        logger.debug(f"SQLiteSession created successfully for conversation: {conversation_id}")
+        
+        logger.debug(f"SQLiteSession retrieved successfully for conversation: {conversation_id}")
         return session
     
-    async def generate_answer(self, question_text: str, conversation_id: Optional[str] = None) -> Dict[str, Any]:
-        """Generate an answer for a customer question"""
+    async def generate_answer(self, question_text: str, conversation_id: Optional[str] = None, media_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Generate an answer for a customer question
+        
+        Args:
+            question_text: The customer's question text
+            conversation_id: Optional conversation ID for session management
+            media_context: Optional media context (not used - already in session from classification)
+            
+        Returns:
+            Dict containing the generated answer and metadata
+        """
         start_time = time.time()
         
         try:
@@ -54,7 +66,7 @@ class QuestionAnswerService:
             # Use session if conversation_id is provided
             if conversation_id:
                 logger.debug(f"Starting answer generation with persistent session for conversation_id: {conversation_id}")
-                # Use SQLiteSession for persistent conversation
+                # Use SQLiteSession (media context already injected by classification service)
                 session = self._get_session(conversation_id)
                 result = await Runner.run(self.response_agent, input=sanitized_text, session=session)
                 logger.info(f"Answer generated successfully using SQLiteSession for conversation: {conversation_id}")
@@ -63,8 +75,8 @@ class QuestionAnswerService:
                 # Use regular Runner without session
                 result = await Runner.run(self.response_agent, input=sanitized_text)
                 logger.info("Answer generated successfully without session")
-            answer_result = result.final_output
             
+            answer_result = result.final_output
             processing_time_ms = int((time.time() - start_time) * 1000)
             
             return {
@@ -73,7 +85,7 @@ class QuestionAnswerService:
                 'quality_score': answer_result.quality_score,
                 'tokens_used': self._estimate_tokens(sanitized_text + answer_result.answer),
                 'processing_time_ms': processing_time_ms,
-                'llm_raw_response': str(result),  # Convert result to string since raw_output might not exist
+                'llm_raw_response': str(result),
                 'conversation_id': conversation_id,
                 'session_used': conversation_id is not None,
                 'meta_data': {
@@ -97,7 +109,6 @@ class QuestionAnswerService:
         sanitized = html.escape(text)
         sanitized = ' '.join(sanitized.split())
         return sanitized
-    
     
     def _estimate_tokens(self, text: str) -> int:
         """Rough estimation of token count (4 chars ≈ 1 token)"""
