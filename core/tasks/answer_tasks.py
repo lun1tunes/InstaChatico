@@ -57,15 +57,20 @@ async def generate_answer_async(comment_id: str, task_instance=None):
                 logger.warning(f"Comment {comment_id} classification not completed yet")
                 return {"status": "error", "reason": "classification_not_completed"}
             
-            # Determine conversation_id (first question comment ID)
-            # If this is a reply, use the parent comment ID for conversation grouping
-            # Otherwise, use the current comment ID
-            if comment.parent_id:
-                conversation_id = f"first_question_comment_{comment.parent_id}"
-                logger.info(f"Comment {comment_id} is a reply to {comment.parent_id}, using parent for conversation_id: {conversation_id}")
-            else:
-                conversation_id = f"first_question_comment_{comment_id}"
-                logger.info(f"Comment {comment_id} is top-level, setting conversation_id: {conversation_id}")
+            # Use conversation_id from the comment (set during classification)
+            conversation_id = comment.conversation_id
+            if not conversation_id:
+                logger.warning(f"Comment {comment_id} has no conversation_id, generating one")
+                # Fallback: generate conversation_id if not set
+                if comment.parent_id:
+                    conversation_id = f"first_question_comment_{comment.parent_id}"
+                else:
+                    conversation_id = f"first_question_comment_{comment_id}"
+                # Update the comment with the generated conversation_id
+                comment.conversation_id = conversation_id
+                await session.commit()
+            
+            logger.info(f"Using conversation_id for comment {comment_id}: {conversation_id}")
             
             # Создаем или получаем запись ответа
             existing_answer = await session.execute(
@@ -83,14 +88,10 @@ async def generate_answer_async(comment_id: str, task_instance=None):
                 answer_record.processing_status = AnswerStatus.PROCESSING
                 answer_record.processing_started_at = datetime.utcnow()
                 answer_record.retry_count = task_instance.request.retries if task_instance else 0
-                # Update conversation_id if not set
-                if not answer_record.conversation_id:
-                    answer_record.conversation_id = conversation_id
             else:
                 # Создаем новую запись
                 answer_record = QuestionAnswer(
                     comment_id=comment_id,
-                    conversation_id=conversation_id,
                     processing_status=AnswerStatus.PROCESSING,
                     processing_started_at=datetime.utcnow(),
                     retry_count=task_instance.request.retries if task_instance else 0

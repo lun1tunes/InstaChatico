@@ -56,9 +56,15 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             
             await session.commit()
             
-            # Классификация
+            # Create classifier and generate conversation_id based on comment hierarchy
             classifier = CommentClassificationService()
-            classification_result = await classifier.classify_comment(comment.text)
+            conversation_id = classifier._generate_conversation_id(comment.id, comment.parent_id)
+            
+            # Set conversation_id on the comment
+            comment.conversation_id = conversation_id
+            
+            # Классификация with session management
+            classification_result = await classifier.classify_comment(comment.text, conversation_id)
             
             # Сохраняем результат
             classification.classification = classification_result['classification']
@@ -68,7 +74,10 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             classification.meta_data = {
                 'contains_question': classification_result['contains_question'],
                 'sentiment_score': classification_result['sentiment_score'],
-                'toxicity_score': classification_result['toxicity_score']
+                'toxicity_score': classification_result['toxicity_score'],
+                'context_used': classification_result.get('context_used', False),
+                'conversation_continuity': classification_result.get('conversation_continuity', False),
+                'session_used': classification_result.get('session_used', False)
             }
             
             if classification_result.get('error'):

@@ -29,6 +29,14 @@ class InstagramComment(Base):
         comment="ID of the parent comment if this is a reply, NULL if it's a top-level comment"
     )
     
+    # Session management for chained conversations
+    conversation_id: Mapped[str | None] = mapped_column(
+        String(100), 
+        nullable=True, 
+        index=True,
+        comment="Conversation ID for session management - first_question_comment_{id} format"
+    )
+    
     # Relationship to classification
     classification: Mapped[CommentClassification] = relationship(
         "CommentClassification", 
