@@ -1,8 +1,8 @@
 """
 Telegram Notification Tasks
 
-This module contains Celery tasks for sending urgent issue notifications
-to Telegram when Instagram comments are classified as urgent issues.
+This module contains Celery tasks for sending notifications to Telegram
+when Instagram comments are classified as urgent issues or critical feedback.
 """
 
 import asyncio
@@ -30,7 +30,7 @@ def send_telegram_notification_task(self, comment_id: str):
         loop.close()
 
 async def send_telegram_notification_async(comment_id: str, task_instance=None):
-    """Async task to send urgent issue notification to Telegram"""
+    """Async task to send notification to Telegram for urgent issues or critical feedback"""
     
     # Create a fresh engine and session for this task
     engine = create_async_engine(settings.db.url, echo=settings.db.echo)
@@ -54,10 +54,11 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
                 logger.warning(f"No classification found for comment {comment_id}")
                 return {"status": "error", "reason": "no_classification"}
             
-            # Check if this is actually an urgent issue
-            if comment.classification.classification != "urgent issue / complaint":
-                logger.info(f"Comment {comment_id} is not urgent, skipping Telegram notification")
-                return {"status": "skipped", "reason": "not_urgent"}
+            # Check if this comment requires a Telegram notification
+            classification = comment.classification.classification
+            if classification not in ["urgent issue / complaint", "critical feedback"]:
+                logger.info(f"Comment {comment_id} classification '{classification}' does not require Telegram notification")
+                return {"status": "skipped", "reason": "no_notification_needed"}
             
             # Prepare comment data for Telegram notification
             comment_data = {
@@ -75,7 +76,7 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
             
             # Send Telegram notification
             telegram_service = TelegramAlertService()
-            notification_result = await telegram_service.send_urgent_issue_notification(comment_data)
+            notification_result = await telegram_service.send_notification(comment_data)
             
             if notification_result.get("success"):
                 logger.info(f"Telegram notification sent successfully for comment {comment_id}")
