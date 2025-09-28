@@ -9,6 +9,7 @@ from .base import Base
 if TYPE_CHECKING:
     from .comment_classification import CommentClassification
     from .question_answer import QuestionAnswer
+    from .media import Media
     
 class InstagramComment(Base):
     __tablename__ = "instagram_comments"
@@ -54,4 +55,13 @@ class InstagramComment(Base):
         uselist=False,
         passive_deletes=True,
         overlaps="classification",
+    )
+    
+    # Relationship to media
+    media: Mapped[Media] = relationship(
+        "Media",
+        foreign_keys="InstagramComment.media_id",
+        primaryjoin="InstagramComment.media_id == Media.id",
+        back_populates="comments",
+        passive_deletes=False,  # Don't delete media when comment is deleted
     )

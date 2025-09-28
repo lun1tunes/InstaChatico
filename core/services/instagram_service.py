@@ -184,6 +184,58 @@ class InstagramGraphAPIService:
                 "status_code": None
             }
     
+    async def get_media_info(self, media_id: str) -> Dict[str, Any]:
+        """
+        Get information about an Instagram media post
+        
+        Args:
+            media_id: The ID of the Instagram media post
+            
+        Returns:
+            Dict containing media information
+        """
+        url = f"{self.base_url}/{media_id}"
+        
+        params = {
+            "access_token": self.access_token,
+            "fields": "permalink,comments_count,like_count,shortcode,timestamp,is_comment_enabled,media_type,media_url,username,owner,caption"
+        }
+        
+        try:
+            logger.debug(f"Getting media info for {media_id} with URL: {url}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    response_data = await response.json()
+                    
+                    logger.debug(f"Media info response status: {response.status}")
+                    logger.debug(f"Media info response: {response_data}")
+                    
+                    if response.status == 200:
+                        logger.info(f"Successfully retrieved media info for {media_id}")
+                        return {
+                            "success": True,
+                            "media_info": response_data,
+                            "status_code": response.status
+                        }
+                    else:
+                        logger.error(f"Failed to get media info for {media_id}: {response_data}")
+                        return {
+                            "success": False,
+                            "error": response_data,
+                            "status_code": response.status
+                        }
+                        
+        except Exception as e:
+            logger.error(f"Exception while getting media info for {media_id}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": str(e),
+                "status_code": None
+            }
+    
     async def get_page_info(self) -> Dict[str, Any]:
         """
         Get Instagram page information using the access token
