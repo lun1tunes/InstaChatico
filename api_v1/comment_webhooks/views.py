@@ -2,18 +2,20 @@ import datetime
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.models import db_helper
 from core.config import settings
+from core.models import db_helper
+from core.models.comment_classification import (CommentClassification,
+                                                ProcessingStatus)
 from core.models.instagram_comment import InstagramComment
-from core.models.comment_classification import CommentClassification, ProcessingStatus
 from core.models.question_answer import QuestionAnswer
 from core.tasks.classification_tasks import classify_comment_task
-from sqlalchemy import select
+
 from . import crud
 from .schemas import WebhookPayload
 

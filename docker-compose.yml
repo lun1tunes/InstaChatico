@@ -68,6 +68,8 @@ services:
     networks:
       - instagram_network
     command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT --reload"
+    security_opt:
+      - no-new-privileges:true
 
   celery_worker:
     build: .
@@ -93,6 +95,8 @@ services:
     networks:
       - instagram_network
     command: sh -c "python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=info --concurrency=4 -Q llm_queue,instagram_queue"
+    security_opt:
+      - no-new-privileges:true
 
   celery_beat:
     build: .
@@ -118,6 +122,8 @@ services:
     networks:
       - instagram_network
     command: celery -A celery_worker beat --loglevel=info
+    security_opt:
+      - no-new-privileges:true
 
   dozzle:
     image: amir20/dozzle:latest

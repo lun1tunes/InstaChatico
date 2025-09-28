@@ -211,3 +211,6 @@ __marimo__/
 # Security: Signature calculator with sensitive data
 signature_calculator.py
 dozzle-users.yml
+
+# Agent instructions - keep prompts secure and separate from code
+core/agents/instructions/
