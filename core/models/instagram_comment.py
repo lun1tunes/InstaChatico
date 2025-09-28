@@ -15,7 +15,7 @@ class InstagramComment(Base):
     __tablename__ = "instagram_comments"
     
     id: Mapped[str] = mapped_column(primary_key=True)
-    media_id: Mapped[str]
+    media_id: Mapped[str] = mapped_column(String(100), ForeignKey("media.id"), comment="Foreign key to media table")
     user_id: Mapped[str]
     username: Mapped[str]
     text: Mapped[str]

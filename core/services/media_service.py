@@ -61,7 +61,7 @@ class MediaService:
                 timestamp=self._parse_timestamp(media_info.get("timestamp")),
                 is_comment_enabled=media_info.get("is_comment_enabled"),
                 username=media_info.get("username"),
-                owner=media_info.get("owner"),
+                owner=self._parse_owner(media_info.get("owner")),
                 raw_data=media_info,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
@@ -97,7 +97,65 @@ class MediaService:
         
         try:
             # Instagram timestamps are typically in ISO format
-            return datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            # Convert to timezone-naive datetime for database storage
+            if dt.tzinfo is not None:
+                dt = dt.replace(tzinfo=None)
+            return dt
         except (ValueError, AttributeError) as e:
             logger.warning(f"Failed to parse timestamp '{timestamp_str}': {e}")
             return None
+    
+    def _parse_owner(self, owner_data: Optional[dict]) -> Optional[str]:
+        """
+        Parse Instagram owner data to string
+        
+        Args:
+            owner_data: Instagram owner data (dict with 'id' key)
+            
+        Returns:
+            owner ID string or None
+        """
+        if not owner_data:
+            return None
+        
+        if isinstance(owner_data, dict):
+            return owner_data.get("id")
+        
+        if isinstance(owner_data, str):
+            return owner_data
+        
+        return None
+    
+    async def ensure_media_exists(self, media_id: str, session: AsyncSession) -> bool:
+        """
+        Ensure media exists in database, queue task if not found
+        
+        Args:
+            media_id: The Instagram media ID
+            session: Database session
+            
+        Returns:
+            True if media exists or task was queued, False if failed
+        """
+        try:
+            # Check if media already exists
+            existing_media = await session.execute(
+                select(Media).where(Media.id == media_id)
+            )
+            media = existing_media.scalar_one_or_none()
+            
+            if media:
+                logger.debug(f"Media {media_id} already exists in database")
+                return True
+            
+            # Media doesn't exist, queue task for background processing
+            logger.info(f"Media {media_id} not found, queuing background task")
+            from core.tasks.media_tasks import process_media_task
+            process_media_task.delay(media_id)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Exception while ensuring media {media_id} exists: {e}")
+            return False

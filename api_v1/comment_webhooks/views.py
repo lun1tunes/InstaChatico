@@ -15,7 +15,7 @@ from core.models.comment_classification import (CommentClassification,
 from core.models.instagram_comment import InstagramComment
 from core.models.question_answer import QuestionAnswer
 from core.tasks.classification_tasks import classify_comment_task
-from core.services.media_service import MediaService
+from core.tasks.media_tasks import process_media_task
 
 from . import crud
 from .schemas import WebhookPayload
@@ -130,16 +130,10 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                         else:
                             logger.info(f"Comment {comment_id} is a top-level comment (no parent)")
                         
-                        # Get or create media information
+                        # Queue media processing task
                         media_id = change.value.media.id
-                        logger.info(f"Processing media {media_id} for comment {comment_id}")
-                        
-                        media_service = MediaService()
-                        media = await media_service.get_or_create_media(media_id, session)
-                        
-                        if not media:
-                            logger.error(f"Failed to get/create media {media_id} for comment {comment_id}")
-                            # Continue processing comment even if media fetch fails
+                        logger.info(f"Queuing media processing task for {media_id}")
+                        process_media_task.delay(media_id)
                         
                         # Create new comment
                         comment_data = {
