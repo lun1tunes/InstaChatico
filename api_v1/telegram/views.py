@@ -4,6 +4,7 @@ Telegram API endpoints for testing and management
 
 import logging
 from fastapi import APIRouter, HTTPException
+from core.logging_config import trace_id_ctx
 from core.services.telegram_alert_service import TelegramAlertService
 from core.tasks.telegram_tasks import test_telegram_connection
 
@@ -76,6 +77,38 @@ async def test_telegram_notification():
             status_code=500,
             detail=f"Internal error: {str(e)}"
         )
+
+@router.post("/test-log-alert")
+async def test_log_alert(level: str = "warning"):
+    """Emit a test log at the given level to verify Telegram log alerts.
+    Levels: debug, info, warning, error, critical
+    """
+    level = level.lower().strip()
+    trace_id = trace_id_ctx.get()
+    try:
+        if level == "debug":
+            logger.debug("Test log alert: DEBUG level")
+        elif level == "info":
+            logger.info("Test log alert: INFO level")
+        elif level == "warning":
+            logger.warning("Test log alert: WARNING level")
+        elif level == "error":
+            try:
+                raise ValueError("Simulated error for log alert testing")
+            except Exception:
+                logger.exception("Test log alert: ERROR level with exception")
+        elif level == "critical":
+            try:
+                raise RuntimeError("Simulated critical error for log alert testing")
+            except Exception:
+                logger.exception("Test log alert: CRITICAL level with exception")
+        else:
+            raise HTTPException(status_code=400, detail="Invalid level. Use: debug|info|warning|error|critical")
+    except Exception as e:
+        logger.exception("Failed to emit test log alert")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"status": "emitted", "level": level, "trace_id": trace_id}
 
 @router.get("/config")
 async def get_telegram_config():
