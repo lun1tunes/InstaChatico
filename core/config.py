@@ -33,6 +33,12 @@ class TelegramSettings(BaseModel):
     tg_chat_alerts_thread_id: str = os.getenv("TG_CHAT_ALERTS_THREAD_ID", "")
     tg_chat_logs_thread_id: str = os.getenv("TG_CHAT_LOGS_THREAD_ID", "")
     
+class HealthSettings(BaseModel):
+    cpu_warn_pct: int = int(os.getenv("HEALTH_CPU_WARN_PCT", "85"))
+    mem_warn_pct: int = int(os.getenv("HEALTH_MEM_WARN_PCT", "85"))
+    disk_warn_pct: int = int(os.getenv("HEALTH_DISK_WARN_PCT", "90"))
+    check_interval_seconds: int = int(os.getenv("HEALTH_CHECK_INTERVAL_SECONDS", "600"))
+    
 class DocsSettings(BaseModel):
     username: str = os.getenv("DOCS_USERNAME", "")
     password: str = os.getenv("DOCS_PASSWORD", "")
@@ -46,6 +52,7 @@ class Settings(BaseSettings):
     openai: OpenAISettings = OpenAISettings()
     instagram: InstagramSettings = InstagramSettings()
     telegram: TelegramSettings = TelegramSettings()
+    health: HealthSettings = HealthSettings()
     docs: DocsSettings = DocsSettings() 
     
 settings = Settings()

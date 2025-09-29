@@ -9,7 +9,7 @@ celery_app = Celery(
     'instagram_classifier',
     broker=settings.celery.broker_url,
     backend=settings.celery.result_backend,
-    include=['core.tasks.classification_tasks', 'core.tasks.answer_tasks', 'core.tasks.instagram_reply_tasks', 'core.tasks.telegram_tasks']
+    include=['core.tasks.classification_tasks', 'core.tasks.answer_tasks', 'core.tasks.instagram_reply_tasks', 'core.tasks.telegram_tasks', 'core.tasks.health_tasks']
 )
 
 # Force import of all task modules to ensure they are registered
@@ -17,6 +17,7 @@ import core.tasks.classification_tasks
 import core.tasks.answer_tasks
 import core.tasks.instagram_reply_tasks
 import core.tasks.telegram_tasks
+import core.tasks.health_tasks
 
 # Настройки Celery
 celery_app.conf.update(
@@ -63,6 +64,10 @@ celery_app.conf.beat_schedule = {
     'process-pending-replies': {
         'task': 'core.tasks.instagram_reply_tasks.process_pending_replies_task',
         'schedule': crontab(minute='*/5'),  # Every 5 minutes
+    },
+    'check-system-health': {
+        'task': 'core.tasks.health_tasks.check_system_health_task',
+        'schedule': settings.health.check_interval_seconds,
     },
 }
 
