@@ -4,6 +4,9 @@ import contextvars
 from logging.config import dictConfig
 from core.services.telegram_alert_service import TelegramAlertService
 from datetime import datetime
+import json
+import urllib.request
+from core.config import settings
 
 
 class ChannelAliasFilter(logging.Filter):
@@ -45,26 +48,49 @@ class TelegramLogHandler(logging.Handler):
         try:
             trace_id = getattr(record, 'trace_id', '-')
             when = datetime.utcfromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S')
-            msg = self.format(record)
+            raw_msg = self.format(record)
             details = ''
             if record.exc_info:
                 details = self.formatException(record.exc_info)
-            # Fire and forget: create task only if loop exists; otherwise no-op
-            import asyncio
+            # Prefer a synchronous send to avoid losing alerts when event loops close
+            url = f"https://api.telegram.org/bot{settings.telegram.bot_token}/sendMessage"
+            def esc(text: str) -> str:
+                return (text.replace("&", "&amp;")
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;"))
+
+            safe_msg = esc(raw_msg)[:4000]
+            safe_details = esc(details)[:4000] if details else ''
+
+            text_parts = [
+                "⚠️ <b>APP LOG ALERT</b>",
+                f"<b>Level:</b> {esc(record.levelname)}",
+                f"<b>Logger:</b> {esc(record.name)}",
+                f"<b>Trace:</b> <code>{esc(trace_id)}</code>",
+                f"<b>Time:</b> {esc(when)}",
+                "",
+                f"<b>Message:</b>\n<pre>{safe_msg}</pre>"
+            ]
+            if safe_details:
+                text_parts.append(f"\n<b>Details:</b>\n<pre>{safe_details}</pre>")
+            text = "\n".join(text_parts)
+
             payload = {
-                'level': record.levelname,
-                'logger': record.name,
-                'message': msg,
-                'trace_id': trace_id,
-                'when': when,
-                'details': details,
+                "chat_id": settings.telegram.chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
             }
+            # Include thread id only if provided
+            if getattr(settings.telegram, 'tg_chat_logs_thread_id', None):
+                payload["message_thread_id"] = settings.telegram.tg_chat_logs_thread_id
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
             try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self._svc.send_log_alert(payload))
-            except RuntimeError:
-                # No running loop; best-effort sync send
-                asyncio.run(self._svc.send_log_alert(payload))
+                urllib.request.urlopen(req, timeout=6)  # nosec - trusted API endpoint
+            except Exception:
+                # swallow network errors to not break app logging
+                pass
         except Exception:
             # Never raise from logging handler
             pass
@@ -149,13 +175,19 @@ def configure_logging() -> None:
             },
             # Celery loggers
             "celery": {
-                "handlers": ["console"],
+                "handlers": ["console", "telegram_alerts"],
                 "level": level,
                 "propagate": False,
             },
             "celery.app.trace": {
-                "handlers": ["console"],
+                "handlers": ["console", "telegram_alerts"],
                 "level": level,
+                "propagate": False,
+            },
+            # SQLAlchemy warnings/errors (DB constraint violations, etc.)
+            "sqlalchemy": {
+                "handlers": ["console", "telegram_alerts"],
+                "level": "WARNING",
                 "propagate": False,
             },
         },
