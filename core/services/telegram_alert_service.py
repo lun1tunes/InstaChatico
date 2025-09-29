@@ -24,6 +24,8 @@ class TelegramAlertService:
             self.thread_id = settings.telegram.tg_chat_alerts_thread_id
         elif alert_type == "app_logs":
             self.thread_id = settings.telegram.tg_chat_logs_thread_id
+        else:
+            self.thread_id = None
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
     
     async def send_urgent_issue_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -278,6 +280,50 @@ class TelegramAlertService:
                 "success": False,
                 "error": f"No notification configured for classification: {classification}"
             }
+    
+    async def send_log_alert(self, log_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Send application log alerts to Telegram.
+        Expects keys: level, logger, message, trace_id, when, details (optional)
+        """
+        try:
+            if not self.bot_token or not self.chat_id:
+                logger.error("Telegram bot token or chat ID not configured")
+                return {"success": False, "error": "Telegram configuration missing"}
+
+            level = str(log_data.get("level", "WARNING"))
+            logger_name = str(log_data.get("logger", "-"))
+            message = str(log_data.get("message", ""))
+            trace_id = str(log_data.get("trace_id", "-"))
+            when = str(log_data.get("when", ""))
+            details = str(log_data.get("details", ""))
+
+            def escape_html(text: str) -> str:
+                if not text:
+                    return ""
+                return (text.replace("&", "&amp;")
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                            .replace("'", "&#x27;"))
+
+            safe_message = escape_html(message[:4000])
+            safe_details = escape_html(details[:4000])
+
+            text = (
+                f"⚠️ <b>APP LOG ALERT</b>\n\n"
+                f"<b>Level:</b> {escape_html(level)}\n"
+                f"<b>Logger:</b> {escape_html(logger_name)}\n"
+                f"<b>Trace:</b> <code>{escape_html(trace_id)}</code>\n"
+                f"<b>Time:</b> {escape_html(when)}\n\n"
+                f"<b>Message:</b>\n<pre>{safe_message}</pre>"
+            )
+            if safe_details:
+                text += f"\n<b>Details:</b>\n<pre>{safe_details}</pre>"
+
+            return await self._send_message(text)
+        except Exception as e:
+            logger.exception("Error sending log alert to Telegram")
+            return {"success": False, "error": str(e)}
     
     async def _send_message(self, message: str, parse_mode: str = "HTML") -> Dict[str, Any]:
         """Send message to Telegram chat using aiohttp"""

@@ -2,6 +2,8 @@ import os
 import logging
 import contextvars
 from logging.config import dictConfig
+from core.services.telegram_alert_service import TelegramAlertService
+from datetime import datetime
 
 
 class ChannelAliasFilter(logging.Filter):
@@ -32,6 +34,40 @@ class TraceIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.trace_id = trace_id_ctx.get() or "-"
         return True
+
+
+class TelegramLogHandler(logging.Handler):
+    def __init__(self, level: int = logging.WARNING):
+        super().__init__(level)
+        self._svc = TelegramAlertService(alert_type="app_logs")
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            trace_id = getattr(record, 'trace_id', '-')
+            when = datetime.utcfromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S')
+            msg = self.format(record)
+            details = ''
+            if record.exc_info:
+                details = self.formatException(record.exc_info)
+            # Fire and forget: create task only if loop exists; otherwise no-op
+            import asyncio
+            payload = {
+                'level': record.levelname,
+                'logger': record.name,
+                'message': msg,
+                'trace_id': trace_id,
+                'when': when,
+                'details': details,
+            }
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._svc.send_log_alert(payload))
+            except RuntimeError:
+                # No running loop; best-effort sync send
+                asyncio.run(self._svc.send_log_alert(payload))
+        except Exception:
+            # Never raise from logging handler
+            pass
 
 
 def _resolve_log_level(default: str = "INFO") -> str:
@@ -84,11 +120,15 @@ def configure_logging() -> None:
                 "stream": "ext://sys.stdout",
                 "filters": ["channel", "trace"],
             },
+            "telegram_alerts": {
+                "class": "core.logging_config.TelegramLogHandler",
+                "level": "WARNING",
+            },
         },
         "loggers": {
             # App-level
             "": {  # root
-                "handlers": ["console"],
+                "handlers": ["console", "telegram_alerts"],
                 "level": level,
             },
             # Uvicorn loggers
@@ -120,6 +160,14 @@ def configure_logging() -> None:
             },
         },
     }
+
+    # Optionally disable telegram alerts via env flag
+    if os.getenv('DISABLE_TELEGRAM_LOG_ALERTS', '').strip().lower() in {"1", "true", "yes", "on"}:
+        # Remove telegram handler from root logger
+        try:
+            config["loggers"][""]["handlers"].remove("telegram_alerts")
+        except Exception:
+            pass
 
     dictConfig(config)
     logging.getLogger(__name__).debug("Logging configured with level %s", level)
