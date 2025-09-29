@@ -8,6 +8,7 @@ services:
       POSTGRES_PASSWORD: 3b3e3tzp8e
       POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_INITDB_ARGS: "--auth-host=trust --auth-local=trust"
+      LOGS_LEVEL_POSTGRES: ${LOGS_LEVEL_POSTGRES:-INFO}
     ports:
       - "59731:5432"
     volumes:
@@ -21,6 +22,22 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    command:
+      - postgres
+      - -c
+      - log_destination=stderr
+      - -c
+      - logging_collector=off
+      - -c
+      - log_line_prefix=%m | %p | postgres | 
+      - -c
+      - log_min_messages=${LOGS_LEVEL_POSTGRES:-INFO}
+      - -c
+      - log_min_error_statement=ERROR
+      - -c
+      - log_connections=off
+      - -c
+      - log_disconnections=off
 
   redis:
     image: redis:7-alpine
@@ -29,13 +46,19 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+      - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./config/redis/entrypoint.sh:/docker-entrypoint.d/10-custom-entrypoint.sh:ro
     networks:
       - instagram_network
+    environment:
+      - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
+      - LOGS_LEVEL_REDIS=${LOGS_LEVEL_REDIS:-}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
+    command: ["sh", "-c", "sh /docker-entrypoint.d/10-custom-entrypoint.sh"]
 
   api:
     build: .
@@ -47,9 +70,11 @@ services:
       - conversations_data:/app/conversations
     environment:
       - PORT=${PORT:-4291}
+      - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
+      - LOGS_LEVEL_CELERY=${LOGS_LEVEL_CELERY:-}
+      - LOGS_LEVEL_REDIS=${LOGS_LEVEL_REDIS:-}
       - DATABASE_URL=${DATABASE_URL}
       - CELERY_BROKER_URL=redis://redis:6379/0
-      - DEVELOPMENT_MODE=true
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TOKEN=${TOKEN}
@@ -60,6 +85,8 @@ services:
       - DOCS_PASSWORD=${DOCS_PASSWORD}
       - TG_TOKEN=${TG_TOKEN}
       - TG_CHAT_ID=${TG_CHAT_ID}
+      - TG_CHAT_ALERTS_THREAD_ID=${TG_CHAT_ALERTS_THREAD_ID}
+      - TG_CHAT_LOGS_THREAD_ID=${TG_CHAT_LOGS_THREAD_ID}
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +105,8 @@ services:
       - ./:/app
       - conversations_data:/app/conversations
     environment:
+      - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
+      - LOGS_LEVEL_CELERY=${LOGS_LEVEL_CELERY:-}
       - DATABASE_URL=${DATABASE_URL}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -87,6 +116,8 @@ services:
       - APP_SECRET=${APP_SECRET:-default_app_secret}
       - TG_TOKEN=${TG_TOKEN}
       - TG_CHAT_ID=${TG_CHAT_ID}
+      - TG_CHAT_ALERTS_THREAD_ID=${TG_CHAT_ALERTS_THREAD_ID}
+      - TG_CHAT_LOGS_THREAD_ID=${TG_CHAT_LOGS_THREAD_ID}
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,7 +125,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=info --concurrency=4 -Q llm_queue,instagram_queue"
+    command: sh -c "python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} --concurrency=4 --without-gossip --without-mingle --without-heartbeat -Q llm_queue,instagram_queue"
     security_opt:
       - no-new-privileges:true
 
@@ -105,6 +136,8 @@ services:
       - ./:/app
       - conversations_data:/app/conversations
     environment:
+      - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
+      - LOGS_LEVEL_CELERY=${LOGS_LEVEL_CELERY:-}
       - DATABASE_URL=${DATABASE_URL}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -113,7 +146,9 @@ services:
       - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
       - APP_SECRET=${APP_SECRET:-default_app_secret}
       - TG_TOKEN=${TG_TOKEN}
-      - TG_CHAT_ID=${TG_CHAT_ID}
+      - TG_CHAT_ID=${TG_CHAT_ID} 
+      - TG_CHAT_ALERTS_THREAD_ID=${TG_CHAT_ALERTS_THREAD_ID}
+      - TG_CHAT_LOGS_THREAD_ID=${TG_CHAT_LOGS_THREAD_ID}  
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,7 +156,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: celery -A celery_worker beat --loglevel=info
+    command: celery -A celery_worker beat --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}}
     security_opt:
       - no-new-privileges:true
 

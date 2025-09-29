@@ -17,9 +17,13 @@ logger = logging.getLogger(__name__)
 class TelegramAlertService:
     """Service for sending alert notifications to Telegram for urgent issues and critical feedback"""
     
-    def __init__(self, bot_token: str = None, chat_id: str = None):
+    def __init__(self, bot_token: str = None, chat_id: str = None, alert_type: str = "instagram_comment_alerts"):
         self.bot_token = bot_token or settings.telegram.bot_token
         self.chat_id = chat_id or settings.telegram.chat_id
+        if alert_type == "instagram_comment_alerts":
+            self.thread_id = settings.telegram.tg_chat_alerts_thread_id
+        elif alert_type == "app_logs":
+            self.thread_id = settings.telegram.tg_chat_logs_thread_id
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
     
     async def send_urgent_issue_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -62,7 +66,7 @@ class TelegramAlertService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error sending Telegram notification: {e}")
+            logger.exception("Error sending Telegram notification")
             return {
                 "success": False,
                 "error": str(e)
@@ -108,7 +112,7 @@ class TelegramAlertService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error sending Telegram notification: {e}")
+            logger.exception("Error sending Telegram notification")
             return {
                 "success": False,
                 "error": str(e)
@@ -282,6 +286,7 @@ class TelegramAlertService:
         
         payload = {
             "chat_id": self.chat_id,
+            "message_thread_id": self.thread_id,
             "text": message,
             "parse_mode": parse_mode,
             "disable_web_page_preview": True
@@ -300,7 +305,7 @@ class TelegramAlertService:
             logger.error(f"aiohttp request failed: {e}")
             return {"ok": False, "description": str(e)}
         except Exception as e:
-            logger.error(f"Unexpected error: {e}")
+            logger.exception("Unexpected error during Telegram API request")
             return {"ok": False, "description": str(e)}
     
     async def test_connection(self) -> Dict[str, Any]:
@@ -337,7 +342,7 @@ class TelegramAlertService:
                         }
                 
         except Exception as e:
-            logger.error(f"Error testing Telegram connection: {e}")
+            logger.exception("Error testing Telegram connection")
             return {
                 "success": False,
                 "error": str(e)

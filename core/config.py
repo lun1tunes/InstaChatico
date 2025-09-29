@@ -30,6 +30,8 @@ class InstagramSettings(BaseModel):
 class TelegramSettings(BaseModel):
     bot_token: str = os.getenv("TG_TOKEN", "")
     chat_id: str = os.getenv("TG_CHAT_ID", "")
+    tg_chat_alerts_thread_id: str = os.getenv("TG_CHAT_ALERTS_THREAD_ID", "")
+    tg_chat_logs_thread_id: str = os.getenv("TG_CHAT_LOGS_THREAD_ID", "")
     
 class DocsSettings(BaseModel):
     username: str = os.getenv("DOCS_USERNAME", "")

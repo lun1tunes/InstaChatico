@@ -156,7 +156,7 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                 }
 
         except Exception as exc:
-            logger.error(f"Error sending Instagram reply for comment {comment_id}: {exc}")
+            logger.exception(f"Error sending Instagram reply for comment {comment_id}")
             await session.rollback()
 
             if task_instance and task_instance.request.retries < task_instance.max_retries:
@@ -179,6 +179,17 @@ def process_pending_replies_task(self):
 
 async def process_pending_replies_async(task_instance=None):
     """Process all completed answers that haven't been replied to yet"""
+    # Ensure only one instance runs at a time across workers
+    try:
+        redis_client = redis.Redis.from_url(settings.celery.broker_url)
+        lock_key = "process_pending_replies_lock"
+        # TTL shorter than schedule interval to avoid overlap
+        if not redis_client.set(lock_key, "1", nx=True, ex=240):
+            logger.info("Another process_pending_replies is running; skipping this run")
+            return {"status": "skipped", "reason": "already_running"}
+    except Exception:
+        logger.warning("Failed to acquire process_pending_replies lock; proceeding anyway")
+
     engine = create_async_engine(settings.db.url, echo=settings.db.echo)
     session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
@@ -235,3 +246,10 @@ async def process_pending_replies_async(task_instance=None):
             return {"status": "error", "reason": str(e)}
         finally:
             await engine.dispose()
+            # Release lock by letting TTL expire; ensure key removed if we created it without TTL
+            try:
+                if 'redis_client' in locals():
+                    # Keep it simple; delete if still present
+                    redis_client.delete("process_pending_replies_lock")
+            except Exception:
+                pass

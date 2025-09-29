@@ -39,7 +39,7 @@ class MediaService:
                 return media
             
             # Media doesn't exist, fetch from Instagram API
-            logger.info(f"Media {media_id} not found in database, fetching from Instagram API")
+            logger.debug(f"Media {media_id} not found in database, fetching from Instagram API")
             api_response = await self.instagram_service.get_media_info(media_id)
             
             if not api_response.get("success"):
@@ -72,13 +72,11 @@ class MediaService:
             await session.commit()
             await session.refresh(media)
             
-            logger.info(f"Successfully created media record for {media_id}")
+            logger.info(f"Created media record for {media_id}")
             return media
             
-        except Exception as e:
-            logger.error(f"Exception while getting/creating media {media_id}: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+        except Exception:
+            logger.exception(f"Exception while getting/creating media {media_id}")
             await session.rollback()
             return None
     

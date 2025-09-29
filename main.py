@@ -1,25 +1,25 @@
+from contextlib import asynccontextmanager
 import hashlib
 import hmac
 import logging
 import os
-import secrets
-from contextlib import asynccontextmanager
 
-import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.openapi.utils import get_openapi
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import uvicorn
 
-from core.config import settings
 from api_v1 import router as router_v1
 from api_v1.docs.views import create_docs_router
 from core.config import settings
+from core.config import settings
+from core.logging_config import configure_logging, trace_id_ctx
+import uuid
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure logging is configured at startup when running under uvicorn
+    configure_logging()
     yield
     
 
@@ -32,6 +32,10 @@ app.include_router(router=docs_router)
 # Middleware для проверки X-Hub подписи
 @app.middleware("http")
 async def verify_webhook_signature(request: Request, call_next):
+    # Assign/propagate a trace id for each request
+    incoming_trace = request.headers.get("X-Trace-Id")
+    trace_id = incoming_trace or str(uuid.uuid4())
+    token = trace_id_ctx.set(trace_id)
     # Check if this is a POST request to the webhook endpoint (with or without trailing slash)
     webhook_path = "/api/v1/webhook"
     if request.method == "POST" and request.url.path.rstrip("/") == webhook_path:
@@ -88,8 +92,13 @@ async def verify_webhook_signature(request: Request, call_next):
         # Сохраняем тело запроса для дальнейшей обработки
         request.state.body = body
         return await call_next(request)
-    
-    return await call_next(request)
+    try:
+        response = await call_next(request)
+    finally:
+        trace_id_ctx.reset(token)
+    # Include trace id in response for clients to propagate
+    response.headers["X-Trace-Id"] = trace_id
+    return response
 
 if __name__ == "__main__":
 

@@ -75,7 +75,7 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
             }
             
             # Send Telegram notification
-            telegram_service = TelegramAlertService()
+            telegram_service = TelegramAlertService(alert_type="instagram_comment_alerts")
             notification_result = await telegram_service.send_notification(comment_data)
             
             if notification_result.get("success"):
@@ -102,7 +102,7 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
                 }
                 
         except Exception as exc:
-            logger.error(f"Error sending Telegram notification for comment {comment_id}: {exc}")
+            logger.exception(f"Error sending Telegram notification for comment {comment_id}")
             
             # Retry if we haven't exceeded max retries
             if task_instance and task_instance.request.retries < task_instance.max_retries:
@@ -147,7 +147,7 @@ async def test_telegram_connection_async():
                 "reason": result.get("error")
             }
     except Exception as e:
-        logger.error(f"Error testing Telegram connection: {e}")
+        logger.exception("Error testing Telegram connection")
         return {
             "status": "error",
             "reason": str(e)

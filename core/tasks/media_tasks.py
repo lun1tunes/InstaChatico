@@ -38,7 +38,7 @@ async def process_media_async(media_id: str, task_instance=None):
             existing_media = result.scalar_one_or_none()
             
             if existing_media:
-                logger.info(f"Media {media_id} already exists in database")
+                logger.debug(f"Media {media_id} already exists in database")
                 return {
                     "status": "success", 
                     "media_id": media_id, 
@@ -52,7 +52,7 @@ async def process_media_async(media_id: str, task_instance=None):
                 }
             
             # Media doesn't exist, fetch from Instagram API
-            logger.info(f"Media {media_id} not found in database, fetching from Instagram API")
+            logger.debug(f"Media {media_id} not found in database, fetching from Instagram API")
             media_service = MediaService()
             media = await media_service.get_or_create_media(media_id, session)
             
@@ -81,7 +81,7 @@ async def process_media_async(media_id: str, task_instance=None):
             }
             
         except Exception as exc:
-            logger.error(f"Error processing media {media_id}: {exc}")
+            logger.exception(f"Error processing media {media_id}")
             await session.rollback()
             
             # Retry logic
@@ -117,7 +117,7 @@ async def process_media_batch_async(media_ids: list[str]):
             result = await process_media_async(media_id)
             results.append(result)
         except Exception as e:
-            logger.error(f"Error processing media {media_id} in batch: {e}")
+            logger.exception(f"Error processing media {media_id} in batch")
             results.append({
                 "status": "error", 
                 "media_id": media_id, 

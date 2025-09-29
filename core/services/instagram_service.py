@@ -45,6 +45,7 @@ class InstagramGraphAPIService:
         
         try:
             logger.debug(f"Sending reply to comment {comment_id} with URL: {url}")
+            # Do not log full params at INFO; keep only at DEBUG
             logger.debug(f"Request params: {params}")
             
             async with aiohttp.ClientSession() as session:
@@ -79,10 +80,8 @@ class InstagramGraphAPIService:
                             "status_code": response.status
                         }
                         
-        except Exception as e:
-            logger.error(f"Exception while sending reply to comment {comment_id}: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+        except Exception:
+            logger.exception(f"Exception while sending reply to comment {comment_id}")
             return {
                 "success": False,
                 "error": str(e),
@@ -126,7 +125,7 @@ class InstagramGraphAPIService:
                         }
                         
         except Exception as e:
-            logger.error(f"Exception while getting comment info for {comment_id}: {e}")
+            logger.exception(f"Exception while getting comment info for {comment_id}")
             return {
                 "success": False,
                 "error": str(e),
@@ -149,15 +148,15 @@ class InstagramGraphAPIService:
         }
         
         try:
-            logger.info(f"Validating Instagram token with URL: {url}")
-            logger.info(f"Token: {self.access_token[:10]}...{self.access_token[-4:] if len(self.access_token) > 14 else '***'}")
+            logger.debug(f"Validating Instagram token with URL: {url}")
+            logger.debug(f"Token: {self.access_token[:10]}...{self.access_token[-4:] if len(self.access_token) > 14 else '***'}")
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     response_data = await response.json()
                     
-                    logger.info(f"Token validation response status: {response.status}")
-                    logger.info(f"Token validation response: {response_data}")
+                    logger.debug(f"Token validation response status: {response.status}")
+                    logger.debug(f"Token validation response: {response_data}")
                     
                     if response.status == 200:
                         logger.info("Instagram access token is valid")
@@ -174,10 +173,8 @@ class InstagramGraphAPIService:
                             "status_code": response.status
                         }
                         
-        except Exception as e:
-            logger.error(f"Exception while validating Instagram token: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+        except Exception:
+            logger.exception("Exception while validating Instagram token")
             return {
                 "success": False,
                 "error": str(e),
@@ -226,10 +223,8 @@ class InstagramGraphAPIService:
                             "status_code": response.status
                         }
                         
-        except Exception as e:
-            logger.error(f"Exception while getting media info for {media_id}: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+        except Exception:
+            logger.exception(f"Exception while getting media info for {media_id}")
             return {
                 "success": False,
                 "error": str(e),
@@ -251,14 +246,14 @@ class InstagramGraphAPIService:
         }
         
         try:
-            logger.info(f"Getting page info with URL: {url}")
+            logger.debug(f"Getting page info with URL: {url}")
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     response_data = await response.json()
                     
-                    logger.info(f"Page info response status: {response.status}")
-                    logger.info(f"Page info response: {response_data}")
+                    logger.debug(f"Page info response status: {response.status}")
+                    logger.debug(f"Page info response: {response_data}")
                     
                     if response.status == 200:
                         logger.info("Successfully retrieved page info")
@@ -275,10 +270,8 @@ class InstagramGraphAPIService:
                             "status_code": response.status
                         }
                         
-        except Exception as e:
-            logger.error(f"Exception while getting page info: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+        except Exception:
+            logger.exception("Exception while getting page info")
             return {
                 "success": False,
                 "error": str(e),

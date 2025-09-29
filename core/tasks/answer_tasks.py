@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import redis
 from datetime import datetime
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -61,7 +62,7 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             # Use conversation_id from the comment (set during classification)
             conversation_id = comment.conversation_id
             if not conversation_id:
-                logger.warning(f"Comment {comment_id} has no conversation_id, generating one")
+                logger.info(f"Comment {comment_id} has no conversation_id, generating one")
                 # Fallback: generate conversation_id if not set
                 if comment.parent_id:
                     conversation_id = f"first_question_comment_{comment.parent_id}"
@@ -71,7 +72,7 @@ async def generate_answer_async(comment_id: str, task_instance=None):
                 comment.conversation_id = conversation_id
                 await session.commit()
             
-            logger.info(f"Using conversation_id for comment {comment_id}: {conversation_id}")
+            logger.debug(f"Using conversation_id for comment {comment_id}: {conversation_id}")
             
             # Создаем или получаем запись ответа
             existing_answer = await session.execute(
@@ -102,7 +103,7 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             await session.commit()
             
             # Ensure media data exists for answer generation
-            logger.info(f"Ensuring media data exists for answer generation (comment: {comment_id}, media_id: {comment.media_id})")
+            logger.debug(f"Ensuring media data exists for answer generation (comment: {comment_id}, media_id: {comment.media_id})")
             media_service = MediaService()
             media = await media_service.get_or_create_media(comment.media_id, session)
             
@@ -150,24 +151,20 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             
             await session.commit()
             
-            logger.info(f"Answer generated for comment {comment_id}: {answer_result.get('answer', 'ERROR')[:100]}...")
-            logger.info(f"Answer result keys: {answer_result.keys()}")
-            logger.info(f"Answer result: {answer_result}")
+            logger.info(f"Answer generated for comment {comment_id}")
+            logger.debug(f"Answer sample: {str(answer_result.get('answer', ''))[:100]}...")
+            logger.debug(f"Answer result keys: {list(answer_result.keys())}")
             
             # Trigger Instagram reply if answer was successfully generated
             if answer_result.get('answer') and not answer_result.get('error'):
                 try:
-                    logger.info(f"Triggering Instagram reply for comment {comment_id}")
-                    logger.info(f"Celery app: {celery_app}")
-                    logger.info(f"Task name: core.tasks.instagram_reply_tasks.send_instagram_reply_task")
-                    logger.info(f"Args: {[comment_id, answer_result['answer']]}")
+                    logger.info(f"Queueing Instagram reply for comment {comment_id}")
+                    logger.debug(f"Reply args: {[comment_id, answer_result['answer']]}")
                     result = celery_app.send_task('core.tasks.instagram_reply_tasks.send_instagram_reply_task', 
                                                 args=[comment_id, answer_result['answer']])
-                    logger.info(f"Task queued with ID: {result.id}")
+                    logger.info(f"Reply task queued (task_id={result.id})")
                 except Exception as e:
-                    logger.error(f"Failed to trigger Instagram reply for comment {comment_id}: {e}")
-                    import traceback
-                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    logger.exception(f"Failed to queue Instagram reply for comment {comment_id}")
             
             return {
                 "status": "success",
@@ -178,7 +175,7 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             }
             
         except Exception as exc:
-            logger.error(f"Error processing answer for comment {comment_id}: {exc}")
+            logger.exception(f"Error processing answer for comment {comment_id}")
             await session.rollback()
             
             # Повторная попытка
@@ -252,6 +249,17 @@ def process_pending_questions_task(self):
         loop.close()
 
 async def process_pending_questions_async(task_instance=None):
+    # Ensure only one instance runs across workers to avoid duplicate sweeps
+    try:
+        redis_client = redis.Redis.from_url(settings.celery.broker_url)
+        lock_key = "process_pending_questions_lock"
+        # TTL slightly below schedule interval (1 minute)
+        if not redis_client.set(lock_key, "1", nx=True, ex=50):
+            logger.info("Another process_pending_questions is running; skipping this run")
+            return {"status": "skipped", "reason": "already_running"}
+    except Exception:
+        logger.warning("Failed to acquire process_pending_questions lock; proceeding anyway")
+
     engine = create_async_engine(settings.db.url, echo=settings.db.echo)
     session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
@@ -294,3 +302,9 @@ async def process_pending_questions_async(task_instance=None):
             return {"status": "error", "reason": str(e)}
         finally:
             await engine.dispose()
+            # Release lock by letting TTL expire; remove key if still present
+            try:
+                if 'redis_client' in locals():
+                    redis_client.delete("process_pending_questions_lock")
+            except Exception:
+                pass

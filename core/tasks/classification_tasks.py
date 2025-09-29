@@ -44,7 +44,7 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 return {"status": "error", "reason": "comment_not_found"}
             
             # Ensure media data exists before classification
-            logger.info(f"Ensuring media data exists for comment {comment_id} (media_id: {comment.media_id})")
+            logger.debug(f"Ensuring media data exists for comment {comment_id} (media_id: {comment.media_id})")
             media_service = MediaService()
             media = await media_service.get_or_create_media(comment.media_id, session)
             
@@ -58,7 +58,7 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 else:
                     return {"status": "error", "reason": "media_data_unavailable"}
             
-            logger.info(f"Media data confirmed for comment {comment_id}: {media.id}")
+            logger.debug(f"Media data confirmed for comment {comment_id}: {media.id}")
             
             # Создаем или получаем запись классификации
             if comment.classification:
@@ -120,38 +120,33 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             
             await session.commit()
             
-            logger.info(f"Comment {comment_id} classified as {classification_result['classification']}")
+            logger.info(f"Comment {comment_id} classified: {classification_result['classification']}")
             
             # Trigger answer generation if comment is classified as a question
             if classification_result['classification'].lower() == "question / inquiry":
-                logger.info(f"Triggering answer generation for question comment {comment_id}")
+                logger.info(f"Triggering answer generation for question {comment_id}")
                 # Use direct async call that works in the same event loop
                 try:
                     from core.tasks.answer_tasks import generate_answer_async
-                    logger.info(f"Successfully imported generate_answer_async for comment {comment_id}")
+                    logger.debug(f"Imported generate_answer_async for comment {comment_id}")
                     # Run the async function directly
                     answer_result = await generate_answer_async(comment_id)
-                    logger.info(f"Answer generated for question comment {comment_id}: {answer_result}")
+                    logger.info(f"Answer generated for question {comment_id}")
+                    logger.debug(f"Answer details: {answer_result}")
                     
                     # Trigger Instagram reply if answer was successfully generated
                     if answer_result.get('answer') and not answer_result.get('error'):
                         try:
-                            logger.info(f"Triggering Instagram reply for comment {comment_id}")
-                            logger.info(f"Celery app: {celery_app}")
-                            logger.info(f"Task name: core.tasks.instagram_reply_tasks.send_instagram_reply_task")
-                            logger.info(f"Args: {[comment_id, answer_result['answer']]}")
+                            logger.info(f"Queueing Instagram reply for comment {comment_id}")
+                            logger.debug(f"Task args: {[comment_id, answer_result['answer']]}")
                             result = celery_app.send_task('core.tasks.instagram_reply_tasks.send_instagram_reply_task', 
                                                         args=[comment_id, answer_result['answer']])
                             logger.info(f"Task queued with ID: {result.id}")
                         except Exception as e:
-                            logger.error(f"Failed to trigger Instagram reply for comment {comment_id}: {e}")
-                            import traceback
-                            logger.error(f"Traceback: {traceback.format_exc()}")
+                            logger.exception(f"Failed to queue Instagram reply for comment {comment_id}")
                             
-                except Exception as e:
-                    logger.error(f"Failed to generate answer for comment {comment_id}: {e}")
-                    import traceback
-                    logger.error(f"Traceback: {traceback.format_exc()}")
+                except Exception:
+                    logger.exception(f"Failed to generate answer for comment {comment_id}")
             
             # Trigger Telegram notification if comment is classified as urgent issue or critical feedback
             elif classification_result['classification'].lower() in ["urgent issue / complaint", "critical feedback"]:
@@ -160,11 +155,9 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 try:
                     result = celery_app.send_task('core.tasks.telegram_tasks.send_telegram_notification_task', 
                                                 args=[comment_id])
-                    logger.info(f"Telegram notification task queued with ID: {result.id}")
+                    logger.info(f"Telegram notification queued for comment {comment_id} (task_id={result.id})")
                 except Exception as e:
-                    logger.error(f"Failed to trigger Telegram notification for comment {comment_id}: {e}")
-                    import traceback
-                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    logger.exception(f"Failed to queue Telegram notification for comment {comment_id}")
             
             return {
                 "status": "success",
@@ -174,7 +167,7 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             }
             
         except Exception as exc:
-            logger.error(f"Error processing comment {comment_id}: {exc}")
+            logger.exception(f"Error processing comment {comment_id}")
             await session.rollback()
             
             # Повторная попытка

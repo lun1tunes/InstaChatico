@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.logging_config import trace_id_ctx
 from core.models import db_helper
 from core.models.comment_classification import (CommentClassification,
                                                 ProcessingStatus)
@@ -19,7 +20,6 @@ from core.tasks.classification_tasks import classify_comment_task
 from . import crud
 from .schemas import WebhookPayload
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Webhooks"])
@@ -46,15 +46,19 @@ async def webhook_verification(request: Request):
 @router.post("/")
 async def process_webhook(request: Request, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
     try:
+        # If webhook includes its own trace id, bind it early
+        incoming_trace = request.headers.get("X-Trace-Id")
+        if incoming_trace:
+            trace_id_ctx.set(incoming_trace)
         logger.info("Processing webhook request")
         body_bytes = getattr(request.state, "body", None) or await request.body()
         payload = json.loads(body_bytes.decode())
-        logger.info(f"Parsed payload: {payload}")
+        logger.debug(f"Parsed payload: {payload}")
         webhook_data = WebhookPayload(**payload)
         logger.info("Webhook data validated successfully")
     except Exception as e:
-        logger.error(f"Invalid payload: {e}")
-        logger.error(f"Raw payload: {request.state.body.decode()}")
+        logger.warning(f"Invalid payload: {e}")
+        logger.debug(f"Raw payload: {getattr(request.state, 'body', b'').decode() if hasattr(request.state, 'body') else '<no body cached>'}")
         raise HTTPException(status_code=400, detail="Invalid payload")
 
     try:
@@ -62,25 +66,25 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
         skipped_comments = 0
         
         for entry in webhook_data.entry:
-            logger.info(f"Processing entry: {entry.id}")
+            logger.debug(f"Processing entry: {entry.id}")
             for change in entry.changes:
-                logger.info(f"Processing change: {change.field}")
+                logger.debug(f"Processing change: {change.field}")
                 if change.field == "comments":
                     comment_id = change.value.id
                     logger.info(f"Processing comment: {comment_id}")
                     
-                    # Debug: Log the full webhook data structure
-                    logger.info(f"Webhook data for comment {comment_id}: {change.value.model_dump()}")
+                    # Debug: full webhook payload only at DEBUG level
+                    logger.debug(f"Webhook data for comment {comment_id}: {change.value.model_dump()}")
                     
                     # Check if this is a reply and determine if it's from our bot or a user
                     if hasattr(change.value, 'parent_id') and change.value.parent_id:
                         parent_id = change.value.parent_id
                         comment_username = change.value.from_.username
-                        logger.info(f"Comment {comment_id} is a reply to parent {parent_id} from user: {comment_username}")
+                        logger.debug(f"Comment {comment_id} is a reply to parent {parent_id} from user: {comment_username}")
                         
                         # Check if this comment is from our bot (by username)
                         if settings.instagram.bot_username and comment_username == settings.instagram.bot_username:
-                            logger.info(f"Comment {comment_id} is from our bot ({comment_username}) - SKIPPING to prevent infinite loops")
+                            logger.info(f"Bot reply detected for comment {comment_id} ({comment_username}) - skipping to prevent loop")
                             skipped_comments += 1
                             continue
                         
@@ -89,29 +93,29 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                             select(QuestionAnswer).where(QuestionAnswer.reply_id == parent_id)
                         )
                         if parent_reply_check.scalar_one_or_none():
-                            logger.info(f"Comment {comment_id} is a reply to our bot's comment {parent_id} - SKIPPING to prevent infinite loops")
+                            logger.info(f"Reply loop detected for comment {comment_id} to bot comment {parent_id} - skipping")
                             skipped_comments += 1
                             continue
                         else:
-                            logger.info(f"Comment {comment_id} is a user reply to another user's comment {parent_id} - PROCESSING normally")
+                            logger.debug(f"Comment {comment_id} is user reply to {parent_id} - processing")
                     
                     # Additional safety check: Check if this comment_id exists as a reply_id in our database
                     reply_check = await session.execute(
                         select(QuestionAnswer).where(QuestionAnswer.reply_id == comment_id)
                     )
                     if reply_check.scalar_one_or_none():
-                        logger.info(f"Comment {comment_id} is our own reply (found in reply_id), skipping to prevent infinite loop")
+                        logger.info(f"Own reply detected for {comment_id} via reply_id - skipping")
                         skipped_comments += 1
                         continue
                     
                     # Log the decision for processing
-                    logger.info(f"Comment {comment_id} passed all infinite loop checks - will be processed")
+                    logger.debug(f"Comment {comment_id} passed loop checks - processing")
                     
                     try:
                         # Check if comment already exists
                         existing_comment = await session.get(InstagramComment, comment_id)
                         if existing_comment:
-                            logger.info(f"Comment {comment_id} already exists, checking classification")
+                            logger.debug(f"Comment {comment_id} already exists, checking classification")
                             
                             # Если комментарий есть, но классификация не завершена - перезапускаем
                             if not existing_comment.classification or existing_comment.classification.processing_status != ProcessingStatus.COMPLETED:
@@ -125,13 +129,13 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                         parent_id = None
                         if hasattr(change.value, 'parent_id') and change.value.parent_id:
                             parent_id = change.value.parent_id
-                            logger.info(f"Comment {comment_id} is a reply to parent comment: {parent_id}")
+                            logger.debug(f"Comment {comment_id} is a reply to parent comment: {parent_id}")
                         else:
-                            logger.info(f"Comment {comment_id} is a top-level comment (no parent)")
+                            logger.debug(f"Comment {comment_id} is a top-level comment (no parent)")
                         
                         # Ensure media exists before creating comment
                         media_id = change.value.media.id
-                        logger.info(f"Ensuring media {media_id} exists before creating comment")
+                        logger.debug(f"Ensuring media {media_id} exists before creating comment")
                         
                         from core.services.media_service import MediaService
                         media_service = MediaService()
@@ -156,7 +160,7 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                             "raw_data": change.value.model_dump()
                         }
                         
-                        logger.info(f"Creating comment with data: {comment_data}")
+                        logger.debug(f"Creating comment with data: {comment_data}")
                         comment = InstagramComment(**comment_data)
                         
                         # Создаем запись классификации
@@ -169,25 +173,25 @@ async def process_webhook(request: Request, session: AsyncSession = Depends(db_h
                         # Ставим задачу классификации в Celery
                         classify_comment_task.delay(comment_id)
                         
-                        logger.info(f"Comment {comment_id} saved and queued for classification")
+                        logger.info(f"Comment {comment_id} saved; queued for classification")
                         processed_comments += 1
                         
                     except IntegrityError as e:
                         await session.rollback()
-                        logger.info(f"Comment {comment_id} was inserted by another process, skipping")
+                        logger.warning(f"Comment {comment_id} already inserted by another process, skipping")
                         skipped_comments += 1
                         continue
                     except Exception as e:
                         await session.rollback()
-                        logger.error(f"Error processing comment {comment_id}: {e}")
-                        logger.error(f"Comment data: {change.value.model_dump()}")
+                        logger.exception(f"Error processing comment {comment_id}")
+                        logger.debug(f"Comment data: {change.value.model_dump()}")
                         continue
 
-        logger.info(f"Webhook processing completed: {processed_comments} new comments, {skipped_comments} duplicates skipped")
+        logger.info(f"Webhook completed: {processed_comments} new, {skipped_comments} skipped")
         return {"status": "ok", "processed": processed_comments, "skipped": skipped_comments}
         
     except Exception as e:
-        logger.error(f"Unexpected error processing webhook: {e}")
+        logger.exception("Unexpected error processing webhook")
         await session.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
 
