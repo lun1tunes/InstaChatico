@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime
+from ..utils.time import iso_utc
 
 try:
     import psutil  # type: ignore
@@ -54,7 +55,7 @@ def check_system_health_task():
     mem = _get_mem_pct()
     disk = _get_disk_pct()
 
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = iso_utc()
     details = {
         "time": now,
         "cpu_pct": cpu,

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
+from ..utils.time import now_utc
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -69,7 +70,7 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             
             # Обновляем статус
             classification.processing_status = ProcessingStatus.PROCESSING
-            classification.processing_started_at = datetime.utcnow()
+            classification.processing_started_at = now_utc()
             classification.retry_count = task_instance.request.retries if task_instance else 0
             
             await session.commit()
@@ -115,7 +116,7 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 classification.last_error = classification_result['error']
             else:
                 classification.processing_status = ProcessingStatus.COMPLETED
-                classification.processing_completed_at = datetime.utcnow()
+                classification.processing_completed_at = now_utc()
                 classification.last_error = None
             
             await session.commit()
