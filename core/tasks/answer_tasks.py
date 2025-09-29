@@ -2,7 +2,7 @@ import asyncio
 import logging
 import redis
 from datetime import datetime
-from ..utils.time import now_utc
+from ..utils.time import now_db_utc
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -89,14 +89,14 @@ async def generate_answer_async(comment_id: str, task_instance=None):
                 
                 # Если в процессе или ошибка, обновляем статус
                 answer_record.processing_status = AnswerStatus.PROCESSING
-                answer_record.processing_started_at = now_utc()
+                answer_record.processing_started_at = now_db_utc()
                 answer_record.retry_count = task_instance.request.retries if task_instance else 0
             else:
                 # Создаем новую запись
                 answer_record = QuestionAnswer(
                     comment_id=comment_id,
                     processing_status=AnswerStatus.PROCESSING,
-                    processing_started_at=now_utc(),
+                    processing_started_at=now_db_utc(),
                     retry_count=task_instance.request.retries if task_instance else 0
                 )
                 session.add(answer_record)
@@ -147,7 +147,7 @@ async def generate_answer_async(comment_id: str, task_instance=None):
                 answer_record.meta_data = answer_result.get('meta_data', {})
                 
                 answer_record.processing_status = AnswerStatus.COMPLETED
-                answer_record.processing_completed_at = now_utc()
+                answer_record.processing_completed_at = now_db_utc()
                 answer_record.last_error = None
             
             await session.commit()

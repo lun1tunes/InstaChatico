@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from datetime import datetime
-from ..utils.time import now_utc
+from ..utils.time import now_db_utc
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,8 +64,8 @@ class MediaService:
                 username=media_info.get("username"),
                 owner=self._parse_owner(media_info.get("owner")),
                 raw_data=media_info,
-                created_at=now_utc(),
-                updated_at=now_utc()
+                created_at=now_db_utc(),
+                updated_at=now_db_utc()
             )
             
             # Add to session and commit

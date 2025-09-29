@@ -26,3 +26,12 @@ def iso_utc(dt: datetime | None = None) -> str:
     return (dt or now_utc()).astimezone(timezone.utc).isoformat()
 
 
+def now_db_utc() -> datetime:
+    """Return UTC time for database columns that are naive (TIMESTAMP WITHOUT TIME ZONE).
+
+    Until all DB columns are migrated to timezone-aware (timestamptz), use this
+    to avoid mixing offset-aware with naive in inserts/updates.
+    """
+    return now_utc().replace(tzinfo=None)
+
+

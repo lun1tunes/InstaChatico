@@ -2,7 +2,7 @@ import asyncio
 import logging
 import redis
 from datetime import datetime
-from ..utils.time import now_utc
+from ..utils.time import now_db_utc
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -112,7 +112,7 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                 try:
                     # Mark reply as sent in the database
                     comment.question_answer.reply_sent = True
-                    comment.question_answer.reply_sent_at = now_utc()
+                    comment.question_answer.reply_sent_at = now_db_utc()
                     comment.question_answer.reply_status = "sent"
                     comment.question_answer.reply_response = reply_result.get("response", {})
                     reply_id = reply_result.get("reply_id")
