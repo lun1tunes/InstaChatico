@@ -3,26 +3,21 @@ from typing import Any, Dict, Optional
 
 from agents import Runner, SQLiteSession
 
+from .base_service import BaseService
 from ..agents import comment_classification_agent
 from ..config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class CommentClassificationService:
-    """Classify Instagram comments using OpenAI Agents SDK with persistent sessions.
-
-    Injects media context once per conversation thread, maintains full history.
-    """
+class CommentClassificationService(BaseService):
+    """Classify Instagram comments using OpenAI Agents SDK with persistent sessions."""
 
     def __init__(
         self, api_key: str = None, db_path: str = "conversations/conversations.db"
     ):
+        super().__init__(db_path)
         self.api_key = api_key or settings.openai.api_key
-        self.db_path = db_path
-
-        # Use the singleton agent instance from the agents module
-        # This ensures we reuse the same agent instance across all service instances
         self.classification_agent = comment_classification_agent
 
     async def _get_session_with_media_context(
@@ -61,47 +56,14 @@ class CommentClassificationService:
 
     async def _session_has_context(self, conversation_id: str) -> bool:
         """Check if session has existing messages in agent_messages table."""
-        try:
-            import sqlite3
-            from pathlib import Path
-
-            # Check if the database file exists
-            db_path = Path(self.db_path)
-            if not db_path.exists():
-                logger.debug(
-                    f"✨ Database doesn't exist yet: {self.db_path} - new conversation"
-                )
-                return False
-
-            # Connect to the SQLite database
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-
-            # OpenAI Agents SDK uses 'agent_messages' table with 'session_id' column
-            # Check if this session has any messages already
-            cursor.execute(
-                "SELECT COUNT(*) FROM agent_messages WHERE session_id = ?",
-                (conversation_id,),
+        has_messages = await self._session_has_messages(conversation_id)
+        if has_messages:
+            logger.debug(
+                f"Session {conversation_id} has existing messages - skipping context"
             )
-            message_count = cursor.fetchone()[0]
-            conn.close()
-
-            if message_count > 0:
-                logger.debug(
-                    f"🔁 Session {conversation_id} has {message_count} existing messages - skipping context injection"
-                )
-                return True
-            else:
-                logger.debug(
-                    f"✨ Session {conversation_id} has no messages - will inject context"
-                )
-                return False
-
-        except Exception as e:
-            logger.warning(
-                f"⚠️ Error checking session context: {e} - assuming new session for safety"
-            )
-            return False
+        else:
+            logger.debug(f"Session {conversation_id} is new - will inject context")
+        return has_messages
 
     async def _inject_media_context_to_session(
         self, session: SQLiteSession, media_context: Dict[str, Any]
@@ -256,28 +218,6 @@ class CommentClassificationService:
             logger.error(f"Traceback: {traceback.format_exc()}")
             return self._create_error_response(str(e))
 
-    def _sanitize_input(self, text: str) -> str:
-        """Sanitize text: escape HTML, normalize whitespace, limit punctuation."""
-        import html
-        import re
-
-        # Basic HTML escaping
-        sanitized = html.escape(text)
-
-        # Remove excessive whitespace
-        sanitized = " ".join(sanitized.split())
-
-        # Remove excessive punctuation (more than 3 consecutive)
-        sanitized = re.sub(r"([!?.]){3,}", r"\1\1\1", sanitized)
-
-        # Remove excessive emojis (more than 5 consecutive)
-        emoji_pattern = r"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251]+"
-        emojis = re.findall(emoji_pattern, sanitized)
-        if len(emojis) > 5:
-            sanitized = re.sub(emoji_pattern, lambda m: m.group()[:5], sanitized)
-
-        return sanitized
-
     def _format_input_with_context(
         self,
         comment_text: str,
@@ -420,49 +360,3 @@ class CommentClassificationService:
         elif classification == "positive feedback":
             return 0
         return 10  # Low toxicity for questions
-
-    def get_conversation_history(self, conversation_id: str) -> list:
-        """Get conversation history (handled internally by SQLiteSession)."""
-        # SQLiteSession from OpenAI Agents SDK doesn't expose conversation history
-        # The session is used internally by the agent for context management
-        logger.debug(
-            f"Conversation history is managed internally by SQLiteSession for: {conversation_id}"
-        )
-        return []
-
-    def clear_conversation(self, conversation_id: str) -> bool:
-        """Clear conversation (managed internally by SQLiteSession)."""
-        # SQLiteSession from OpenAI Agents SDK manages conversation history internally
-        # We cannot directly clear the history, but the session will be recreated for new conversations
-        logger.debug(
-            f"Conversation history is managed internally by SQLiteSession for: {conversation_id}"
-        )
-        return True
-
-    def get_session_info(self, conversation_id: str) -> Dict[str, Any]:
-        """Get basic session info (history managed internally by SDK)."""
-        try:
-            logger.debug(
-                f"Getting session information for conversation_id: {conversation_id}"
-            )
-            session = self._get_session(conversation_id)
-
-            # SQLiteSession from OpenAI Agents SDK manages conversation history internally
-            # We can only provide basic session information
-            session_info = {
-                "conversation_id": conversation_id,
-                "db_path": self.db_path,
-                "session_exists": True,
-                "history_count": 0,  # Cannot access history count directly
-                "note": "Conversation history is managed internally by SQLiteSession",
-            }
-            logger.debug(f"Session info retrieved for conversation: {conversation_id}")
-            return session_info
-        except Exception as e:
-            logger.error(f"Error getting session info for {conversation_id}: {e}")
-            return {
-                "conversation_id": conversation_id,
-                "db_path": self.db_path,
-                "session_exists": False,
-                "error": str(e),
-            }

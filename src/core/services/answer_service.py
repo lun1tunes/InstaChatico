@@ -1,54 +1,25 @@
-import time
-import os
 import logging
+import time
 from typing import Any, Dict, Optional
-from pathlib import Path
 
-from agents import Runner, SQLiteSession
+from agents import Runner
+
+from .base_service import BaseService
+from ..agents import get_comment_response_agent
 from ..config import settings
-from ..agents import comment_response_agent, get_comment_response_agent
 
-comment_response_agent = get_comment_response_agent()
 logger = logging.getLogger(__name__)
 
 
-class QuestionAnswerService:
-    """Generate answers using OpenAI Agents SDK, reuses sessions from classification.
-
-    Media context and conversation history loaded automatically from SQLiteSession.
-    """
+class QuestionAnswerService(BaseService):
+    """Generate answers using OpenAI Agents SDK, reuses sessions from classification."""
 
     def __init__(
         self, api_key: str = None, db_path: str = "conversations/conversations.db"
     ):
+        super().__init__(db_path)
         self.api_key = api_key or settings.openai.api_key
-        self.response_agent = comment_response_agent
-        self.db_path = db_path
-        self._ensure_db_directory()
-
-    def _ensure_db_directory(self):
-        """Create conversations database directory if needed."""
-        db_dir = Path(self.db_path).parent
-        db_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Conversations database will be stored at: {self.db_path}")
-
-    def _get_session(self, conversation_id: str) -> SQLiteSession:
-        """Retrieve existing session with full conversation history."""
-        logger.debug(
-            f"🔄 Retrieving existing SQLiteSession for conversation_id: {conversation_id}"
-        )
-        logger.debug(f"📂 Session database path: {self.db_path}")
-
-        # SQLiteSession automatically loads existing data from the database
-        session = SQLiteSession(conversation_id, self.db_path)
-
-        logger.debug(
-            f"✅ SQLiteSession retrieved successfully for conversation: {conversation_id}"
-        )
-        logger.debug(
-            f"💡 Session will include all previous messages and media context automatically"
-        )
-        return session
+        self.response_agent = get_comment_response_agent()
 
     async def generate_answer(
         self,
@@ -116,18 +87,6 @@ class QuestionAnswerService:
             logger.error(f"Answer generation error: {e}")
             return self._create_error_response(str(e))
 
-    def _sanitize_input(self, text: str) -> str:
-        """Escape HTML and normalize whitespace."""
-        import html
-
-        sanitized = html.escape(text)
-        sanitized = " ".join(sanitized.split())
-        return sanitized
-
-    def _estimate_tokens(self, text: str) -> int:
-        """Estimate token count (~4 chars per token)."""
-        return len(text) // 4
-
     def _create_error_response(self, error_message: str) -> Dict[str, Any]:
         """Return error response with metadata."""
         return {
@@ -139,49 +98,3 @@ class QuestionAnswerService:
             "error": error_message,
             "meta_data": {"error": True},
         }
-
-    def get_conversation_history(self, conversation_id: str) -> list:
-        """Get conversation history (handled internally by SQLiteSession)."""
-        # SQLiteSession from OpenAI Agents SDK doesn't expose conversation history
-        # The session is used internally by the agent for context management
-        logger.debug(
-            f"Conversation history is managed internally by SQLiteSession for: {conversation_id}"
-        )
-        return []
-
-    def clear_conversation(self, conversation_id: str) -> bool:
-        """Clear conversation (managed internally by SQLiteSession)."""
-        # SQLiteSession from OpenAI Agents SDK manages conversation history internally
-        # We cannot directly clear the history, but the session will be recreated for new conversations
-        logger.debug(
-            f"Conversation history is managed internally by SQLiteSession for: {conversation_id}"
-        )
-        return True
-
-    def get_session_info(self, conversation_id: str) -> Dict[str, Any]:
-        """Get basic session info (history managed internally by SDK)."""
-        try:
-            logger.debug(
-                f"Getting session information for conversation_id: {conversation_id}"
-            )
-            session = self._get_session(conversation_id)
-
-            # SQLiteSession from OpenAI Agents SDK manages conversation history internally
-            # We can only provide basic session information
-            session_info = {
-                "conversation_id": conversation_id,
-                "db_path": self.db_path,
-                "session_exists": True,
-                "history_count": 0,  # Cannot access history count directly
-                "note": "Conversation history is managed internally by SQLiteSession",
-            }
-            logger.debug(f"Session info retrieved for conversation: {conversation_id}")
-            return session_info
-        except Exception as e:
-            logger.error(f"Error getting session info for {conversation_id}: {e}")
-            return {
-                "conversation_id": conversation_id,
-                "db_path": self.db_path,
-                "session_exists": False,
-                "error": str(e),
-            }

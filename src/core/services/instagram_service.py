@@ -25,7 +25,9 @@ class InstagramGraphAPIService:
         )
         logger.debug(f"Base URL: {self.base_url}")
 
-    async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
+    async def send_reply_to_comment(
+        self, comment_id: str, message: str
+    ) -> Dict[str, Any]:
         """
         Send a reply to an Instagram comment using Instagram Graph API
 
@@ -59,8 +61,14 @@ class InstagramGraphAPIService:
                     if response.status == 200:
                         logger.info(f"Successfully sent reply to comment {comment_id}")
                         # Extract reply_id from response to prevent infinite loops
-                        reply_id = response_data.get("id") if isinstance(response_data, dict) else None
-                        logger.debug(f"Extracted reply_id: {reply_id} from response: {response_data}")
+                        reply_id = (
+                            response_data.get("id")
+                            if isinstance(response_data, dict)
+                            else None
+                        )
+                        logger.debug(
+                            f"Extracted reply_id: {reply_id} from response: {response_data}"
+                        )
                         return {
                             "success": True,
                             "response": response_data,
@@ -70,13 +78,24 @@ class InstagramGraphAPIService:
                     else:
                         # Check if it's a rate limiting error
                         error_data = response_data.get("error", {})
-                        if error_data.get("code") == 2 and "retry" in error_data.get("message", "").lower():
-                            logger.warning(f"Instagram API rate limit for comment {comment_id}, will retry")
+                        if (
+                            error_data.get("code") == 2
+                            and "retry" in error_data.get("message", "").lower()
+                        ):
+                            logger.warning(
+                                f"Instagram API rate limit for comment {comment_id}, will retry"
+                            )
                         else:
-                            logger.error(f"Failed to send reply to comment {comment_id}: {response_data}")
-                        return {"success": False, "error": response_data, "status_code": response.status}
+                            logger.error(
+                                f"Failed to send reply to comment {comment_id}: {response_data}"
+                            )
+                        return {
+                            "success": False,
+                            "error": response_data,
+                            "status_code": response.status,
+                        }
 
-        except Exception:
+        except Exception as e:
             logger.exception(f"Exception while sending reply to comment {comment_id}")
             return {"success": False, "error": str(e), "status_code": None}
 
@@ -92,7 +111,10 @@ class InstagramGraphAPIService:
         """
         url = f"{self.base_url}/{comment_id}"
 
-        params = {"access_token": self.access_token, "fields": "id,text,from,created_time,parent_id"}
+        params = {
+            "access_token": self.access_token,
+            "fields": "id,text,from,created_time,parent_id",
+        }
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -100,10 +122,20 @@ class InstagramGraphAPIService:
                     response_data = await response.json()
 
                     if response.status == 200:
-                        return {"success": True, "comment_info": response_data, "status_code": response.status}
+                        return {
+                            "success": True,
+                            "comment_info": response_data,
+                            "status_code": response.status,
+                        }
                     else:
-                        logger.error(f"Failed to get comment info for {comment_id}: {response_data}")
-                        return {"success": False, "error": response_data, "status_code": response.status}
+                        logger.error(
+                            f"Failed to get comment info for {comment_id}: {response_data}"
+                        )
+                        return {
+                            "success": False,
+                            "error": response_data,
+                            "status_code": response.status,
+                        }
 
         except Exception as e:
             logger.exception(f"Exception while getting comment info for {comment_id}")
@@ -136,12 +168,22 @@ class InstagramGraphAPIService:
 
                     if response.status == 200:
                         logger.info("Instagram access token is valid")
-                        return {"success": True, "token_info": response_data, "status_code": response.status}
+                        return {
+                            "success": True,
+                            "token_info": response_data,
+                            "status_code": response.status,
+                        }
                     else:
-                        logger.error(f"Instagram access token validation failed: {response_data}")
-                        return {"success": False, "error": response_data, "status_code": response.status}
+                        logger.error(
+                            f"Instagram access token validation failed: {response_data}"
+                        )
+                        return {
+                            "success": False,
+                            "error": response_data,
+                            "status_code": response.status,
+                        }
 
-        except Exception:
+        except Exception as e:
             logger.exception("Exception while validating Instagram token")
             return {"success": False, "error": str(e), "status_code": None}
 
@@ -174,12 +216,22 @@ class InstagramGraphAPIService:
 
                     if response.status == 200:
                         logger.info(f"Successfully retrieved media info for {media_id}")
-                        return {"success": True, "media_info": response_data, "status_code": response.status}
+                        return {
+                            "success": True,
+                            "media_info": response_data,
+                            "status_code": response.status,
+                        }
                     else:
-                        logger.error(f"Failed to get media info for {media_id}: {response_data}")
-                        return {"success": False, "error": response_data, "status_code": response.status}
+                        logger.error(
+                            f"Failed to get media info for {media_id}: {response_data}"
+                        )
+                        return {
+                            "success": False,
+                            "error": response_data,
+                            "status_code": response.status,
+                        }
 
-        except Exception:
+        except Exception as e:
             logger.exception(f"Exception while getting media info for {media_id}")
             return {"success": False, "error": str(e), "status_code": None}
 
@@ -206,11 +258,19 @@ class InstagramGraphAPIService:
 
                     if response.status == 200:
                         logger.info("Successfully retrieved page info")
-                        return {"success": True, "page_info": response_data, "status_code": response.status}
+                        return {
+                            "success": True,
+                            "page_info": response_data,
+                            "status_code": response.status,
+                        }
                     else:
                         logger.error(f"Failed to get page info: {response_data}")
-                        return {"success": False, "error": response_data, "status_code": response.status}
+                        return {
+                            "success": False,
+                            "error": response_data,
+                            "status_code": response.status,
+                        }
 
-        except Exception:
+        except Exception as e:
             logger.exception("Exception while getting page info")
             return {"success": False, "error": str(e), "status_code": None}
