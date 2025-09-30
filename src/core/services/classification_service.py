@@ -10,20 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 class CommentClassificationService:
-    """
-    Comment Classification Service using OpenAI Agents SDK with proper session management.
+    """Classify Instagram comments using OpenAI Agents SDK with persistent sessions.
 
-    Key Features:
-    - Uses SQLiteSession for persistent conversation history
-    - Automatically injects media context ONCE per conversation (on first message)
-    - Maintains conversation continuity across multiple comments in a thread
-    - Avoids duplicate context injection by checking existing messages
-
-    Session Management:
-    - Each conversation has a unique conversation_id: first_question_comment_{id}
-    - All replies to a top-level comment share the same conversation_id
-    - Media context is injected only when starting a NEW conversation
-    - Existing conversations reuse their stored context from the SQLite database
+    Injects media context once per conversation thread, maintains full history.
     """
 
     def __init__(
@@ -39,19 +28,7 @@ class CommentClassificationService:
     async def _get_session_with_media_context(
         self, conversation_id: str, media_context: Optional[Dict[str, Any]] = None
     ) -> SQLiteSession:
-        """
-        Get or create a SQLiteSession with media context for the given conversation ID
-
-        IMPORTANT: Media context is only added ONCE per conversation (on first message)
-        to avoid polluting the conversation history with duplicate context.
-
-        Args:
-            conversation_id: Unique identifier for the conversation (first question comment ID)
-            media_context: Media information to inject into session context (only on first message)
-
-        Returns:
-            SQLiteSession instance with media context
-        """
+        """Get or create session, inject media context once on first message."""
         logger.debug(
             f"Creating/retrieving SQLiteSession for conversation_id: {conversation_id}"
         )
@@ -83,18 +60,7 @@ class CommentClassificationService:
         return session
 
     async def _session_has_context(self, session: SQLiteSession) -> bool:
-        """
-        Check if session already has context/history by querying the SQLite database directly
-
-        OpenAI Agents SDK stores conversations in 'agent_sessions' and 'agent_messages' tables.
-        We check if messages exist for this session_id to avoid adding duplicate media context.
-
-        Args:
-            session: SQLiteSession instance
-
-        Returns:
-            True if session has existing messages, False if it's a new session
-        """
+        """Check if session has existing messages in agent_messages table."""
         try:
             import sqlite3
             from pathlib import Path
@@ -140,15 +106,7 @@ class CommentClassificationService:
     async def _inject_media_context_to_session(
         self, session: SQLiteSession, media_context: Dict[str, Any]
     ) -> None:
-        """
-        Inject media context into the session for AI agents (ONCE per conversation)
-
-        This should only be called for NEW conversations according to the OpenAI Agents SDK docs.
-
-        Args:
-            session: SQLiteSession instance
-            media_context: Media information dictionary
-        """
+        """Add media context as system message to new conversation."""
         try:
             # Create a comprehensive media description
             media_description = self._create_media_description(media_context)
@@ -173,15 +131,7 @@ class CommentClassificationService:
             logger.error(f"❌ Failed to inject media context into session: {e}")
 
     def _create_media_description(self, media_context: Dict[str, Any]) -> str:
-        """
-        Create a comprehensive media description from context
-
-        Args:
-            media_context: Media information dictionary
-
-        Returns:
-            Formatted media description string
-        """
+        """Format media context into readable description."""
         description_parts = []
 
         # Basic media info
@@ -225,16 +175,7 @@ class CommentClassificationService:
     def _generate_conversation_id(
         self, comment_id: str, parent_id: Optional[str] = None
     ) -> str:
-        """
-        Generate conversation ID based on comment hierarchy
-
-        Args:
-            comment_id: Current comment ID
-            parent_id: Parent comment ID if this is a reply
-
-        Returns:
-            Conversation ID in format first_question_comment_{id}
-        """
+        """Generate conversation ID: first_question_comment_{parent_id or comment_id}."""
         if parent_id:
             # If this is a reply, use the parent's conversation ID
             return f"first_question_comment_{parent_id}"
@@ -248,7 +189,7 @@ class CommentClassificationService:
         conversation_id: Optional[str] = None,
         media_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Asynchronous comment classification using OpenAI Agents SDK"""
+        """Classify comment using OpenAI agent with optional session context."""
         try:
             # Format input with conversation and media context
             formatted_input = self._format_input_with_context(
@@ -316,7 +257,7 @@ class CommentClassificationService:
             return self._create_error_response(str(e))
 
     def _sanitize_input(self, text: str) -> str:
-        """Enhanced text sanitization"""
+        """Sanitize text: escape HTML, normalize whitespace, limit punctuation."""
         import html
         import re
 
@@ -343,17 +284,7 @@ class CommentClassificationService:
         conversation_id: Optional[str] = None,
         media_context: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """
-        Format the input text with conversation and media context
-
-        Args:
-            comment_text: The comment text to classify
-            conversation_id: Optional conversation ID for context
-            media_context: Optional media information for richer context
-
-        Returns:
-            Formatted text with context information
-        """
+        """Format comment with media context and conversation info."""
         sanitized_text = self._sanitize_input(comment_text)
 
         # Build context information
@@ -394,7 +325,7 @@ class CommentClassificationService:
         return sanitized_text
 
     def _create_error_response(self, error_message: str) -> Dict[str, Any]:
-        """Create error response with fallback classification"""
+        """Return safe fallback response on classification error."""
         return {
             "classification": "spam / irrelevant",  # Safe fallback
             "confidence": 0,
@@ -409,7 +340,7 @@ class CommentClassificationService:
         }
 
     def _detect_question(self, text: str) -> bool:
-        """Enhanced question detection for multiple languages"""
+        """Detect questions in multiple languages (EN, RU, ES, FR, DE)."""
         question_indicators = [
             # English
             "?",
@@ -468,7 +399,7 @@ class CommentClassificationService:
         return any(indicator in text_lower for indicator in question_indicators)
 
     def _estimate_sentiment(self, classification: str, confidence: int) -> int:
-        """Enhanced sentiment estimation based on classification"""
+        """Estimate sentiment score (-100 to 100) from classification."""
         sentiment_map = {
             "positive feedback": confidence,
             "critical feedback": -confidence,
@@ -481,7 +412,7 @@ class CommentClassificationService:
         return max(-100, min(100, sentiment_map.get(classification, 0)))
 
     def _estimate_toxicity(self, classification: str, confidence: int) -> int:
-        """Enhanced toxicity estimation"""
+        """Estimate toxicity score (0 to 100) from classification."""
         if classification in ["critical feedback", "urgent issue / complaint"]:
             return min(100, confidence + 20)
         elif classification == "spam / irrelevant":
@@ -491,18 +422,7 @@ class CommentClassificationService:
         return 10  # Low toxicity for questions
 
     def get_conversation_history(self, conversation_id: str) -> list:
-        """
-        Get the conversation history for a given conversation ID
-
-        Note: SQLiteSession from OpenAI Agents SDK doesn't expose conversation history directly.
-        The session is used internally by the agent for context, but we can't access the history.
-
-        Args:
-            conversation_id: The conversation ID
-
-        Returns:
-            Empty list (conversation history is handled internally by the agent)
-        """
+        """Get conversation history (handled internally by SQLiteSession)."""
         # SQLiteSession from OpenAI Agents SDK doesn't expose conversation history
         # The session is used internally by the agent for context management
         logger.debug(
@@ -511,18 +431,7 @@ class CommentClassificationService:
         return []
 
     def clear_conversation(self, conversation_id: str) -> bool:
-        """
-        Clear the conversation history for a given conversation ID
-
-        Note: SQLiteSession from OpenAI Agents SDK manages conversation history internally.
-        We cannot directly clear the history, but the session will be recreated for new conversations.
-
-        Args:
-            conversation_id: The conversation ID to clear
-
-        Returns:
-            True (session management is handled internally by the agent)
-        """
+        """Clear conversation (managed internally by SQLiteSession)."""
         # SQLiteSession from OpenAI Agents SDK manages conversation history internally
         # We cannot directly clear the history, but the session will be recreated for new conversations
         logger.debug(
@@ -531,18 +440,7 @@ class CommentClassificationService:
         return True
 
     def get_session_info(self, conversation_id: str) -> Dict[str, Any]:
-        """
-        Get information about a session
-
-        Note: SQLiteSession from OpenAI Agents SDK manages conversation history internally.
-        We can only provide basic session information.
-
-        Args:
-            conversation_id: The conversation ID
-
-        Returns:
-            Dictionary with session information
-        """
+        """Get basic session info (history managed internally by SDK)."""
         try:
             logger.debug(
                 f"Getting session information for conversation_id: {conversation_id}"
