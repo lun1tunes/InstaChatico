@@ -62,7 +62,7 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
                 "urgent issue / complaint",
                 "critical feedback",
                 "partnership proposal",
-                "toxic / abusive",
+                # Note: "toxic / abusive" is NOT notified - we ignore such comments
             ]
             if classification not in notify_classifications:
                 logger.info(

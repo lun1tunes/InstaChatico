@@ -157,18 +157,17 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                     logger.exception(f"Failed to generate answer for comment {comment_id}")
 
             # Trigger Telegram notification if comment requires attention
+            # Note: "toxic / abusive" is NOT notified - we ignore such comments
             elif classification_result["classification"].lower() in [
                 "urgent issue / complaint",
                 "critical feedback",
                 "partnership proposal",
-                "toxic / abusive",
             ]:
                 classification_lower = classification_result["classification"].lower()
                 notification_type_map = {
                     "urgent issue / complaint": "urgent issue",
                     "critical feedback": "critical feedback",
                     "partnership proposal": "partnership proposal",
-                    "toxic / abusive": "toxic/abusive content",
                 }
                 notification_type = notification_type_map.get(classification_lower, classification_lower)
                 logger.info(f"Triggering Telegram notification for {notification_type} comment {comment_id}")
