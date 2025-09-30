@@ -9,7 +9,7 @@ from core.services.telegram_alert_service import TelegramAlertService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/telegram", tags=["Telegram"])
+router = APIRouter(tags=["Telegram"])
 
 
 @router.get("/test-connection")
@@ -55,7 +55,9 @@ async def test_telegram_notification():
         }
 
         telegram_service = TelegramAlertService()
-        result = await telegram_service.send_urgent_issue_notification(test_comment_data)
+        result = await telegram_service.send_urgent_issue_notification(
+            test_comment_data
+        )
 
         if result.get("success"):
             return {
