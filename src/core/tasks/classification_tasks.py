@@ -156,13 +156,21 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 except Exception:
                     logger.exception(f"Failed to generate answer for comment {comment_id}")
 
-            # Trigger Telegram notification if comment is classified as urgent issue or critical feedback
-            elif classification_result["classification"].lower() in ["urgent issue / complaint", "critical feedback"]:
-                notification_type = (
-                    "urgent issue"
-                    if classification_result["classification"].lower() == "urgent issue / complaint"
-                    else "critical feedback"
-                )
+            # Trigger Telegram notification if comment requires attention
+            elif classification_result["classification"].lower() in [
+                "urgent issue / complaint",
+                "critical feedback",
+                "partnership proposal",
+                "toxic / abusive",
+            ]:
+                classification_lower = classification_result["classification"].lower()
+                notification_type_map = {
+                    "urgent issue / complaint": "urgent issue",
+                    "critical feedback": "critical feedback",
+                    "partnership proposal": "partnership proposal",
+                    "toxic / abusive": "toxic/abusive content",
+                }
+                notification_type = notification_type_map.get(classification_lower, classification_lower)
                 logger.info(f"Triggering Telegram notification for {notification_type} comment {comment_id}")
                 try:
                     result = celery_app.send_task(

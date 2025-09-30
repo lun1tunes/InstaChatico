@@ -58,7 +58,13 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
 
             # Check if this comment requires a Telegram notification
             classification = comment.classification.classification
-            if classification not in ["urgent issue / complaint", "critical feedback"]:
+            notify_classifications = [
+                "urgent issue / complaint",
+                "critical feedback",
+                "partnership proposal",
+                "toxic / abusive",
+            ]
+            if classification not in notify_classifications:
                 logger.info(
                     f"Comment {comment_id} classification '{classification}' does not require Telegram notification"
                 )

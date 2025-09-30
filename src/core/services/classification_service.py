@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 class CommentClassificationService(BaseService):
     """Classify Instagram comments using OpenAI Agents SDK with persistent sessions."""
 
-    def __init__(
-        self, api_key: str = None, db_path: str = "conversations/conversations.db"
-    ):
+    def __init__(self, api_key: str = None, db_path: str = "conversations/conversations.db"):
         super().__init__(db_path)
         self.api_key = api_key or settings.openai.api_key
         self.classification_agent = comment_classification_agent
@@ -24,9 +22,7 @@ class CommentClassificationService(BaseService):
         self, conversation_id: str, media_context: Optional[Dict[str, Any]] = None
     ) -> SQLiteSession:
         """Get or create session, inject media context once on first message."""
-        logger.debug(
-            f"Creating/retrieving SQLiteSession for conversation_id: {conversation_id}"
-        )
+        logger.debug(f"Creating/retrieving SQLiteSession for conversation_id: {conversation_id}")
         logger.debug(f"Session database path: {self.db_path}")
         session = SQLiteSession(conversation_id, self.db_path)
 
@@ -37,37 +33,27 @@ class CommentClassificationService(BaseService):
             # If session has no items, it's a new conversation - add media context
             if media_context and not await self._session_has_context(conversation_id):
                 await self._inject_media_context_to_session(session, media_context)
-                logger.info(
-                    f"✅ Media context injected into NEW conversation: {conversation_id}"
-                )
+                logger.info(f"✅ Media context injected into NEW conversation: {conversation_id}")
             elif media_context:
                 logger.debug(
                     f"⏭️  Skipping media context injection - conversation {conversation_id} already has context"
                 )
         except Exception as e:
-            logger.warning(
-                f"Failed to check/inject media context: {e} - continuing without context"
-            )
+            logger.warning(f"Failed to check/inject media context: {e} - continuing without context")
 
-        logger.debug(
-            f"SQLiteSession retrieved successfully for conversation: {conversation_id}"
-        )
+        logger.debug(f"SQLiteSession retrieved successfully for conversation: {conversation_id}")
         return session
 
     async def _session_has_context(self, conversation_id: str) -> bool:
         """Check if session has existing messages in agent_messages table."""
         has_messages = await self._session_has_messages(conversation_id)
         if has_messages:
-            logger.debug(
-                f"Session {conversation_id} has existing messages - skipping context"
-            )
+            logger.debug(f"Session {conversation_id} has existing messages - skipping context")
         else:
             logger.debug(f"Session {conversation_id} is new - will inject context")
         return has_messages
 
-    async def _inject_media_context_to_session(
-        self, session: SQLiteSession, media_context: Dict[str, Any]
-    ) -> None:
+    async def _inject_media_context_to_session(self, session: SQLiteSession, media_context: Dict[str, Any]) -> None:
         """Add media context as system message to new conversation."""
         try:
             # Create a comprehensive media description
@@ -85,9 +71,7 @@ class CommentClassificationService(BaseService):
                 ]
             )
 
-            logger.info(
-                f"✅ Injected media context into session: {media_description[:150]}..."
-            )
+            logger.info(f"✅ Injected media context into session: {media_description[:150]}...")
 
         except Exception as e:
             logger.error(f"❌ Failed to inject media context into session: {e}")
@@ -134,9 +118,7 @@ class CommentClassificationService(BaseService):
 
         return "\n".join(description_parts)
 
-    def _generate_conversation_id(
-        self, comment_id: str, parent_id: Optional[str] = None
-    ) -> str:
+    def _generate_conversation_id(self, comment_id: str, parent_id: Optional[str] = None) -> str:
         """Generate conversation ID: first_question_comment_{parent_id or comment_id}."""
         if parent_id:
             # If this is a reply, use the parent's conversation ID
@@ -154,39 +136,27 @@ class CommentClassificationService(BaseService):
         """Classify comment using OpenAI agent with optional session context."""
         try:
             # Format input with conversation and media context
-            formatted_input = self._format_input_with_context(
-                comment_text, conversation_id, media_context
-            )
+            formatted_input = self._format_input_with_context(comment_text, conversation_id, media_context)
 
             if len(formatted_input) > 2000:  # Increased limit for context
                 formatted_input = formatted_input[:2000] + "..."
-                logger.warning(
-                    f"Input truncated to 2000 characters: {comment_text[:50]}..."
-                )
+                logger.warning(f"Input truncated to 2000 characters: {comment_text[:50]}...")
 
             logger.info(f"Classifying comment with context: {formatted_input[:200]}...")
 
             # Use session if conversation_id is provided
             if conversation_id:
-                logger.debug(
-                    f"Starting classification with persistent session for conversation_id: {conversation_id}"
-                )
+                logger.debug(f"Starting classification with persistent session for conversation_id: {conversation_id}")
                 # Use SQLiteSession with media context for persistent conversation
-                session = await self._get_session_with_media_context(
-                    conversation_id, media_context
-                )
-                result = await Runner.run(
-                    self.classification_agent, input=formatted_input, session=session
-                )
+                session = await self._get_session_with_media_context(conversation_id, media_context)
+                result = await Runner.run(self.classification_agent, input=formatted_input, session=session)
                 logger.info(
                     f"Classification completed using SQLiteSession with media context for conversation: {conversation_id}"
                 )
             else:
                 logger.debug("Starting classification without session (stateless mode)")
                 # Use regular Runner without session
-                result = await Runner.run(
-                    self.classification_agent, input=formatted_input
-                )
+                result = await Runner.run(self.classification_agent, input=formatted_input)
                 logger.info("Classification completed without session")
 
             # Extract the final output from the result
@@ -240,9 +210,7 @@ class CommentClassificationService(BaseService):
             if media_context.get("username"):
                 media_info.append(f"Post author: @{media_context['username']}")
             if media_context.get("comments_count") is not None:
-                media_info.append(
-                    f"Post has {media_context['comments_count']} comments"
-                )
+                media_info.append(f"Post has {media_context['comments_count']} comments")
             if media_context.get("like_count") is not None:
                 media_info.append(f"Post has {media_context['like_count']} likes")
 
@@ -343,9 +311,10 @@ class CommentClassificationService(BaseService):
         sentiment_map = {
             "positive feedback": confidence,
             "critical feedback": -confidence,
-            "urgent issue / complaint": -confidence
-            - 20,  # More negative for urgent issues
+            "urgent issue / complaint": -confidence - 20,  # More negative for urgent issues
             "question / inquiry": 0,  # Neutral for questions
+            "partnership proposal": confidence // 2,  # Mildly positive (business opportunity)
+            "toxic / abusive": -100,  # Most negative
             "spam / irrelevant": -50,
             "unknown": 0,
         }
@@ -353,10 +322,12 @@ class CommentClassificationService(BaseService):
 
     def _estimate_toxicity(self, classification: str, confidence: int) -> int:
         """Estimate toxicity score (0 to 100) from classification."""
-        if classification in ["critical feedback", "urgent issue / complaint"]:
+        if classification == "toxic / abusive":
+            return 100  # Highest toxicity
+        elif classification in ["critical feedback", "urgent issue / complaint"]:
             return min(100, confidence + 20)
         elif classification == "spam / irrelevant":
             return 60
-        elif classification == "positive feedback":
-            return 0
+        elif classification in ["positive feedback", "partnership proposal"]:
+            return 0  # No toxicity
         return 10  # Low toxicity for questions

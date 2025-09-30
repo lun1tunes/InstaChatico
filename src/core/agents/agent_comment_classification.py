@@ -20,7 +20,13 @@ class ClassificationResult(BaseModel):
     """Pydantic model for structured classification output using OpenAI Agents SDK"""
 
     classification: Literal[
-        "positive feedback", "critical feedback", "urgent issue / complaint", "question / inquiry", "spam / irrelevant"
+        "positive feedback",
+        "critical feedback",
+        "urgent issue / complaint",
+        "question / inquiry",
+        "partnership proposal",
+        "toxic / abusive",
+        "spam / irrelevant",
     ] = Field(description="The classification category for the comment")
     confidence: int = Field(ge=0, le=100, description="Confidence score from 0 to 100")
     reasoning: str = Field(
