@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Установка системных зависимостей1
+# Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
 RUN groupadd -r -g 988 instagram-worker && useradd -r -u 988 -g instagram-worker instagram-worker
 
 # Копируем зависимости
-COPY pyproject.toml ./
+COPY pyproject.toml poetry.lock ./
 
 # Установка Poetry
 RUN pip install poetry
@@ -20,15 +20,13 @@ RUN pip install poetry
 RUN poetry config virtualenvs.create false && \
     poetry install --only main --no-interaction --no-ansi
 
-# Копируем исходный код
-COPY . .
+# Копируем исходный код и конфигурационные файлы
+COPY src/ /app/src/
+COPY database/ /app/database/
 
 # Создаем директорию для conversations и устанавливаем права
-RUN mkdir -p /app/conversations && \
+RUN mkdir -p /app/src/conversations && \
     chown -R instagram-worker:instagram-worker /app
 
 # Переключаемся на пользователя instagram-worker
 USER instagram-worker
-
-# Применяем миграции при запуске (опционально)
-# CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]

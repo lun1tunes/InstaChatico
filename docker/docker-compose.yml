@@ -13,7 +13,7 @@ services:
       - "59731:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - instagram_network
     healthcheck:
@@ -61,13 +61,15 @@ services:
     command: ["sh", "-c", "sh /docker-entrypoint.d/10-custom-entrypoint.sh"]
 
   api:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: instagram_api
     ports:
       - "127.0.0.1:${PORT:-4291}:${PORT:-4291}"
     volumes:
-      - ./:/app
-      - conversations_data:/app/conversations
+      - ../src:/app/src
+      - conversations_data:/app/src/conversations
     environment:
       - PORT=${PORT:-4291}
       - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
@@ -94,16 +96,18 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT --reload"
+    command: sh -c "cd /app && alembic -c database/alembic.ini upgrade head && cd /app/src && uvicorn main:app --host 0.0.0.0 --port $PORT --reload"
     security_opt:
       - no-new-privileges:true
 
   celery_worker:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: instagram_celery_worker
     volumes:
-      - ./:/app
-      - conversations_data:/app/conversations
+      - ../src:/app/src
+      - conversations_data:/app/src/conversations
     environment:
       - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
       - LOGS_LEVEL_CELERY=${LOGS_LEVEL_CELERY:-}
@@ -125,16 +129,18 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} --concurrency=4 --without-gossip --without-mingle --without-heartbeat -Q llm_queue,instagram_queue"
+    command: sh -c "cd /app/src && python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} --concurrency=4 --without-gossip --without-mingle --without-heartbeat -Q llm_queue,instagram_queue"
     security_opt:
       - no-new-privileges:true
 
   celery_beat:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: instagram_celery_beat
     volumes:
-      - ./:/app
-      - conversations_data:/app/conversations
+      - ../src:/app/src
+      - conversations_data:/app/src/conversations
     environment:
       - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
       - LOGS_LEVEL_CELERY=${LOGS_LEVEL_CELERY:-}
@@ -156,7 +162,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: celery -A celery_worker beat --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}}
+    command: sh -c "cd /app/src && celery -A celery_worker beat --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}}"
     security_opt:
       - no-new-privileges:true
 
@@ -167,7 +173,7 @@ services:
       - "57928:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./dozzle-users.yml:/data/users.yml:ro
+      - ./config/dozzle/users.yml:/data/users.yml:ro
     networks:
       - instagram_network
     environment:

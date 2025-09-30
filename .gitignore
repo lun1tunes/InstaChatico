@@ -208,9 +208,11 @@ __marimo__/
 
 # Other 
 
-# Security: Signature calculator with sensitive data
-signature_calculator.py
-dozzle-users.yml
+# Security: Signature calculator with sensitive data (if contains secrets)
+# scripts/signature_calculator.py
+
+# Dozzle users configuration (contains hashed passwords)
+docker/config/dozzle/users.yml
 
 # Agent instructions - keep prompts secure and separate from code
-core/agents/instructions/
+src/core/agents/instructions/

@@ -6,8 +6,8 @@ import os
 import sys
 import logging
 
-# Add the app directory to Python path
-sys.path.insert(0, "/app")
+# Add the src directory to Python path
+sys.path.insert(0, "/app/src")
 
 # Import all task modules to ensure they are registered
 import core.tasks.classification_tasks
