@@ -12,11 +12,9 @@ from core.tasks.instagram_reply_tasks import send_instagram_reply_async
 
 router = APIRouter(tags=["instagram-replies"])
 
+
 @router.post("/send/{comment_id}")
-async def send_reply_manually(
-    comment_id: str,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
-):
+async def send_reply_manually(comment_id: str, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
     """
     Manually send an Instagram reply for a specific comment.
     """
@@ -45,11 +43,9 @@ async def send_reply_manually(
 
     return {"status": "completed", "comment_id": comment_id, "result": result}
 
+
 @router.get("/status/{comment_id}")
-async def get_reply_status(
-    comment_id: str,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
-):
+async def get_reply_status(comment_id: str, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
     """
     Get the Instagram reply status for a specific comment.
     """
@@ -67,8 +63,9 @@ async def get_reply_status(
         "reply_status": answer.reply_status,
         "reply_error": answer.reply_error,
         "answer_available": answer.answer is not None,
-        "answer_status": answer.processing_status.value
+        "answer_status": answer.processing_status.value,
     }
+
 
 @router.get("/stats")
 async def get_reply_stats(session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
@@ -77,12 +74,9 @@ async def get_reply_stats(session: AsyncSession = Depends(db_helper.scoped_sessi
     """
     # Count replies by status
     status_counts_query = await session.execute(
-        select(
-            QuestionAnswer.reply_status,
-            func.count(QuestionAnswer.id)
-        ).where(
-            QuestionAnswer.answer.isnot(None)
-        ).group_by(QuestionAnswer.reply_status)
+        select(QuestionAnswer.reply_status, func.count(QuestionAnswer.id))
+        .where(QuestionAnswer.answer.isnot(None))
+        .group_by(QuestionAnswer.reply_status)
     )
     status_counts = {status: count for status, count in status_counts_query.all() if status}
 
@@ -98,7 +92,7 @@ async def get_reply_stats(session: AsyncSession = Depends(db_helper.scoped_sessi
             and_(
                 QuestionAnswer.processing_status == AnswerStatus.COMPLETED,
                 QuestionAnswer.answer.isnot(None),
-                QuestionAnswer.reply_sent == False
+                QuestionAnswer.reply_sent == False,
             )
         )
     )
@@ -114,25 +108,29 @@ async def get_reply_stats(session: AsyncSession = Depends(db_helper.scoped_sessi
         "total_replies_sent": total_sent,
         "pending_replies": pending_count,
         "status_breakdown": status_counts,
-        "total_with_answers": total_with_answers
+        "total_with_answers": total_with_answers,
     }
+
 
 @router.get("/pending")
 async def get_pending_replies(
-    limit: int = 50,
-    offset: int = 0,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
+    limit: int = 50, offset: int = 0, session: AsyncSession = Depends(db_helper.scoped_session_dependency)
 ):
     """
     Get a list of comments with completed answers that haven't been replied to yet.
     """
-    stmt = select(QuestionAnswer).where(
-        and_(
-            QuestionAnswer.processing_status == AnswerStatus.COMPLETED,
-            QuestionAnswer.answer.isnot(None),
-            QuestionAnswer.reply_sent == False
+    stmt = (
+        select(QuestionAnswer)
+        .where(
+            and_(
+                QuestionAnswer.processing_status == AnswerStatus.COMPLETED,
+                QuestionAnswer.answer.isnot(None),
+                QuestionAnswer.reply_sent == False,
+            )
         )
-    ).offset(offset).limit(limit)
+        .offset(offset)
+        .limit(limit)
+    )
 
     result = await session.execute(stmt)
     pending_answers = result.scalars().all()
@@ -148,15 +146,17 @@ async def get_pending_replies(
         for answer in pending_answers
     ]
 
+
 @router.post("/process-pending")
 async def process_pending_replies(session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
     """
     Process all pending replies manually.
     """
     from core.tasks.instagram_reply_tasks import process_pending_replies_async
-    
+
     result = await process_pending_replies_async()
     return result
+
 
 @router.get("/validate-token")
 async def validate_instagram_token():
@@ -165,26 +165,25 @@ async def validate_instagram_token():
     """
     try:
         from core.services.instagram_service import InstagramGraphAPIService
+
         instagram_service = InstagramGraphAPIService()
         validation_result = await instagram_service.validate_token()
-        
+
         if validation_result["success"]:
             return {
                 "status": "success",
                 "message": "Instagram access token is valid",
-                "token_info": validation_result["token_info"]
+                "token_info": validation_result["token_info"],
             }
         else:
             return {
                 "status": "error",
                 "message": "Instagram access token validation failed",
-                "error": validation_result["error"]
+                "error": validation_result["error"],
             }
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to validate Instagram token: {str(e)}"
-        }
+        return {"status": "error", "message": f"Failed to validate Instagram token: {str(e)}"}
+
 
 @router.get("/page-info")
 async def get_instagram_page_info():
@@ -193,26 +192,25 @@ async def get_instagram_page_info():
     """
     try:
         from core.services.instagram_service import InstagramGraphAPIService
+
         instagram_service = InstagramGraphAPIService()
         page_info_result = await instagram_service.get_page_info()
-        
+
         if page_info_result["success"]:
             return {
                 "status": "success",
                 "message": "Successfully retrieved Instagram page info",
-                "page_info": page_info_result["page_info"]
+                "page_info": page_info_result["page_info"],
             }
         else:
             return {
                 "status": "error",
                 "message": "Failed to get Instagram page info",
-                "error": page_info_result["error"]
+                "error": page_info_result["error"],
             }
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to get Instagram page info: {str(e)}"
-        }
+        return {"status": "error", "message": f"Failed to get Instagram page info: {str(e)}"}
+
 
 @router.get("/debug/reply-ids")
 async def debug_reply_ids(session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
@@ -222,28 +220,23 @@ async def debug_reply_ids(session: AsyncSession = Depends(db_helper.scoped_sessi
     try:
         # Get all question answers with reply_ids
         result = await session.execute(
-            select(QuestionAnswer.reply_id, QuestionAnswer.comment_id, QuestionAnswer.reply_sent)
-            .where(QuestionAnswer.reply_id.isnot(None))
+            select(QuestionAnswer.reply_id, QuestionAnswer.comment_id, QuestionAnswer.reply_sent).where(
+                QuestionAnswer.reply_id.isnot(None)
+            )
         )
         reply_ids = result.all()
-        
+
         return {
             "status": "success",
             "reply_ids": [
-                {
-                    "reply_id": row.reply_id,
-                    "comment_id": row.comment_id,
-                    "reply_sent": row.reply_sent
-                }
+                {"reply_id": row.reply_id, "comment_id": row.comment_id, "reply_sent": row.reply_sent}
                 for row in reply_ids
             ],
-            "count": len(reply_ids)
+            "count": len(reply_ids),
         }
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to get reply IDs: {str(e)}"
-        }
+        return {"status": "error", "message": f"Failed to get reply IDs: {str(e)}"}
+
 
 @router.post("/cleanup/duplicate-replies")
 async def cleanup_duplicate_replies(session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
@@ -252,16 +245,16 @@ async def cleanup_duplicate_replies(session: AsyncSession = Depends(db_helper.sc
     """
     try:
         from sqlalchemy import func, and_
-        
+
         # Find comments with multiple replies
         duplicate_query = await session.execute(
-            select(QuestionAnswer.comment_id, func.count(QuestionAnswer.id).label('count'))
+            select(QuestionAnswer.comment_id, func.count(QuestionAnswer.id).label("count"))
             .where(QuestionAnswer.reply_sent == True)
             .group_by(QuestionAnswer.comment_id)
             .having(func.count(QuestionAnswer.id) > 1)
         )
         duplicates = duplicate_query.all()
-        
+
         cleaned_count = 0
         for comment_id, count in duplicates:
             # Keep the first reply, delete the rest
@@ -272,32 +265,30 @@ async def cleanup_duplicate_replies(session: AsyncSession = Depends(db_helper.sc
                 .limit(1)
             )
             keep_id = replies_to_keep.scalar()
-            
+
             # Delete the rest
             delete_result = await session.execute(
-                select(QuestionAnswer)
-                .where(and_(
-                    QuestionAnswer.comment_id == comment_id,
-                    QuestionAnswer.reply_sent == True,
-                    QuestionAnswer.id != keep_id
-                ))
+                select(QuestionAnswer).where(
+                    and_(
+                        QuestionAnswer.comment_id == comment_id,
+                        QuestionAnswer.reply_sent == True,
+                        QuestionAnswer.id != keep_id,
+                    )
+                )
             )
             replies_to_delete = delete_result.scalars().all()
-            
+
             for reply in replies_to_delete:
                 await session.delete(reply)
                 cleaned_count += 1
-        
+
         await session.commit()
-        
+
         return {
             "status": "success",
             "message": f"Cleaned up {cleaned_count} duplicate replies",
-            "duplicate_comments": len(duplicates)
+            "duplicate_comments": len(duplicates),
         }
     except Exception as e:
         await session.rollback()
-        return {
-            "status": "error",
-            "message": f"Failed to cleanup duplicates: {str(e)}"
-        }
+        return {"status": "error", "message": f"Failed to cleanup duplicates: {str(e)}"}

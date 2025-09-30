@@ -21,9 +21,9 @@ async def lifespan(app: FastAPI):
     # Ensure logging is configured at startup when running under uvicorn
     configure_logging()
     yield
-    
 
-app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url = None)
+
+app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(router=router_v1, prefix=settings.api_v1_prefix)
 docs_router = create_docs_router(app)
 app.include_router(router=docs_router)
@@ -43,52 +43,44 @@ async def verify_webhook_signature(request: Request, call_next):
         signature_256 = request.headers.get("X-Hub-Signature-256")
         signature_1 = request.headers.get("X-Hub-Signature")
         body = await request.body()
-        
+
         # Try SHA256 first (Instagram's preferred method), then fallback to SHA1
         signature = signature_256 or signature_1
-        
+
         if signature:
             # Determine which algorithm to use based on the header
             if signature_256:
                 # Instagram uses SHA256
-                expected_signature = "sha256=" + hmac.new(
-                    settings.app_secret.encode(),
-                    body,
-                    hashlib.sha256
-                ).hexdigest()
+                expected_signature = (
+                    "sha256=" + hmac.new(settings.app_secret.encode(), body, hashlib.sha256).hexdigest()
+                )
             else:
                 # Fallback to SHA1 for compatibility
-                expected_signature = "sha1=" + hmac.new(
-                    settings.app_secret.encode(),
-                    body,
-                    hashlib.sha1
-                ).hexdigest()
+                expected_signature = "sha1=" + hmac.new(settings.app_secret.encode(), body, hashlib.sha1).hexdigest()
 
             if not hmac.compare_digest(signature, expected_signature):
                 logging.error("Signature verification failed!")
                 logging.error(f"Body length: {len(body)}")
                 logging.error(f"Signature header used: {'X-Hub-Signature-256' if signature_256 else 'X-Hub-Signature'}")
-                logging.error(f"Signature prefix: {signature[:10]}..." if len(signature) > 10 else "Signature: [REDACTED]")
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Invalid signature"}
+                logging.error(
+                    f"Signature prefix: {signature[:10]}..." if len(signature) > 10 else "Signature: [REDACTED]"
                 )
+                return JSONResponse(status_code=401, content={"detail": "Invalid signature"})
             else:
                 logging.info("Signature verification successful")
         else:
             # Check if we're in development mode (allow requests without signature for testing)
             development_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
-            
+
             if development_mode:
                 logging.warning("DEVELOPMENT MODE: Allowing webhook request without signature header")
             else:
                 # Block requests without signature headers in production
-                logging.error("Webhook request received without X-Hub-Signature or X-Hub-Signature-256 header - blocking request")
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Missing signature header"}
+                logging.error(
+                    "Webhook request received without X-Hub-Signature or X-Hub-Signature-256 header - blocking request"
                 )
-        
+                return JSONResponse(status_code=401, content={"detail": "Missing signature header"})
+
         # Сохраняем тело запроса для дальнейшей обработки
         request.state.body = body
         return await call_next(request)
@@ -99,6 +91,7 @@ async def verify_webhook_signature(request: Request, call_next):
     # Include trace id in response for clients to propagate
     response.headers["X-Trace-Id"] = trace_id
     return response
+
 
 if __name__ == "__main__":
 

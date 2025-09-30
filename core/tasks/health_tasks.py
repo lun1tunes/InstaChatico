@@ -41,7 +41,7 @@ def _get_disk_pct() -> float:
             return -1.0
     try:
         st = os.statvfs("/")
-        used = (st.f_blocks - st.f_bfree)
+        used = st.f_blocks - st.f_bfree
         pct = used / st.f_blocks * 100 if st.f_blocks else 0
         return float(pct)
     except Exception:
@@ -73,5 +73,3 @@ def check_system_health_task():
 
     # Info heartbeat (once in a while could be added; keep it minimal here)
     return details
-
-

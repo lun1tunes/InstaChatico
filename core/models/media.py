@@ -9,27 +9,36 @@ from .base import Base
 if TYPE_CHECKING:
     from .instagram_comment import InstagramComment
 
+
 class Media(Base):
     __tablename__ = "media"
-    
+
     id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="Instagram media ID")
     permalink: Mapped[str] = mapped_column(String(500), nullable=False, comment="Instagram post permalink URL")
     caption: Mapped[str | None] = mapped_column(String, nullable=True, comment="Post caption text")
     media_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="URL to the media file")
-    media_type: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="Type of media (IMAGE, VIDEO, CAROUSEL_ALBUM)")
+    media_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, comment="Type of media (IMAGE, VIDEO, CAROUSEL_ALBUM)"
+    )
     comments_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Number of comments on the post")
     like_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Number of likes on the post")
     shortcode: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Instagram shortcode")
     timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="When the media was posted")
-    is_comment_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True, comment="Whether comments are enabled")
+    is_comment_enabled: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, comment="Whether comments are enabled"
+    )
     username: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Username of the media owner")
     owner: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Owner account ID")
-    
+
     # Additional metadata
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="When this record was created")
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="When this record was last updated")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, comment="When this record was created"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="When this record was last updated"
+    )
     raw_data = mapped_column(JSONB, nullable=True, comment="Raw Instagram API response data")
-    
+
     # Relationship to comments (one-to-many, no cascade delete)
     comments: Mapped[list[InstagramComment]] = relationship(
         "InstagramComment",

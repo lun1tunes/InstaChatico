@@ -22,6 +22,27 @@ langchain-community = "^0.3.29"
 aiohttp = "^3.9.0"
 openai-agents = "^0.3.2"
 
+[tool.poetry.group.dev.dependencies]
+black = "^24.0.0"
+pre-commit = "^3.0.0"
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
 
 [build-system]
 requires = ["poetry-core"]

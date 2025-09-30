@@ -19,6 +19,7 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+
 @celery_app.task(bind=True, max_retries=3)
 def send_telegram_notification_task(self, comment_id: str):
     """Synchronous wrapper for async Telegram notification task"""
@@ -29,13 +30,14 @@ def send_telegram_notification_task(self, comment_id: str):
     finally:
         loop.close()
 
+
 async def send_telegram_notification_async(comment_id: str, task_instance=None):
     """Async task to send notification to Telegram for urgent issues or critical feedback"""
-    
+
     # Create a fresh engine and session for this task
     engine = create_async_engine(settings.db.url, echo=settings.db.echo)
     session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-    
+
     async with session_factory() as session:
         try:
             # Get the comment with its classification
@@ -45,21 +47,23 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
                 .where(InstagramComment.id == comment_id)
             )
             comment = result.scalar_one_or_none()
-            
+
             if not comment:
                 logger.warning(f"Comment {comment_id} not found for Telegram notification")
                 return {"status": "error", "reason": "comment_not_found"}
-            
+
             if not comment.classification:
                 logger.warning(f"No classification found for comment {comment_id}")
                 return {"status": "error", "reason": "no_classification"}
-            
+
             # Check if this comment requires a Telegram notification
             classification = comment.classification.classification
             if classification not in ["urgent issue / complaint", "critical feedback"]:
-                logger.info(f"Comment {comment_id} classification '{classification}' does not require Telegram notification")
+                logger.info(
+                    f"Comment {comment_id} classification '{classification}' does not require Telegram notification"
+                )
                 return {"status": "skipped", "reason": "no_notification_needed"}
-            
+
             # Prepare comment data for Telegram notification
             comment_data = {
                 "comment_id": comment.id,
@@ -67,88 +71,52 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
                 "classification": comment.classification.classification,
                 "confidence": comment.classification.confidence,
                 "reasoning": comment.classification.reasoning,
-                "sentiment_score": comment.classification.meta_data.get('sentiment_score', 0),
-                "toxicity_score": comment.classification.meta_data.get('toxicity_score', 0),
+                "sentiment_score": comment.classification.meta_data.get("sentiment_score", 0),
+                "toxicity_score": comment.classification.meta_data.get("toxicity_score", 0),
                 "media_id": comment.media_id,
                 "username": comment.username or "Unknown user",
-                "timestamp": comment.created_at.isoformat() if comment.created_at else "Unknown time"
+                "timestamp": comment.created_at.isoformat() if comment.created_at else "Unknown time",
             }
-            
+
             # Send Telegram notification
             telegram_service = TelegramAlertService(alert_type="instagram_comment_alerts")
             notification_result = await telegram_service.send_notification(comment_data)
-            
+
             if notification_result.get("success"):
                 logger.info(f"Telegram notification sent successfully for comment {comment_id}")
                 return {
                     "status": "success",
                     "comment_id": comment_id,
                     "telegram_message_id": notification_result.get("message_id"),
-                    "notification_result": notification_result
+                    "notification_result": notification_result,
                 }
             else:
-                logger.error(f"Failed to send Telegram notification for comment {comment_id}: {notification_result.get('error')}")
-                
+                logger.error(
+                    f"Failed to send Telegram notification for comment {comment_id}: {notification_result.get('error')}"
+                )
+
                 # Retry if we haven't exceeded max retries
                 if task_instance and task_instance.request.retries < task_instance.max_retries:
-                    retry_countdown = 2 ** task_instance.request.retries * 60
-                    raise task_instance.retry(countdown=retry_countdown, exc=Exception(notification_result.get('error')))
-                
+                    retry_countdown = 2**task_instance.request.retries * 60
+                    raise task_instance.retry(
+                        countdown=retry_countdown, exc=Exception(notification_result.get("error"))
+                    )
+
                 return {
                     "status": "error",
                     "comment_id": comment_id,
-                    "reason": notification_result.get('error'),
-                    "notification_result": notification_result
+                    "reason": notification_result.get("error"),
+                    "notification_result": notification_result,
                 }
-                
+
         except Exception as exc:
             logger.exception(f"Error sending Telegram notification for comment {comment_id}")
-            
+
             # Retry if we haven't exceeded max retries
             if task_instance and task_instance.request.retries < task_instance.max_retries:
-                retry_countdown = 2 ** task_instance.request.retries * 60
+                retry_countdown = 2**task_instance.request.retries * 60
                 raise task_instance.retry(countdown=retry_countdown, exc=exc)
-            
-            return {
-                "status": "error",
-                "comment_id": comment_id,
-                "reason": str(exc)
-            }
+
+            return {"status": "error", "comment_id": comment_id, "reason": str(exc)}
         finally:
             await engine.dispose()
-
-@celery_app.task(bind=True)
-def test_telegram_connection(self):
-    """Test task to verify Telegram bot connection"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(test_telegram_connection_async())
-    finally:
-        loop.close()
-
-async def test_telegram_connection_async():
-    """Async test task to verify Telegram bot connection"""
-    try:
-        telegram_service = TelegramAlertService()
-        result = await telegram_service.test_connection()
-        
-        if result.get("success"):
-            logger.info("Telegram connection test successful")
-            return {
-                "status": "success",
-                "bot_info": result.get("bot_info"),
-                "chat_id": result.get("chat_id")
-            }
-        else:
-            logger.error(f"Telegram connection test failed: {result.get('error')}")
-            return {
-                "status": "error",
-                "reason": result.get("error")
-            }
-    except Exception as e:
-        logger.exception("Error testing Telegram connection")
-        return {
-            "status": "error",
-            "reason": str(e)
-        }

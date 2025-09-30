@@ -6,11 +6,11 @@ import logging
 from fastapi import APIRouter, HTTPException
 from core.logging_config import trace_id_ctx
 from core.services.telegram_alert_service import TelegramAlertService
-from core.tasks.telegram_tasks import test_telegram_connection
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/telegram", tags=["Telegram"])
+
 
 @router.get("/test-connection")
 async def test_telegram_bot_connection():
@@ -18,25 +18,23 @@ async def test_telegram_bot_connection():
     try:
         telegram_service = TelegramAlertService()
         result = await telegram_service.test_connection()
-        
+
         if result.get("success"):
             return {
                 "status": "success",
                 "message": "Telegram bot connection successful",
                 "bot_info": result.get("bot_info"),
-                "chat_id": result.get("chat_id")
+                "chat_id": result.get("chat_id"),
             }
         else:
             raise HTTPException(
                 status_code=400,
-                detail=f"Telegram connection failed: {result.get('error')}"
+                detail=f"Telegram connection failed: {result.get('error')}",
             )
     except Exception as e:
         logger.error(f"Error testing Telegram connection: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
 
 @router.post("/test-notification")
 async def test_telegram_notification():
@@ -53,30 +51,28 @@ async def test_telegram_notification():
             "toxicity_score": 20,
             "media_id": "test_media_123",
             "username": "test_user",
-            "timestamp": "2024-01-01T12:00:00Z"
+            "timestamp": "2024-01-01T12:00:00Z",
         }
-        
+
         telegram_service = TelegramAlertService()
         result = await telegram_service.send_urgent_issue_notification(test_comment_data)
-        
+
         if result.get("success"):
             return {
                 "status": "success",
                 "message": "Test notification sent successfully",
                 "telegram_message_id": result.get("message_id"),
-                "response": result.get("response")
+                "response": result.get("response"),
             }
         else:
             raise HTTPException(
                 status_code=400,
-                detail=f"Failed to send test notification: {result.get('error')}"
+                detail=f"Failed to send test notification: {result.get('error')}",
             )
     except Exception as e:
         logger.error(f"Error sending test notification: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
 
 @router.post("/test-log-alert")
 async def test_log_alert(level: str = "warning"):
@@ -93,31 +89,16 @@ async def test_log_alert(level: str = "warning"):
         elif level == "warning":
             logger.warning("Test log alert: WARNING level")
         elif level == "error":
-            try:
-                raise ValueError("Simulated error for log alert testing")
-            except Exception:
-                logger.exception("Test log alert: ERROR level with exception")
+            logger.exception("Test log alert: ERROR level with exception")
         elif level == "critical":
-            try:
-                raise RuntimeError("Simulated critical error for log alert testing")
-            except Exception:
-                logger.exception("Test log alert: CRITICAL level with exception")
+            logger.exception("Test log alert: CRITICAL level with exception")
         else:
-            raise HTTPException(status_code=400, detail="Invalid level. Use: debug|info|warning|error|critical")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid level. Use: debug|info|warning|error|critical",
+            )
     except Exception as e:
         logger.exception("Failed to emit test log alert")
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"status": "emitted", "level": level, "trace_id": trace_id}
-
-@router.get("/config")
-async def get_telegram_config():
-    """Get Telegram configuration status (without exposing sensitive data)"""
-    from core.config import settings
-    
-    return {
-        "bot_token_configured": bool(settings.telegram.bot_token),
-        "chat_id_configured": bool(settings.telegram.chat_id),
-        "bot_token_length": len(settings.telegram.bot_token) if settings.telegram.bot_token else 0,
-        "chat_id_length": len(settings.telegram.chat_id) if settings.telegram.chat_id else 0
-    }

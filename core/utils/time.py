@@ -33,5 +33,3 @@ def now_db_utc() -> datetime:
     to avoid mixing offset-aware with naive in inserts/updates.
     """
     return now_utc().replace(tzinfo=None)
-
-

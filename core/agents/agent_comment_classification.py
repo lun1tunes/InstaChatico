@@ -18,32 +18,36 @@ from .instructions.instruction_classification import CLASSIFICATION_INSTRUCTIONS
 
 class ClassificationResult(BaseModel):
     """Pydantic model for structured classification output using OpenAI Agents SDK"""
+
     classification: Literal[
-        "positive feedback",
-        "critical feedback", 
-        "urgent issue / complaint",
-        "question / inquiry",
-        "spam / irrelevant"
+        "positive feedback", "critical feedback", "urgent issue / complaint", "question / inquiry", "spam / irrelevant"
     ] = Field(description="The classification category for the comment")
     confidence: int = Field(ge=0, le=100, description="Confidence score from 0 to 100")
-    reasoning: str = Field(description="Brief explanation of why this classification was chosen, including context considerations")
+    reasoning: str = Field(
+        description="Brief explanation of why this classification was chosen, including context considerations"
+    )
     contains_question: bool = Field(description="Whether the comment contains a question or is a follow-up question")
     sentiment_score: int = Field(ge=-100, le=100, description="Sentiment score from -100 (negative) to 100 (positive)")
     toxicity_score: int = Field(ge=0, le=100, description="Toxicity score from 0 (safe) to 100 (toxic)")
-    context_used: bool = Field(default=False, description="Whether conversation context was available and used in classification")
-    conversation_continuity: bool = Field(default=False, description="Whether this comment continues or relates to previous conversation")
+    context_used: bool = Field(
+        default=False, description="Whether conversation context was available and used in classification"
+    )
+    conversation_continuity: bool = Field(
+        default=False, description="Whether this comment continues or relates to previous conversation"
+    )
+
 
 def create_comment_classification_agent(api_key: str = None) -> Agent:
     """
     Create and configure the Instagram comment classification agent.
-    
+
     Args:
         api_key: OpenAI API key (optional, uses settings if not provided)
-        
+
     Returns:
         Configured Agent instance for comment classification
     """
-    
+
     # Load instructions from external file for better security and maintainability
     enhanced_instructions = CLASSIFICATION_INSTRUCTIONS
 
@@ -55,15 +59,17 @@ def create_comment_classification_agent(api_key: str = None) -> Agent:
         model=settings.openai.model_comment_classification,
     )
 
+
 # Convenience function to get a pre-configured agent
 def get_comment_classification_agent() -> Agent:
     """
     Get a pre-configured comment classification agent using default settings.
-    
+
     Returns:
         Configured Agent instance for comment classification
     """
     return create_comment_classification_agent()
+
 
 # Create a singleton instance of the agent
 # This ensures only one instance is created and reused throughout the application

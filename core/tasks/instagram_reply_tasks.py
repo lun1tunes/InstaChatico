@@ -15,18 +15,19 @@ from ..services.instagram_service import InstagramGraphAPIService
 
 logger = logging.getLogger(__name__)
 
+
 @celery_app.task(bind=True, max_retries=3)
 def send_instagram_reply_task(self, comment_id: str, answer_text: str):
     """Synchronous wrapper for asynchronous Instagram reply sending"""
     # Redis-based lock to prevent duplicate processing
     redis_client = redis.Redis.from_url(settings.celery.broker_url)
     lock_key = f"instagram_reply_lock:{comment_id}"
-    
+
     # Try to acquire lock with 30 second timeout
     if not redis_client.set(lock_key, "processing", nx=True, ex=30):
         logger.info(f"Reply task for comment {comment_id} is already being processed, skipping")
         return {"status": "skipped", "reason": "already_processing"}
-    
+
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -38,6 +39,7 @@ def send_instagram_reply_task(self, comment_id: str, answer_text: str):
     finally:
         # Release the lock
         redis_client.delete(lock_key)
+
 
 async def send_instagram_reply_async(comment_id: str, answer_text: str, task_instance=None):
     """Asynchronous task for sending Instagram private reply"""
@@ -68,7 +70,7 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                 return {"status": "error", "reason": "answer_not_completed"}
 
             # Check if we already sent a reply (to avoid duplicate replies)
-            if hasattr(comment.question_answer, 'reply_sent') and comment.question_answer.reply_sent:
+            if hasattr(comment.question_answer, "reply_sent") and comment.question_answer.reply_sent:
                 logger.info(f"Reply already sent for comment {comment_id}")
                 return {"status": "skipped", "reason": "reply_already_sent"}
 
@@ -87,27 +89,27 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                         and_(
                             QuestionAnswer.comment_id == comment_id,
                             QuestionAnswer.reply_sent == False,
-                            QuestionAnswer.reply_id.is_(None)
+                            QuestionAnswer.reply_id.is_(None),
                         )
                     )
                     .with_for_update(skip_locked=True)
                 )
                 question_answer = update_result.scalar_one_or_none()
-                
+
                 if not question_answer:
                     logger.info(f"Comment {comment_id} already has a reply or is being processed by another worker")
                     return {"status": "skipped", "reason": "already_processed_or_processing"}
-                    
+
             except Exception as e:
                 logger.warning(f"Failed to acquire lock for comment {comment_id}: {e}")
                 return {"status": "skipped", "reason": "lock_acquisition_failed"}
 
             # Initialize Instagram service
             instagram_service = InstagramGraphAPIService()
-            
+
             # Send the reply to comment
             reply_result = await instagram_service.send_reply_to_comment(comment_id, answer_text)
-            
+
             if reply_result["success"]:
                 try:
                     # Mark reply as sent in the database
@@ -117,9 +119,9 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                     comment.question_answer.reply_response = reply_result.get("response", {})
                     reply_id = reply_result.get("reply_id")
                     comment.question_answer.reply_id = reply_id  # Store reply_id to prevent infinite loops
-                    
+
                     logger.info(f"Storing reply_id: {reply_id} for comment {comment_id}")
-                    
+
                     await session.commit()
                 except Exception as e:
                     # Handle potential duplicate reply_id constraint violation
@@ -128,32 +130,32 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                         return {"status": "skipped", "reason": "duplicate_reply_id_constraint"}
                     else:
                         raise e
-                
+
                 logger.info(f"Successfully sent Instagram reply for comment {comment_id}")
-                return {
-                    "status": "success",
-                    "comment_id": comment_id,
-                    "reply_result": reply_result
-                }
+                return {"status": "success", "comment_id": comment_id, "reply_result": reply_result}
             else:
                 # Log the error but don't mark as failed yet (might retry)
                 logger.error(f"Failed to send Instagram reply for comment {comment_id}: {reply_result}")
-                
+
                 if task_instance and task_instance.request.retries < task_instance.max_retries:
                     # Use shorter retry intervals for Instagram API rate limiting
-                    retry_countdown = min(2 ** task_instance.request.retries * 30, 300)  # Max 5 minutes
-                    logger.warning(f"Instagram API error for comment {comment_id}, retry {task_instance.request.retries + 1}/{task_instance.max_retries} in {retry_countdown}s")
-                    raise task_instance.retry(countdown=retry_countdown, exc=Exception(reply_result.get("error", "Unknown error")))
-                
+                    retry_countdown = min(2**task_instance.request.retries * 30, 300)  # Max 5 minutes
+                    logger.warning(
+                        f"Instagram API error for comment {comment_id}, retry {task_instance.request.retries + 1}/{task_instance.max_retries} in {retry_countdown}s"
+                    )
+                    raise task_instance.retry(
+                        countdown=retry_countdown, exc=Exception(reply_result.get("error", "Unknown error"))
+                    )
+
                 # Mark as failed after max retries
                 comment.question_answer.reply_status = "failed"
                 comment.question_answer.reply_error = str(reply_result.get("error", "Unknown error"))
                 await session.commit()
-                
+
                 return {
                     "status": "error",
                     "comment_id": comment_id,
-                    "reason": reply_result.get("error", "Unknown error")
+                    "reason": reply_result.get("error", "Unknown error"),
                 }
 
         except Exception as exc:
@@ -161,12 +163,13 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
             await session.rollback()
 
             if task_instance and task_instance.request.retries < task_instance.max_retries:
-                retry_countdown = 2 ** task_instance.request.retries * 60
+                retry_countdown = 2**task_instance.request.retries * 60
                 raise task_instance.retry(countdown=retry_countdown, exc=exc)
 
             return {"status": "error", "reason": str(exc)}
         finally:
             await engine.dispose()
+
 
 @celery_app.task(bind=True, max_retries=3)
 def process_pending_replies_task(self):
@@ -177,6 +180,7 @@ def process_pending_replies_task(self):
         loop.run_until_complete(process_pending_replies_async(self))
     finally:
         loop.close()
+
 
 async def process_pending_replies_async(task_instance=None):
     """Process all completed answers that haven't been replied to yet"""
@@ -201,7 +205,7 @@ async def process_pending_replies_async(task_instance=None):
                 and_(
                     QuestionAnswer.processing_status == AnswerStatus.COMPLETED,
                     QuestionAnswer.answer.isnot(None),
-                    QuestionAnswer.reply_sent == False  # Assuming we'll add this field
+                    QuestionAnswer.reply_sent == False,  # Assuming we'll add this field
                 )
             )
             result = await session.execute(stmt)
@@ -219,26 +223,20 @@ async def process_pending_replies_async(task_instance=None):
                 try:
                     # Send the reply
                     reply_result = await send_instagram_reply_async(answer_record.comment_id, answer_record.answer)
-                    results.append({
-                        "comment_id": answer_record.comment_id, 
-                        "status": "success", 
-                        "result": reply_result
-                    })
+                    results.append(
+                        {"comment_id": answer_record.comment_id, "status": "success", "result": reply_result}
+                    )
                     processed_count += 1
                     logger.info(f"Processed reply for comment {answer_record.comment_id}")
                 except Exception as e:
-                    results.append({
-                        "comment_id": answer_record.comment_id, 
-                        "status": "error", 
-                        "error": str(e)
-                    })
+                    results.append({"comment_id": answer_record.comment_id, "status": "error", "error": str(e)})
                     logger.error(f"Failed to process reply for comment {answer_record.comment_id}: {e}")
 
             return {
-                "status": "success", 
-                "processed_count": processed_count, 
-                "total_found": len(pending_answers), 
-                "results": results
+                "status": "success",
+                "processed_count": processed_count,
+                "total_found": len(pending_answers),
+                "results": results,
             }
 
         except Exception as e:
@@ -249,7 +247,7 @@ async def process_pending_replies_async(task_instance=None):
             await engine.dispose()
             # Release lock by letting TTL expire; ensure key removed if we created it without TTL
             try:
-                if 'redis_client' in locals():
+                if "redis_client" in locals():
                     # Keep it simple; delete if still present
                     redis_client.delete("process_pending_replies_lock")
             except Exception:

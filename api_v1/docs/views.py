@@ -7,9 +7,10 @@ from fastapi.openapi.utils import get_openapi
 
 from core.config import settings
 
+
 def create_docs_router(app):
     router = APIRouter(tags=["docs"])
-    
+
     security = HTTPBasic()
 
     def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
@@ -30,5 +31,5 @@ def create_docs_router(app):
     @router.get("/openapi.json")
     async def openapi(username: str = Depends(get_current_username)):
         return get_openapi(title="FastAPI", version="0.1.0", routes=app.routes)
-    
+
     return router

@@ -9,6 +9,7 @@ from .base import Base
 if TYPE_CHECKING:
     from .instagram_comment import InstagramComment
 
+
 class ProcessingStatus(str, Enum):
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
@@ -16,33 +17,31 @@ class ProcessingStatus(str, Enum):
     FAILED = "FAILED"
     RETRY = "RETRY"
 
+
 class CommentClassification(Base):
     __tablename__ = "comments_classification"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     comment_id: Mapped[str] = mapped_column(
-        ForeignKey("instagram_comments.id", ondelete="CASCADE"), 
-        unique=True, 
-        index=True
+        ForeignKey("instagram_comments.id", ondelete="CASCADE"), unique=True, index=True
     )
-    
+
     processing_status: Mapped[ProcessingStatus] = mapped_column(
-        SQLEnum(ProcessingStatus, name="processingstatus"),
-        default=ProcessingStatus.PENDING
+        SQLEnum(ProcessingStatus, name="processingstatus"), default=ProcessingStatus.PENDING
     )
     processing_started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     processing_completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    
+
     retry_count: Mapped[int] = mapped_column(default=0)
     max_retries: Mapped[int] = mapped_column(default=3)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
     classification: Mapped[str | None] = mapped_column(String(50), nullable=True)
     confidence: Mapped[int | None] = mapped_column(nullable=True)
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     llm_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     meta_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    
+
     # Relationship
     comment: Mapped[InstagramComment] = relationship(
         back_populates="classification",

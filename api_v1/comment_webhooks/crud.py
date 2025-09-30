@@ -4,7 +4,7 @@
 
 # from core.models import Product
 
-# from .schemas import 
+# from .schemas import
 
 # async def create_comment(session: AsyncSession, product_in: ProductCreate) -> Product:
 #     product = Product(**product_in.model_dump())

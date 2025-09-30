@@ -4,14 +4,14 @@ from .agent_comment_classification import (
     create_comment_classification_agent,
     get_comment_classification_agent,
     comment_classification_agent,  # Singleton instance
-    ClassificationResult
+    ClassificationResult,
 )
 
 from .agent_comment_response import (
     create_comment_response_agent,
     get_comment_response_agent,
     comment_response_agent,  # Singleton instance
-    AnswerResult
+    AnswerResult,
 )
 
 __all__ = [
@@ -24,5 +24,5 @@ __all__ = [
     "create_comment_response_agent",
     "get_comment_response_agent",
     "comment_response_agent",  # Singleton instance
-    "AnswerResult"
+    "AnswerResult",
 ]

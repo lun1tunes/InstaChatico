@@ -10,10 +10,11 @@ if TYPE_CHECKING:
     from .comment_classification import CommentClassification
     from .question_answer import QuestionAnswer
     from .media import Media
-    
+
+
 class InstagramComment(Base):
     __tablename__ = "instagram_comments"
-    
+
     id: Mapped[str] = mapped_column(primary_key=True)
     media_id: Mapped[str] = mapped_column(String(100), ForeignKey("media.id"), comment="Foreign key to media table")
     user_id: Mapped[str]
@@ -21,32 +22,32 @@ class InstagramComment(Base):
     text: Mapped[str]
     created_at: Mapped[datetime]
     raw_data = mapped_column(JSONB)
-    
+
     # Parent comment ID for replies (nullable)
     parent_id: Mapped[str | None] = mapped_column(
-        String(100), 
-        nullable=True, 
+        String(100),
+        nullable=True,
         index=True,
-        comment="ID of the parent comment if this is a reply, NULL if it's a top-level comment"
+        comment="ID of the parent comment if this is a reply, NULL if it's a top-level comment",
     )
-    
+
     # Session management for chained conversations
     conversation_id: Mapped[str | None] = mapped_column(
-        String(100), 
-        nullable=True, 
+        String(100),
+        nullable=True,
         index=True,
-        comment="Conversation ID for session management - first_question_comment_{id} format"
+        comment="Conversation ID for session management - first_question_comment_{id} format",
     )
-    
+
     # Relationship to classification
     classification: Mapped[CommentClassification] = relationship(
-        "CommentClassification", 
+        "CommentClassification",
         back_populates="comment",
         uselist=False,
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    
+
     # Relationship to question answer
     question_answer: Mapped[QuestionAnswer] = relationship(
         "QuestionAnswer",
@@ -56,7 +57,7 @@ class InstagramComment(Base):
         passive_deletes=True,
         overlaps="classification",
     )
-    
+
     # Relationship to media
     media: Mapped[Media] = relationship(
         "Media",
