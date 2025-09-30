@@ -83,24 +83,27 @@ async def test_log_alert(level: str = "warning"):
     """
     level = level.lower().strip()
     trace_id = trace_id_ctx.get()
-    try:
-        if level == "debug":
-            logger.debug("Test log alert: DEBUG level")
-        elif level == "info":
-            logger.info("Test log alert: INFO level")
-        elif level == "warning":
-            logger.warning("Test log alert: WARNING level")
-        elif level == "error":
-            logger.exception("Test log alert: ERROR level with exception")
-        elif level == "critical":
-            logger.exception("Test log alert: CRITICAL level with exception")
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid level. Use: debug|info|warning|error|critical",
-            )
-    except Exception as e:
-        logger.exception("Failed to emit test log alert")
-        raise HTTPException(status_code=500, detail=str(e))
+
+    if level == "debug":
+        logger.debug("🔍 Test log alert: DEBUG level")
+    elif level == "info":
+        logger.info("ℹ️ Test log alert: INFO level")
+    elif level == "warning":
+        logger.warning(
+            "⚠️ Test log alert: WARNING level - should go to Telegram LOGS thread"
+        )
+    elif level == "error":
+        logger.error(
+            "🔴 Test log alert: ERROR level - should go to Telegram LOGS thread"
+        )
+    elif level == "critical":
+        logger.critical(
+            "🚨 Test log alert: CRITICAL level - should go to Telegram LOGS thread"
+        )
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid level. Use: debug|info|warning|error|critical",
+        )
 
     return {"status": "emitted", "level": level, "trace_id": trace_id}

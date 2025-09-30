@@ -40,7 +40,7 @@ class CommentClassificationService:
         try:
             # Get the session's current state to check if it's new
             # If session has no items, it's a new conversation - add media context
-            if media_context and not await self._session_has_context(session):
+            if media_context and not await self._session_has_context(conversation_id):
                 await self._inject_media_context_to_session(session, media_context)
                 logger.info(
                     f"✅ Media context injected into NEW conversation: {conversation_id}"
@@ -59,7 +59,7 @@ class CommentClassificationService:
         )
         return session
 
-    async def _session_has_context(self, session: SQLiteSession) -> bool:
+    async def _session_has_context(self, conversation_id: str) -> bool:
         """Check if session has existing messages in agent_messages table."""
         try:
             import sqlite3
@@ -81,19 +81,19 @@ class CommentClassificationService:
             # Check if this session has any messages already
             cursor.execute(
                 "SELECT COUNT(*) FROM agent_messages WHERE session_id = ?",
-                (session._session_id,),
+                (conversation_id,),
             )
             message_count = cursor.fetchone()[0]
             conn.close()
 
             if message_count > 0:
                 logger.debug(
-                    f"🔁 Session {session._session_id} has {message_count} existing messages - skipping context injection"
+                    f"🔁 Session {conversation_id} has {message_count} existing messages - skipping context injection"
                 )
                 return True
             else:
                 logger.debug(
-                    f"✨ Session {session._session_id} has no messages - will inject context"
+                    f"✨ Session {conversation_id} has no messages - will inject context"
                 )
                 return False
 

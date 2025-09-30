@@ -34,7 +34,9 @@ class TelegramAlertService:
             self.thread_id = None
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
 
-    async def send_urgent_issue_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def send_urgent_issue_notification(
+        self, comment_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Send urgent issue notification to Telegram
 
@@ -76,7 +78,9 @@ class TelegramAlertService:
             logger.exception("Error sending Telegram notification")
             return {"success": False, "error": str(e)}
 
-    async def send_critical_feedback_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def send_critical_feedback_notification(
+        self, comment_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Send critical feedback notification to Telegram
 
@@ -277,15 +281,17 @@ class TelegramAlertService:
         elif classification == "critical feedback":
             return await self.send_critical_feedback_notification(comment_data)
         else:
-            logger.warning(f"No notification needed for classification: {classification}")
+            logger.warning(
+                f"No notification needed for classification: {classification}"
+            )
             return {
                 "success": False,
                 "error": f"No notification configured for classification: {classification}",
             }
 
     async def send_log_alert(self, log_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send application log alerts to Telegram.
-        Expects keys: level, logger, message, trace_id, when, details (optional)
+        """Send application log alerts to Telegram LOGS thread with HTML formatting.
+        Expects keys: level, logger, message, trace_id, timestamp, exception (optional)
         """
         try:
             if not self.bot_token or not self.chat_id:
@@ -296,40 +302,83 @@ class TelegramAlertService:
             logger_name = str(log_data.get("logger", "-"))
             message = str(log_data.get("message", ""))
             trace_id = str(log_data.get("trace_id", "-"))
-            when = str(log_data.get("when", ""))
-            details = str(log_data.get("details", ""))
+            timestamp = str(log_data.get("timestamp", ""))
+            exception = log_data.get("exception", "")
 
-            def escape_html(text: str) -> str:
-                if not text:
-                    return ""
+            # HTML escape function
+            def esc(text: str) -> str:
                 return (
-                    text.replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                    .replace('"', "&quot;")
-                    .replace("'", "&#x27;")
+                    text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 )
 
-            safe_message = escape_html(message[:4000])
-            safe_details = escape_html(details[:4000])
+            # Choose emoji based on level
+            emoji_map = {
+                "WARNING": "⚠️",
+                "ERROR": "🔴",
+                "CRITICAL": "🚨",
+            }
+            emoji = emoji_map.get(level, "ℹ️")
 
-            text = (
-                f"⚠️ <b>APP LOG ALERT</b>\n\n"
-                f"<b>Level:</b> {escape_html(level)}\n"
-                f"<b>Logger:</b> {escape_html(logger_name)}\n"
-                f"<b>Trace:</b> <code>{escape_html(trace_id)}</code>\n"
-                f"<b>Time:</b> {escape_html(when)}\n\n"
-                f"<b>Message:</b>\n<pre>{safe_message}</pre>"
-            )
-            if safe_details:
-                text += f"\n<b>Details:</b>\n<pre>{safe_details}</pre>"
+            # Format message with HTML for beautiful display
+            safe_msg = esc(message)[:3500]
+            safe_exception = esc(exception)[:3500] if exception else ""
 
-            return await self._send_message(text)
+            text_parts = [
+                f"{emoji} <b>APP LOG ALERT</b>",
+                f"<b>Level:</b> {esc(level)}",
+                f"<b>Logger:</b> {esc(logger_name)}",
+                f"<b>Trace:</b> <code>{esc(trace_id)}</code>",
+                f"<b>Time:</b> {esc(timestamp)}",
+                "",
+                f"<b>Message:</b>",
+                f"<pre>{safe_msg}</pre>",
+            ]
+
+            if safe_exception:
+                text_parts.extend(
+                    [
+                        "",
+                        f"<b>Details:</b>",
+                        f"<pre>{safe_exception}</pre>",
+                    ]
+                )
+
+            text = "\n".join(text_parts)
+
+            # Telegram max message ~4096 chars
+            if len(text) > 3900:
+                # Truncate if too long
+                if safe_exception:
+                    safe_exception = safe_exception[:1500] + "..."
+                safe_msg = safe_msg[:2000] + "..."
+                text_parts = [
+                    f"{emoji} <b>APP LOG ALERT</b>",
+                    f"<b>Level:</b> {esc(level)}",
+                    f"<b>Logger:</b> {esc(logger_name)}",
+                    f"<b>Trace:</b> <code>{esc(trace_id)}</code>",
+                    f"<b>Time:</b> {esc(timestamp)}",
+                    "",
+                    f"<b>Message:</b>",
+                    f"<pre>{safe_msg}</pre>",
+                ]
+                if safe_exception:
+                    text_parts.extend(
+                        [
+                            "",
+                            f"<b>Details:</b>",
+                            f"<pre>{safe_exception}</pre>",
+                        ]
+                    )
+                text = "\n".join(text_parts)
+
+            return await self._send_message(text, parse_mode="HTML")
         except Exception as e:
             logger.exception("Error sending log alert to Telegram")
             return {"success": False, "error": str(e)}
 
-    async def _send_message(self, message: str, parse_mode: str = "HTML") -> Dict[str, Any]:
+    async def _send_message(
+        self, message: str, parse_mode: str | None = "HTML"
+    ) -> Dict[str, Any]:
         """Send message to Telegram chat using aiohttp"""
 
         url = f"{self.base_url}/sendMessage"
@@ -338,18 +387,24 @@ class TelegramAlertService:
             "chat_id": self.chat_id,
             "message_thread_id": self.thread_id,
             "text": message,
-            "parse_mode": parse_mode,
             "disable_web_page_preview": True,
         }
 
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                async with session.post(
+                    url, json=payload, timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
                     if response.status == 200:
                         return await response.json()
                     else:
                         error_text = await response.text()
-                        logger.error(f"Telegram API error {response.status}: {error_text}")
+                        logger.error(
+                            f"Telegram API error {response.status}: {error_text}"
+                        )
                         return {
                             "ok": False,
                             "description": f"HTTP {response.status}: {error_text}",
@@ -373,7 +428,9 @@ class TelegramAlertService:
             url = f"{self.base_url}/getMe"
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                async with session.get(
+                    url, timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
                     if response.status == 200:
                         bot_info = await response.json()
                         if bot_info.get("ok"):

@@ -44,198 +44,51 @@ class TraceIdFilter(logging.Filter):
 
 
 class TelegramLogHandler(logging.Handler):
+    """Simplified handler using TelegramAlertService for log alerts."""
+
     def __init__(self, level: int = logging.WARNING):
         super().__init__(level)
-        self._svc = TelegramAlertService(alert_type="app_logs")
+        self._service = TelegramAlertService(alert_type="app_logs")
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Send log message to Telegram LOGS thread."""
         try:
             trace_id = getattr(record, "trace_id", "-")
-            when = datetime.utcfromtimestamp(record.created).strftime(
+            timestamp = datetime.utcfromtimestamp(record.created).strftime(
                 "%Y-%m-%d %H:%M:%S"
             )
-            raw_msg = self.format(record)
-            details = ""
-            if record.exc_info:
-                details = self.formatException(record.exc_info)
-            # Prefer a synchronous send to avoid losing alerts when event loops close
-            url = (
-                f"https://api.telegram.org/bot{settings.telegram.bot_token}/sendMessage"
+            message = self.format(record)
+            exception_text = (
+                self.formatException(record.exc_info) if record.exc_info else None
             )
 
-            def esc(text: str) -> str:
-                return (
-                    text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                )
+            # Build log data
+            log_data = {
+                "level": record.levelname,
+                "logger": record.name,
+                "trace_id": trace_id,
+                "timestamp": timestamp,
+                "message": message,
+                "exception": exception_text,
+            }
 
-            is_error = record.levelno >= logging.ERROR
-            if is_error:
-                # Plain-text, no thread routing for ERROR/CRITICAL
-                msg_pt = raw_msg[:3500]
-                det_pt = details[:3500] if details else ""
-                text = (
-                    f"APP LOG ALERT\n\n"
-                    f"Level: {record.levelname}\n"
-                    f"Logger: {record.name}\n"
-                    f"Trace: {trace_id}\n"
-                    f"Time: {when}\n\n"
-                    f"Message:\n{msg_pt}"
-                )
-                if det_pt:
-                    text += f"\n\nDetails:\n{det_pt}"
-                payload = {
-                    "chat_id": settings.telegram.chat_id,
-                    "text": text,
-                    "disable_web_page_preview": True,
-                }
-            else:
-                # WARNING: HTML + thread
-                safe_msg = esc(raw_msg)[:4000]
-                safe_details = esc(details)[:4000] if details else ""
+            # Use async service in sync context (create new event loop if needed)
+            import asyncio
 
-                text_parts = [
-                    "⚠️ <b>APP LOG ALERT</b>",
-                    f"<b>Level:</b> {esc(record.levelname)}",
-                    f"<b>Logger:</b> {esc(record.name)}",
-                    f"<b>Trace:</b> <code>{esc(trace_id)}</code>",
-                    f"<b>Time:</b> {esc(when)}",
-                    "",
-                    f"<b>Message:</b>\n<pre>{safe_msg}</pre>",
-                ]
-                if safe_details:
-                    text_parts.append(f"\n<b>Details:</b>\n<pre>{safe_details}</pre>")
-                text = "\n".join(text_parts)
-                # Telegram max message ~4096 chars. Keep a safety margin.
-                MAX_LEN = 3900
-                if len(text) > MAX_LEN:
-                    # Trim details first, then message if still too long
-                    if safe_details:
-                        head = "\n".join(text_parts[:-1])  # everything before details
-                        remaining = (
-                            MAX_LEN - len(head) - len("\n<b>Details:</b>\n<pre></pre>")
-                        )
-                        if remaining < 0:
-                            remaining = 0
-                        safe_details = safe_details[:remaining]
-                        text = head + f"\n<b>Details:</b>\n<pre>{safe_details}</pre>"
-                    if len(text) > MAX_LEN:
-                        base = "\n".join(text_parts[:6])  # header lines
-                        remaining = MAX_LEN - len(base) - len("\n<pre></pre>")
-                        if remaining < 0:
-                            remaining = 0
-                        safe_msg = safe_msg[:remaining]
-                        text = base + f"\n<pre>{safe_msg}</pre>"
-
-                payload = {
-                    "chat_id": settings.telegram.chat_id,
-                    "text": text,
-                    "parse_mode": "HTML",
-                    "disable_web_page_preview": True,
-                }
-                if getattr(settings.telegram, "tg_chat_logs_thread_id", None):
-                    payload["message_thread_id"] = (
-                        settings.telegram.tg_chat_logs_thread_id
-                    )
-            data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                url,
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
             try:
-                resp = urllib.request.urlopen(
-                    req, timeout=6
-                )  # nosec - trusted API endpoint
-                body = ""
-                try:
-                    body = resp.read().decode("utf-8", errors="ignore")
-                except Exception:
-                    body = ""
-                if getattr(resp, "status", 200) != 200:
-                    sys.stderr.write(
-                        f"[telegram_alerts] HTTP {getattr(resp,'status',0)}: {body[:500]}\n"
-                    )
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, create task (fire and forget)
+                    asyncio.create_task(self._service.send_log_alert(log_data))
                 else:
-                    # Parse JSON and confirm ok
-                    try:
-                        data_json = json.loads(body) if body else {"ok": True}
-                    except Exception:
-                        data_json = {"ok": True}
-                    if not data_json.get("ok", True):
-                        sys.stderr.write(
-                            f"[telegram_alerts] API not ok: {str(data_json)[:500]}\n"
-                        )
-                        raise urllib.error.HTTPError(
-                            url, 200, "Telegram ok=false", hdrs=None, fp=None
-                        )
-            except urllib.error.HTTPError as e:
-                try:
-                    body = e.read().decode("utf-8", errors="ignore")
-                except Exception:
-                    body = ""
-                sys.stderr.write(
-                    f"[telegram_alerts] HTTPError {e.code}: {body[:500]}\n"
-                )
-                # Fallback: send minimal plain-text message without HTML
-                try:
-                    plain = f"APP LOG ALERT\nLevel: {record.levelname}\nLogger: {record.name}\nTrace: {trace_id}\nTime: {when}\n\nMessage: {raw_msg[:1000]}"
-                    payload2 = {"chat_id": settings.telegram.chat_id, "text": plain}
-                    if getattr(settings.telegram, "tg_chat_logs_thread_id", None):
-                        payload2["message_thread_id"] = (
-                            settings.telegram.tg_chat_logs_thread_id
-                        )
-                    data2 = json.dumps(payload2).encode("utf-8")
-                    req2 = urllib.request.Request(
-                        url,
-                        data=data2,
-                        headers={"Content-Type": "application/json"},
-                        method="POST",
-                    )
-                    try:
-                        resp2 = urllib.request.urlopen(req2, timeout=4)
-                        body2 = resp2.read().decode("utf-8", errors="ignore")
-                    except Exception as ee:
-                        body2 = str(ee)
-                    if getattr(resp2, "status", 200) != 200:
-                        try:
-                            body2 = body2 or resp2.read().decode(
-                                "utf-8", errors="ignore"
-                            )
-                        except Exception:
-                            body2 = "<no body>"
-                        sys.stderr.write(
-                            f"[telegram_alerts] Fallback HTTP {getattr(resp2,'status',0)}: {body2[:500]}\n"
-                        )
-                    # If error mentions message_thread_id, retry without thread id
-                    if (
-                        "message_thread_id" in (body or "").lower()
-                        or "message_thread_id" in (body2 or "").lower()
-                    ):
-                        try:
-                            payload3 = {
-                                "chat_id": settings.telegram.chat_id,
-                                "text": plain,
-                            }
-                            data3 = json.dumps(payload3).encode("utf-8")
-                            req3 = urllib.request.Request(
-                                url,
-                                data=data3,
-                                headers={"Content-Type": "application/json"},
-                                method="POST",
-                            )
-                            urllib.request.urlopen(req3, timeout=4)
-                            sys.stderr.write(
-                                "[telegram_alerts] Retried without message_thread_id.\n"
-                            )
-                        except Exception as e3:
-                            sys.stderr.write(
-                                f"[telegram_alerts] Retry without thread failed: {e3}\n"
-                            )
-                except Exception as e2:
-                    sys.stderr.write(f"[telegram_alerts] Fallback send failed: {e2}\n")
-            except Exception as e:
-                sys.stderr.write(f"[telegram_alerts] Send failed: {e}\n")
+                    # If no loop running, run until complete
+                    loop.run_until_complete(self._service.send_log_alert(log_data))
+            except RuntimeError:
+                # No event loop, create new one
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(self._service.send_log_alert(log_data))
+                loop.close()
+
         except Exception:
             # Never raise from logging handler
             pass
