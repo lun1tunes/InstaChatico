@@ -24,7 +24,6 @@ openai-agents = "^0.3.2"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.0.0"
-pre-commit = "^3.0.0"
 
 [tool.black]
 line-length = 120
