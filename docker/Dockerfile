@@ -24,7 +24,7 @@ RUN poetry config virtualenvs.create false && \
 COPY src/ /app/src/
 COPY database/ /app/database/
 
-# Создаем директорию для conversations и устанавливаем права
+# Создаем директории и устанавливаем права
 RUN mkdir -p /app/src/conversations && \
     chown -R instagram-worker:instagram-worker /app
 

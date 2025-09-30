@@ -37,9 +37,12 @@ celery_app.conf.update(
     # Unify Celery's own log formats with our console formatter
     worker_log_format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     worker_task_log_format="%(asctime)s | %(levelname)s | %(task_name)s[%(task_id)s] | %(message)s",
-    worker_redirect_stdouts_level=os.getenv(
-        "LOGS_LEVEL_CELERY", os.getenv("LOGS_LEVEL", "INFO")
-    ),
+    # Redirect stdout/stderr to suppress banner noise at WARNING level
+    worker_redirect_stdouts=True,
+    worker_redirect_stdouts_level="WARNING",
+    # Suppress verbose Celery startup output
+    worker_log_color=False,
+    worker_disable_rate_limits=True,
     task_routes={
         "core.tasks.classification_tasks.classify_comment_task": {"queue": "llm_queue"},
         "core.tasks.answer_tasks.generate_answer_task": {"queue": "llm_queue"},

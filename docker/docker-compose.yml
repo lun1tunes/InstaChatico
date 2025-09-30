@@ -141,6 +141,7 @@ services:
     volumes:
       - ../src:/app/src
       - conversations_data:/app/src/conversations
+      - celerybeat_schedule:/app/celerybeat
     environment:
       - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
       - LOGS_LEVEL_CELERY=${LOGS_LEVEL_CELERY:-}
@@ -162,7 +163,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "cd /app/src && celery -A celery_worker beat --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}}"
+    command: sh -c "mkdir -p /app/celerybeat && cd /app/src && celery -A celery_worker beat --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} -s /app/celerybeat/celerybeat-schedule"
     security_opt:
       - no-new-privileges:true
 
@@ -187,6 +188,8 @@ volumes:
   redis_data:
     driver: local
   conversations_data:
+    driver: local
+  celerybeat_schedule:
     driver: local
 
 networks:

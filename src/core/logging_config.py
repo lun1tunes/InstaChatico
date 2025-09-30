@@ -32,7 +32,9 @@ class ChannelAliasFilter(logging.Filter):
 
 
 # Trace context
-trace_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("trace_id", default=None)
+trace_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "trace_id", default=None
+)
 
 
 class TraceIdFilter(logging.Filter):
@@ -49,16 +51,22 @@ class TelegramLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             trace_id = getattr(record, "trace_id", "-")
-            when = datetime.utcfromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
+            when = datetime.utcfromtimestamp(record.created).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
             raw_msg = self.format(record)
             details = ""
             if record.exc_info:
                 details = self.formatException(record.exc_info)
             # Prefer a synchronous send to avoid losing alerts when event loops close
-            url = f"https://api.telegram.org/bot{settings.telegram.bot_token}/sendMessage"
+            url = (
+                f"https://api.telegram.org/bot{settings.telegram.bot_token}/sendMessage"
+            )
 
             def esc(text: str) -> str:
-                return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                return (
+                    text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                )
 
             is_error = record.levelno >= logging.ERROR
             if is_error:
@@ -103,7 +111,9 @@ class TelegramLogHandler(logging.Handler):
                     # Trim details first, then message if still too long
                     if safe_details:
                         head = "\n".join(text_parts[:-1])  # everything before details
-                        remaining = MAX_LEN - len(head) - len("\n<b>Details:</b>\n<pre></pre>")
+                        remaining = (
+                            MAX_LEN - len(head) - len("\n<b>Details:</b>\n<pre></pre>")
+                        )
                         if remaining < 0:
                             remaining = 0
                         safe_details = safe_details[:remaining]
@@ -123,18 +133,29 @@ class TelegramLogHandler(logging.Handler):
                     "disable_web_page_preview": True,
                 }
                 if getattr(settings.telegram, "tg_chat_logs_thread_id", None):
-                    payload["message_thread_id"] = settings.telegram.tg_chat_logs_thread_id
+                    payload["message_thread_id"] = (
+                        settings.telegram.tg_chat_logs_thread_id
+                    )
             data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
             try:
-                resp = urllib.request.urlopen(req, timeout=6)  # nosec - trusted API endpoint
+                resp = urllib.request.urlopen(
+                    req, timeout=6
+                )  # nosec - trusted API endpoint
                 body = ""
                 try:
                     body = resp.read().decode("utf-8", errors="ignore")
                 except Exception:
                     body = ""
                 if getattr(resp, "status", 200) != 200:
-                    sys.stderr.write(f"[telegram_alerts] HTTP {getattr(resp,'status',0)}: {body[:500]}\n")
+                    sys.stderr.write(
+                        f"[telegram_alerts] HTTP {getattr(resp,'status',0)}: {body[:500]}\n"
+                    )
                 else:
                     # Parse JSON and confirm ok
                     try:
@@ -142,23 +163,34 @@ class TelegramLogHandler(logging.Handler):
                     except Exception:
                         data_json = {"ok": True}
                     if not data_json.get("ok", True):
-                        sys.stderr.write(f"[telegram_alerts] API not ok: {str(data_json)[:500]}\n")
-                        raise urllib.error.HTTPError(url, 200, "Telegram ok=false", hdrs=None, fp=None)
+                        sys.stderr.write(
+                            f"[telegram_alerts] API not ok: {str(data_json)[:500]}\n"
+                        )
+                        raise urllib.error.HTTPError(
+                            url, 200, "Telegram ok=false", hdrs=None, fp=None
+                        )
             except urllib.error.HTTPError as e:
                 try:
                     body = e.read().decode("utf-8", errors="ignore")
                 except Exception:
                     body = ""
-                sys.stderr.write(f"[telegram_alerts] HTTPError {e.code}: {body[:500]}\n")
+                sys.stderr.write(
+                    f"[telegram_alerts] HTTPError {e.code}: {body[:500]}\n"
+                )
                 # Fallback: send minimal plain-text message without HTML
                 try:
                     plain = f"APP LOG ALERT\nLevel: {record.levelname}\nLogger: {record.name}\nTrace: {trace_id}\nTime: {when}\n\nMessage: {raw_msg[:1000]}"
                     payload2 = {"chat_id": settings.telegram.chat_id, "text": plain}
                     if getattr(settings.telegram, "tg_chat_logs_thread_id", None):
-                        payload2["message_thread_id"] = settings.telegram.tg_chat_logs_thread_id
+                        payload2["message_thread_id"] = (
+                            settings.telegram.tg_chat_logs_thread_id
+                        )
                     data2 = json.dumps(payload2).encode("utf-8")
                     req2 = urllib.request.Request(
-                        url, data=data2, headers={"Content-Type": "application/json"}, method="POST"
+                        url,
+                        data=data2,
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
                     )
                     try:
                         resp2 = urllib.request.urlopen(req2, timeout=4)
@@ -167,24 +199,39 @@ class TelegramLogHandler(logging.Handler):
                         body2 = str(ee)
                     if getattr(resp2, "status", 200) != 200:
                         try:
-                            body2 = body2 or resp2.read().decode("utf-8", errors="ignore")
+                            body2 = body2 or resp2.read().decode(
+                                "utf-8", errors="ignore"
+                            )
                         except Exception:
                             body2 = "<no body>"
                         sys.stderr.write(
                             f"[telegram_alerts] Fallback HTTP {getattr(resp2,'status',0)}: {body2[:500]}\n"
                         )
                     # If error mentions message_thread_id, retry without thread id
-                    if "message_thread_id" in (body or "").lower() or "message_thread_id" in (body2 or "").lower():
+                    if (
+                        "message_thread_id" in (body or "").lower()
+                        or "message_thread_id" in (body2 or "").lower()
+                    ):
                         try:
-                            payload3 = {"chat_id": settings.telegram.chat_id, "text": plain}
+                            payload3 = {
+                                "chat_id": settings.telegram.chat_id,
+                                "text": plain,
+                            }
                             data3 = json.dumps(payload3).encode("utf-8")
                             req3 = urllib.request.Request(
-                                url, data=data3, headers={"Content-Type": "application/json"}, method="POST"
+                                url,
+                                data=data3,
+                                headers={"Content-Type": "application/json"},
+                                method="POST",
                             )
                             urllib.request.urlopen(req3, timeout=4)
-                            sys.stderr.write("[telegram_alerts] Retried without message_thread_id.\n")
+                            sys.stderr.write(
+                                "[telegram_alerts] Retried without message_thread_id.\n"
+                            )
                         except Exception as e3:
-                            sys.stderr.write(f"[telegram_alerts] Retry without thread failed: {e3}\n")
+                            sys.stderr.write(
+                                f"[telegram_alerts] Retry without thread failed: {e3}\n"
+                            )
                 except Exception as e2:
                     sys.stderr.write(f"[telegram_alerts] Fallback send failed: {e2}\n")
             except Exception as e:
@@ -220,19 +267,23 @@ def configure_logging() -> None:
         },
         "formatters": {
             "default": {
-                "format": "%(asctime)s | %(levelname)s | %(channel)s | trace=%(trace_id)s | %(message)s",
+                "format": "%(asctime)s | %(levelname)-8s | %(channel)-20s | %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+            },
+            "with_trace": {
+                "format": "%(asctime)s | %(levelname)-8s | %(channel)-20s | [%(trace_id)s] | %(message)s",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
             # Uvicorn access logs are very chatty; keep them concise
             "uvicorn_access": {
-                "format": "%(asctime)s | %(levelname)s | %(channel)s | trace=%(trace_id)s | %(message)s",
+                "format": "%(asctime)s | %(levelname)-8s | %(channel)-20s | %(message)s",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
         },
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",
-                "formatter": "default",
+                "formatter": "with_trace" if level == "DEBUG" else "default",
                 "level": level,
                 "stream": "ext://sys.stdout",
                 "filters": ["channel", "trace"],
@@ -240,7 +291,9 @@ def configure_logging() -> None:
             "uvicorn_console": {
                 "class": "logging.StreamHandler",
                 "formatter": "uvicorn_access",
-                "level": level,
+                "level": (
+                    "INFO" if level == "DEBUG" else level
+                ),  # Reduce uvicorn access verbosity in DEBUG
                 "stream": "ext://sys.stdout",
                 "filters": ["channel", "trace"],
             },
@@ -288,11 +341,37 @@ def configure_logging() -> None:
                 "level": "WARNING",
                 "propagate": False,
             },
+            # Suppress noisy third-party libraries in non-DEBUG mode
+            "agents": {
+                "handlers": ["console"],
+                "level": level if level == "DEBUG" else "WARNING",
+                "propagate": False,
+            },
+            "openai": {
+                "handlers": ["console"],
+                "level": level if level == "DEBUG" else "WARNING",
+                "propagate": False,
+            },
+            "httpx": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "httpcore": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
         },
     }
 
     # Optionally disable telegram alerts via env flag
-    if os.getenv("DISABLE_TELEGRAM_LOG_ALERTS", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if os.getenv("DISABLE_TELEGRAM_LOG_ALERTS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
         # Remove telegram handler from root logger
         try:
             config["loggers"][""]["handlers"].remove("telegram_alerts")
