@@ -37,19 +37,30 @@ celery_app.conf.update(
     # Unify Celery's own log formats with our console formatter
     worker_log_format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     worker_task_log_format="%(asctime)s | %(levelname)s | %(task_name)s[%(task_id)s] | %(message)s",
-    worker_redirect_stdouts_level=os.getenv("LOGS_LEVEL_CELERY", os.getenv("LOGS_LEVEL", "INFO")),
+    worker_redirect_stdouts_level=os.getenv(
+        "LOGS_LEVEL_CELERY", os.getenv("LOGS_LEVEL", "INFO")
+    ),
     task_routes={
         "core.tasks.classification_tasks.classify_comment_task": {"queue": "llm_queue"},
         "core.tasks.answer_tasks.generate_answer_task": {"queue": "llm_queue"},
-        "core.tasks.instagram_reply_tasks.send_instagram_reply_task": {"queue": "instagram_queue"},
-        "core.tasks.instagram_reply_tasks.process_pending_replies_task": {"queue": "instagram_queue"},
-        "core.tasks.telegram_tasks.send_telegram_notification_task": {"queue": "instagram_queue"},
+        "core.tasks.instagram_reply_tasks.send_instagram_reply_task": {
+            "queue": "instagram_queue"
+        },
+        "core.tasks.instagram_reply_tasks.process_pending_replies_task": {
+            "queue": "instagram_queue"
+        },
+        "core.tasks.telegram_tasks.send_telegram_notification_task": {
+            "queue": "instagram_queue"
+        },
     },
     task_soft_time_limit=300,
     task_time_limit=600,
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     worker_max_tasks_per_child=100,
+    # Suppress deprecation warning about task cancellation on connection loss
+    # This will be the default behavior in Celery 6.0
+    worker_cancel_long_running_tasks_on_connection_loss=True,
 )
 
 # Периодические задачи

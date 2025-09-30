@@ -175,20 +175,6 @@ services:
       - DOZZLE_AUTH_PROVIDER=simple
     restart: unless-stopped
 
-  # traefik:
-  #   image: traefik:v2.10
-  #   container_name: traefik
-  #   ports:
-  #     - "127.0.0.1:8080:8080"
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   command:
-  #     - "--providers.docker=true"
-  #     - "--providers.docker.exposedbydefault=false"
-  #     - "--entrypoints.web.address=:8080"
-  #   networks:
-  #     - traefik_network
-
 volumes:
   postgres_data:
     driver: local
@@ -200,5 +186,4 @@ volumes:
 networks:
   instagram_network:
     driver: bridge  
-  # traefik_network:
-  #   driver: bridge
+    
