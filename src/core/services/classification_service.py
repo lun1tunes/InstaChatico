@@ -10,7 +10,25 @@ logger = logging.getLogger(__name__)
 
 
 class CommentClassificationService:
-    def __init__(self, api_key: str = None, db_path: str = "conversations/conversations.db"):
+    """
+    Comment Classification Service using OpenAI Agents SDK with proper session management.
+
+    Key Features:
+    - Uses SQLiteSession for persistent conversation history
+    - Automatically injects media context ONCE per conversation (on first message)
+    - Maintains conversation continuity across multiple comments in a thread
+    - Avoids duplicate context injection by checking existing messages
+
+    Session Management:
+    - Each conversation has a unique conversation_id: first_question_comment_{id}
+    - All replies to a top-level comment share the same conversation_id
+    - Media context is injected only when starting a NEW conversation
+    - Existing conversations reuse their stored context from the SQLite database
+    """
+
+    def __init__(
+        self, api_key: str = None, db_path: str = "conversations/conversations.db"
+    ):
         self.api_key = api_key or settings.openai.api_key
         self.db_path = db_path
 
@@ -24,27 +42,108 @@ class CommentClassificationService:
         """
         Get or create a SQLiteSession with media context for the given conversation ID
 
+        IMPORTANT: Media context is only added ONCE per conversation (on first message)
+        to avoid polluting the conversation history with duplicate context.
+
         Args:
             conversation_id: Unique identifier for the conversation (first question comment ID)
-            media_context: Media information to inject into session context
+            media_context: Media information to inject into session context (only on first message)
 
         Returns:
             SQLiteSession instance with media context
         """
-        logger.debug(f"Creating/retrieving SQLiteSession with media context for conversation_id: {conversation_id}")
+        logger.debug(
+            f"Creating/retrieving SQLiteSession for conversation_id: {conversation_id}"
+        )
         logger.debug(f"Session database path: {self.db_path}")
         session = SQLiteSession(conversation_id, self.db_path)
 
-        # Inject media context into session if available
-        if media_context:
-            await self._inject_media_context_to_session(session, media_context)
+        # Check if this is a new conversation by checking if it has any history
+        # According to OpenAI Agents SDK docs, SQLiteSession automatically manages persistence
+        try:
+            # Get the session's current state to check if it's new
+            # If session has no items, it's a new conversation - add media context
+            if media_context and not await self._session_has_context(session):
+                await self._inject_media_context_to_session(session, media_context)
+                logger.info(
+                    f"✅ Media context injected into NEW conversation: {conversation_id}"
+                )
+            elif media_context:
+                logger.debug(
+                    f"⏭️  Skipping media context injection - conversation {conversation_id} already has context"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to check/inject media context: {e} - continuing without context"
+            )
 
-        logger.debug(f"SQLiteSession with media context created successfully for conversation: {conversation_id}")
+        logger.debug(
+            f"SQLiteSession retrieved successfully for conversation: {conversation_id}"
+        )
         return session
 
-    async def _inject_media_context_to_session(self, session: SQLiteSession, media_context: Dict[str, Any]) -> None:
+    async def _session_has_context(self, session: SQLiteSession) -> bool:
         """
-        Inject media context into the session for AI agents
+        Check if session already has context/history by querying the SQLite database directly
+
+        OpenAI Agents SDK stores conversations in 'agent_sessions' and 'agent_messages' tables.
+        We check if messages exist for this session_id to avoid adding duplicate media context.
+
+        Args:
+            session: SQLiteSession instance
+
+        Returns:
+            True if session has existing messages, False if it's a new session
+        """
+        try:
+            import sqlite3
+            from pathlib import Path
+
+            # Check if the database file exists
+            db_path = Path(self.db_path)
+            if not db_path.exists():
+                logger.debug(
+                    f"✨ Database doesn't exist yet: {self.db_path} - new conversation"
+                )
+                return False
+
+            # Connect to the SQLite database
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            # OpenAI Agents SDK uses 'agent_messages' table with 'session_id' column
+            # Check if this session has any messages already
+            cursor.execute(
+                "SELECT COUNT(*) FROM agent_messages WHERE session_id = ?",
+                (session._session_id,),
+            )
+            message_count = cursor.fetchone()[0]
+            conn.close()
+
+            if message_count > 0:
+                logger.debug(
+                    f"🔁 Session {session._session_id} has {message_count} existing messages - skipping context injection"
+                )
+                return True
+            else:
+                logger.debug(
+                    f"✨ Session {session._session_id} has no messages - will inject context"
+                )
+                return False
+
+        except Exception as e:
+            logger.warning(
+                f"⚠️ Error checking session context: {e} - assuming new session for safety"
+            )
+            return False
+
+    async def _inject_media_context_to_session(
+        self, session: SQLiteSession, media_context: Dict[str, Any]
+    ) -> None:
+        """
+        Inject media context into the session for AI agents (ONCE per conversation)
+
+        This should only be called for NEW conversations according to the OpenAI Agents SDK docs.
 
         Args:
             session: SQLiteSession instance
@@ -55,13 +154,23 @@ class CommentClassificationService:
             media_description = self._create_media_description(media_context)
 
             # Add media context as a system message to the session
-            # This will be available to the AI agent throughout the conversation
-            await session.add_items([{"role": "system", "content": f"MEDIA CONTEXT: {media_description}"}])
+            # According to OpenAI Agents SDK docs, this will be persisted and available
+            # throughout the conversation lifecycle
+            await session.add_items(
+                [
+                    {
+                        "role": "system",
+                        "content": f"📋 MEDIA CONTEXT (Post Information):\n{media_description}\n\nUse this context when analyzing comments and generating responses.",
+                    }
+                ]
+            )
 
-            logger.debug(f"Injected media context into session: {media_description[:100]}...")
+            logger.info(
+                f"✅ Injected media context into session: {media_description[:150]}..."
+            )
 
         except Exception as e:
-            logger.warning(f"Failed to inject media context into session: {e}")
+            logger.error(f"❌ Failed to inject media context into session: {e}")
 
     def _create_media_description(self, media_context: Dict[str, Any]) -> str:
         """
@@ -113,7 +222,9 @@ class CommentClassificationService:
 
         return "\n".join(description_parts)
 
-    def _generate_conversation_id(self, comment_id: str, parent_id: Optional[str] = None) -> str:
+    def _generate_conversation_id(
+        self, comment_id: str, parent_id: Optional[str] = None
+    ) -> str:
         """
         Generate conversation ID based on comment hierarchy
 
@@ -132,32 +243,47 @@ class CommentClassificationService:
             return f"first_question_comment_{comment_id}"
 
     async def classify_comment(
-        self, comment_text: str, conversation_id: Optional[str] = None, media_context: Optional[Dict[str, Any]] = None
+        self,
+        comment_text: str,
+        conversation_id: Optional[str] = None,
+        media_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Asynchronous comment classification using OpenAI Agents SDK"""
         try:
             # Format input with conversation and media context
-            formatted_input = self._format_input_with_context(comment_text, conversation_id, media_context)
+            formatted_input = self._format_input_with_context(
+                comment_text, conversation_id, media_context
+            )
 
             if len(formatted_input) > 2000:  # Increased limit for context
                 formatted_input = formatted_input[:2000] + "..."
-                logger.warning(f"Input truncated to 2000 characters: {comment_text[:50]}...")
+                logger.warning(
+                    f"Input truncated to 2000 characters: {comment_text[:50]}..."
+                )
 
             logger.info(f"Classifying comment with context: {formatted_input[:200]}...")
 
             # Use session if conversation_id is provided
             if conversation_id:
-                logger.debug(f"Starting classification with persistent session for conversation_id: {conversation_id}")
+                logger.debug(
+                    f"Starting classification with persistent session for conversation_id: {conversation_id}"
+                )
                 # Use SQLiteSession with media context for persistent conversation
-                session = await self._get_session_with_media_context(conversation_id, media_context)
-                result = await Runner.run(self.classification_agent, input=formatted_input, session=session)
+                session = await self._get_session_with_media_context(
+                    conversation_id, media_context
+                )
+                result = await Runner.run(
+                    self.classification_agent, input=formatted_input, session=session
+                )
                 logger.info(
                     f"Classification completed using SQLiteSession with media context for conversation: {conversation_id}"
                 )
             else:
                 logger.debug("Starting classification without session (stateless mode)")
                 # Use regular Runner without session
-                result = await Runner.run(self.classification_agent, input=formatted_input)
+                result = await Runner.run(
+                    self.classification_agent, input=formatted_input
+                )
                 logger.info("Classification completed without session")
 
             # Extract the final output from the result
@@ -212,7 +338,10 @@ class CommentClassificationService:
         return sanitized
 
     def _format_input_with_context(
-        self, comment_text: str, conversation_id: Optional[str] = None, media_context: Optional[Dict[str, Any]] = None
+        self,
+        comment_text: str,
+        conversation_id: Optional[str] = None,
+        media_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Format the input text with conversation and media context
@@ -240,7 +369,9 @@ class CommentClassificationService:
             if media_context.get("username"):
                 media_info.append(f"Post author: @{media_context['username']}")
             if media_context.get("comments_count") is not None:
-                media_info.append(f"Post has {media_context['comments_count']} comments")
+                media_info.append(
+                    f"Post has {media_context['comments_count']} comments"
+                )
             if media_context.get("like_count") is not None:
                 media_info.append(f"Post has {media_context['like_count']} likes")
 
@@ -341,7 +472,8 @@ class CommentClassificationService:
         sentiment_map = {
             "positive feedback": confidence,
             "critical feedback": -confidence,
-            "urgent issue / complaint": -confidence - 20,  # More negative for urgent issues
+            "urgent issue / complaint": -confidence
+            - 20,  # More negative for urgent issues
             "question / inquiry": 0,  # Neutral for questions
             "spam / irrelevant": -50,
             "unknown": 0,
@@ -373,7 +505,9 @@ class CommentClassificationService:
         """
         # SQLiteSession from OpenAI Agents SDK doesn't expose conversation history
         # The session is used internally by the agent for context management
-        logger.debug(f"Conversation history is managed internally by SQLiteSession for: {conversation_id}")
+        logger.debug(
+            f"Conversation history is managed internally by SQLiteSession for: {conversation_id}"
+        )
         return []
 
     def clear_conversation(self, conversation_id: str) -> bool:
@@ -391,7 +525,9 @@ class CommentClassificationService:
         """
         # SQLiteSession from OpenAI Agents SDK manages conversation history internally
         # We cannot directly clear the history, but the session will be recreated for new conversations
-        logger.debug(f"Conversation history is managed internally by SQLiteSession for: {conversation_id}")
+        logger.debug(
+            f"Conversation history is managed internally by SQLiteSession for: {conversation_id}"
+        )
         return True
 
     def get_session_info(self, conversation_id: str) -> Dict[str, Any]:
@@ -408,7 +544,9 @@ class CommentClassificationService:
             Dictionary with session information
         """
         try:
-            logger.debug(f"Getting session information for conversation_id: {conversation_id}")
+            logger.debug(
+                f"Getting session information for conversation_id: {conversation_id}"
+            )
             session = self._get_session(conversation_id)
 
             # SQLiteSession from OpenAI Agents SDK manages conversation history internally

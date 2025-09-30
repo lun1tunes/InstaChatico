@@ -13,7 +13,27 @@ logger = logging.getLogger(__name__)
 
 
 class QuestionAnswerService:
-    def __init__(self, api_key: str = None, db_path: str = "conversations/conversations.db"):
+    """
+    Question Answer Service using OpenAI Agents SDK with shared session management.
+
+    Key Features:
+    - Reuses SQLiteSession created by CommentClassificationService
+    - Media context is already present in the session (injected during classification)
+    - Maintains conversation history automatically across all messages
+    - Does NOT re-inject context (relies on classification service's initial injection)
+
+    Session Flow:
+    1. CommentClassificationService creates session and injects media context (first message only)
+    2. QuestionAnswerService retrieves the SAME session by conversation_id
+    3. All conversation history is automatically available via SQLiteSession
+    4. Agent uses context from previous messages to generate relevant responses
+
+    IMPORTANT: This service assumes classification has already run and injected context.
+    """
+
+    def __init__(
+        self, api_key: str = None, db_path: str = "conversations/conversations.db"
+    ):
         self.api_key = api_key or settings.openai.api_key
         self.response_agent = comment_response_agent
         self.db_path = db_path
@@ -27,24 +47,46 @@ class QuestionAnswerService:
 
     def _get_session(self, conversation_id: str) -> SQLiteSession:
         """
-        Get or create a SQLiteSession for the given conversation ID
-        Note: Media context is already injected by the classification service
+        Get existing SQLiteSession for the given conversation ID
+
+        IMPORTANT: This retrieves an EXISTING session that was created during classification.
+        The session already contains:
+        - Media context (injected by CommentClassificationService)
+        - All previous messages in the conversation
+        - Complete conversation history for context-aware responses
+
+        According to OpenAI Agents SDK docs:
+        - SQLiteSession(conversation_id, db_path) automatically loads existing session data
+        - All messages are persisted in the SQLite database (agent_messages table)
+        - Runner.run() automatically uses the session history for context
 
         Args:
             conversation_id: Unique identifier for the conversation (first question comment ID)
 
         Returns:
-            SQLiteSession instance (reuses existing session with media context)
+            SQLiteSession instance with complete conversation history
         """
-        logger.debug(f"Creating/retrieving SQLiteSession for conversation_id: {conversation_id}")
-        logger.debug(f"Session database path: {self.db_path}")
+        logger.debug(
+            f"🔄 Retrieving existing SQLiteSession for conversation_id: {conversation_id}"
+        )
+        logger.debug(f"📂 Session database path: {self.db_path}")
+
+        # SQLiteSession automatically loads existing data from the database
         session = SQLiteSession(conversation_id, self.db_path)
 
-        logger.debug(f"SQLiteSession retrieved successfully for conversation: {conversation_id}")
+        logger.debug(
+            f"✅ SQLiteSession retrieved successfully for conversation: {conversation_id}"
+        )
+        logger.debug(
+            f"💡 Session will include all previous messages and media context automatically"
+        )
         return session
 
     async def generate_answer(
-        self, question_text: str, conversation_id: Optional[str] = None, media_context: Optional[Dict[str, Any]] = None
+        self,
+        question_text: str,
+        conversation_id: Optional[str] = None,
+        media_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generate an answer for a customer question
@@ -73,10 +115,16 @@ class QuestionAnswerService:
                 )
                 # Use SQLiteSession (media context already injected by classification service)
                 session = self._get_session(conversation_id)
-                result = await Runner.run(self.response_agent, input=sanitized_text, session=session)
-                logger.info(f"Answer generated successfully using SQLiteSession for conversation: {conversation_id}")
+                result = await Runner.run(
+                    self.response_agent, input=sanitized_text, session=session
+                )
+                logger.info(
+                    f"Answer generated successfully using SQLiteSession for conversation: {conversation_id}"
+                )
             else:
-                logger.debug("Starting answer generation without session (stateless mode)")
+                logger.debug(
+                    "Starting answer generation without session (stateless mode)"
+                )
                 # Use regular Runner without session
                 result = await Runner.run(self.response_agent, input=sanitized_text)
                 logger.info("Answer generated successfully without session")
@@ -88,7 +136,9 @@ class QuestionAnswerService:
                 "answer": answer_result.answer,
                 "confidence": answer_result.confidence,
                 "quality_score": answer_result.quality_score,
-                "tokens_used": self._estimate_tokens(sanitized_text + answer_result.answer),
+                "tokens_used": self._estimate_tokens(
+                    sanitized_text + answer_result.answer
+                ),
                 "processing_time_ms": processing_time_ms,
                 "llm_raw_response": str(result),
                 "conversation_id": conversation_id,
@@ -147,7 +197,9 @@ class QuestionAnswerService:
         """
         # SQLiteSession from OpenAI Agents SDK doesn't expose conversation history
         # The session is used internally by the agent for context management
-        logger.debug(f"Conversation history is managed internally by SQLiteSession for: {conversation_id}")
+        logger.debug(
+            f"Conversation history is managed internally by SQLiteSession for: {conversation_id}"
+        )
         return []
 
     def clear_conversation(self, conversation_id: str) -> bool:
@@ -165,7 +217,9 @@ class QuestionAnswerService:
         """
         # SQLiteSession from OpenAI Agents SDK manages conversation history internally
         # We cannot directly clear the history, but the session will be recreated for new conversations
-        logger.debug(f"Conversation history is managed internally by SQLiteSession for: {conversation_id}")
+        logger.debug(
+            f"Conversation history is managed internally by SQLiteSession for: {conversation_id}"
+        )
         return True
 
     def get_session_info(self, conversation_id: str) -> Dict[str, Any]:
@@ -182,7 +236,9 @@ class QuestionAnswerService:
             Dictionary with session information
         """
         try:
-            logger.debug(f"Getting session information for conversation_id: {conversation_id}")
+            logger.debug(
+                f"Getting session information for conversation_id: {conversation_id}"
+            )
             session = self._get_session(conversation_id)
 
             # SQLiteSession from OpenAI Agents SDK manages conversation history internally
