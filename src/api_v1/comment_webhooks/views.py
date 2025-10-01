@@ -18,7 +18,7 @@ from core.models.instagram_comment import InstagramComment
 from core.models.media import Media
 from core.services.media_service import MediaService
 from core.tasks.answer_tasks import generate_answer_async
-from core.tasks.classification_tasks import classify_comment_async
+from core.tasks.classification_tasks import classify_comment_task, classify_comment_async
 
 from .helpers import extract_comment_data, get_existing_comment, should_skip_comment
 from .schemas import TestCommentPayload, WebhookPayload
