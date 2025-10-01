@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import redis
 from datetime import datetime
 from ..utils.time import now_db_utc
@@ -104,11 +105,22 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
                 logger.warning(f"Failed to acquire lock for comment {comment_id}: {e}")
                 return {"status": "skipped", "reason": "lock_acquisition_failed"}
 
-            # Initialize Instagram service
-            instagram_service = InstagramGraphAPIService()
+            # Check if we're in development mode - skip actual Instagram API call
+            development_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
 
-            # Send the reply to comment
-            reply_result = await instagram_service.send_reply_to_comment(comment_id, answer_text)
+            if development_mode:
+                logger.info(f"DEVELOPMENT_MODE: Skipping Instagram API call for comment {comment_id}")
+                # Simulate successful reply without actually calling Instagram API
+                reply_result = {
+                    "success": True,
+                    "reply_id": f"test_reply_{comment_id}",
+                    "response": {"test_mode": True, "message": "Reply skipped in development mode"},
+                }
+            else:
+                # Initialize Instagram service
+                instagram_service = InstagramGraphAPIService()
+                # Send the reply to comment
+                reply_result = await instagram_service.send_reply_to_comment(comment_id, answer_text)
 
             if reply_result["success"]:
                 try:

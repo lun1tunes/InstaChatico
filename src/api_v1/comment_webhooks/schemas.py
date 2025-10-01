@@ -9,12 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class WebhookVerification(BaseModel):
     """Webhook verification challenge from Instagram."""
 
-    hub_mode: Literal["subscribe"] = Field(
-        ..., description="Must be 'subscribe' for verification"
-    )
-    hub_challenge: str = Field(
-        ..., min_length=1, description="Challenge string to echo back"
-    )
+    hub_mode: Literal["subscribe"] = Field(..., description="Must be 'subscribe' for verification")
+    hub_challenge: str = Field(..., min_length=1, description="Challenge string to echo back")
     hub_verify_token: str = Field(..., min_length=1, description="Verification token")
 
 
@@ -22,9 +18,7 @@ class CommentAuthor(BaseModel):
     """Instagram user who created the comment."""
 
     id: str = Field(..., min_length=1, description="Instagram user ID")
-    username: str = Field(
-        ..., min_length=1, max_length=30, description="Instagram username"
-    )
+    username: str = Field(..., min_length=1, max_length=30, description="Instagram username")
 
     @field_validator("username")
     @classmethod
@@ -39,9 +33,7 @@ class CommentMedia(BaseModel):
     """Instagram media (post) associated with the comment."""
 
     id: str = Field(..., min_length=1, description="Instagram media ID")
-    media_product_type: str | None = Field(
-        None, description="Media product type (e.g., 'FEED', 'REELS')"
-    )
+    media_product_type: str | None = Field(None, description="Media product type (e.g., 'FEED', 'REELS')")
 
 
 class CommentValue(BaseModel):
@@ -75,9 +67,7 @@ class CommentValue(BaseModel):
 class CommentChange(BaseModel):
     """Change notification from Instagram webhook."""
 
-    field: Literal["comments"] = Field(
-        ..., description="Field that changed (must be 'comments')"
-    )
+    field: Literal["comments"] = Field(..., description="Field that changed (must be 'comments')")
     value: CommentValue = Field(..., description="Comment data")
 
 
@@ -86,9 +76,7 @@ class WebhookEntry(BaseModel):
 
     id: str = Field(..., min_length=1, description="Instagram business account ID")
     time: int = Field(..., gt=0, description="Unix timestamp of the event")
-    changes: list[CommentChange] = Field(
-        ..., min_items=1, description="List of changes"
-    )
+    changes: list[CommentChange] = Field(..., min_items=1, description="List of changes")
 
     @field_validator("time")
     @classmethod
@@ -112,9 +100,7 @@ class WebhookPayload(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     entry: list[WebhookEntry] = Field(..., min_items=1, description="List of entries")
-    object: Literal["instagram"] = Field(
-        ..., description="Object type (must be 'instagram')"
-    )
+    object: Literal["instagram"] = Field(..., description="Object type (must be 'instagram')")
 
     def get_all_comments(self) -> list[tuple[WebhookEntry, CommentValue]]:
         """Extract all comments from the payload with their entry context."""
@@ -124,3 +110,26 @@ class WebhookPayload(BaseModel):
                 if change.field == "comments":
                     comments.append((entry, change.value))
         return comments
+
+
+class TestCommentPayload(BaseModel):
+    """Simplified test payload for development/testing mode."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    comment_id: str = Field(..., min_length=1, description="Test comment ID (can be any unique string)")
+    media_id: str = Field(..., min_length=1, description="Test media ID")
+    user_id: str = Field(..., min_length=1, description="Test user ID")
+    username: str = Field(..., min_length=1, description="Test username")
+    text: str = Field(..., min_length=1, max_length=2200, description="Comment text")
+    parent_id: str | None = Field(None, description="Parent comment ID for testing replies")
+    media_caption: str | None = Field(None, description="Optional media caption for context")
+    media_url: str | None = Field(None, description="Optional media URL")
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        """Ensure text is not empty after stripping."""
+        if not v.strip():
+            raise ValueError("Comment text cannot be empty")
+        return v
