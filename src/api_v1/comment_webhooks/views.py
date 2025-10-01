@@ -1,29 +1,27 @@
 """Instagram webhook endpoints for comment processing."""
 
-import asyncio
 import logging
 import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from core.config import settings
 from core.logging_config import trace_id_ctx
 from core.models import db_helper
 from core.models.comment_classification import CommentClassification, ProcessingStatus
 from core.models.instagram_comment import InstagramComment
-from core.models.question_answer import QuestionAnswer, AnswerStatus
 from core.models.media import Media
 from core.services.media_service import MediaService
-from core.tasks.classification_tasks import classify_comment_async
 from core.tasks.answer_tasks import generate_answer_async
+from core.tasks.classification_tasks import classify_comment_async
 
 from .helpers import extract_comment_data, get_existing_comment, should_skip_comment
-from .schemas import WebhookPayload, TestCommentPayload
+from .schemas import TestCommentPayload, WebhookPayload
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Webhooks"])
