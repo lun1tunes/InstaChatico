@@ -8,6 +8,7 @@ __all__ = (
     "QuestionAnswer",
     "AnswerStatus",
     "Media",
+    "ProductEmbedding",
 )
 
 from .base import Base
@@ -16,3 +17,4 @@ from .instagram_comment import InstagramComment
 from .comment_classification import CommentClassification, ProcessingStatus
 from .question_answer import QuestionAnswer, AnswerStatus
 from .media import Media
+from .product_embedding import ProductEmbedding

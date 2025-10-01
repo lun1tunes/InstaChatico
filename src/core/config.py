@@ -25,6 +25,13 @@ class OpenAISettings(BaseModel):
     tpm_limit: int = int(os.getenv("OPENAI_TPM_LIMIT", "100000"))
 
 
+class EmbeddingSettings(BaseModel):
+    """Settings for vector embedding search"""
+    similarity_threshold: float = float(os.getenv("EMBEDDING_SIMILARITY_THRESHOLD", "0.7"))
+    model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
+
+
 class InstagramSettings(BaseModel):
     access_token: str = os.getenv("INSTA_TOKEN", "")
     api_version: str = os.getenv("INSTAGRAM_API_VERSION", "v23.0")
@@ -58,6 +65,7 @@ class Settings(BaseSettings):
     db: DbSettings = DbSettings()
     celery: CelerySettings = CelerySettings()
     openai: OpenAISettings = OpenAISettings()
+    embedding: EmbeddingSettings = EmbeddingSettings()
     instagram: InstagramSettings = InstagramSettings()
     telegram: TelegramSettings = TelegramSettings()
     health: HealthSettings = HealthSettings()

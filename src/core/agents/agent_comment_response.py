@@ -1,10 +1,4 @@
-"""
-Instagram Comment Response Agent
-
-This module contains the OpenAI Agent configuration for responding to Instagram comments
-into business-relevant categories. The agent is designed to provide accurate and
-consistent response with multi-language support.
-"""
+"""Instagram comment response agent with embedding search tool"""
 
 import logging
 from typing import Literal
@@ -14,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from .instructions.instruction_response import RESPONSE_INSTRUCTIONS
+from .tools import embedding_search
 
 logger = logging.getLogger(__name__)
 
@@ -31,32 +26,23 @@ class AnswerResult(BaseModel):
 
 
 def create_comment_response_agent() -> Agent:
-    """
-    Create a comment response generation agent using OpenAI Agents SDK.
-
-    Returns:
-        Configured Agent instance for generating customer responses
-    """
+    """Create response agent with embedding search tool"""
     # Load instructions from external file for better security and maintainability
     enhanced_instructions = RESPONSE_INSTRUCTIONS
 
-    # Create and return the configured agent
+    # Create and return the configured agent with embedding search tool
     return Agent(
         name="InstagramCommentResponder",
         instructions=enhanced_instructions,
         output_type=AnswerResult,
         model=settings.openai.model_comment_response,
+        tools=[embedding_search],  # Add semantic search capability
     )
 
 
 # Convenience function to get a pre-configured agent
 def get_comment_response_agent() -> Agent:
-    """
-    Get a pre-configured comment response agent using default settings.
-
-    Returns:
-        Configured Agent instance for comment response generation
-    """
+    """Get pre-configured response agent instance"""
     return create_comment_response_agent()
 
 

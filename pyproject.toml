@@ -21,6 +21,7 @@ redis = "^6.4.0"
 langchain-community = "^0.3.29"
 aiohttp = "^3.9.0"
 openai-agents = "^0.3.2"
+pgvector = "^0.3.6"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.0.0"

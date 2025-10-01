@@ -1,0 +1,172 @@
+"""
+Semantic search tool for products/services using vector embeddings.
+Automatically filters out-of-distribution results below 70% similarity threshold.
+"""
+
+import logging
+from typing import Optional
+from agents import function_tool
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+from ...config import settings
+from ...services.embedding_service import EmbeddingService
+
+logger = logging.getLogger(__name__)
+
+
+async def _embedding_search_implementation(
+    query: str,
+    limit: int = 5,
+    category: Optional[str] = None
+) -> str:
+    """
+    Поиск продуктов и услуг по семантическому сходству с автоматической фильтрацией нерелевантных результатов.
+
+    Этот инструмент преобразует запросы на естественном языке в векторные представления и выполняет
+    поиск по базе данных с использованием косинусного сходства. АВТОМАТИЧЕСКИ ФИЛЬТРУЕТ результаты
+    с уровнем сходства ниже 70% (out-of-distribution detection), чтобы не возвращать нерелевантные продукты.
+
+    ИСПОЛЬЗУЙ ЭТОТ ИНСТРУМЕНТ КОГДА:
+    - Клиент спрашивает о конкретных продуктах или услугах ("Есть ли у вас квартиры?")
+    - Клиент хочет узнать цены или наличие ("Сколько стоит консультация?")
+    - Клиент ищет по характеристикам ("квартиры в центре", "премиум услуги")
+
+    НЕ ИСПОЛЬЗУЙ для:
+    - Общих вопросов о режиме работы, контактной информации или местоположении
+    - Вопросов, не связанных с конкретными продуктами/услугами
+
+    ВАЖНО: Если инструмент вернул "NO RELEVANT PRODUCTS FOUND", это означает, что запрошенный
+    продукт/услуга НЕ ПРЕДСТАВЛЕНЫ в каталоге. Вежливо сообщи клиенту, что это недоступно.
+
+    Args:
+        query: Поисковый запрос на естественном языке на любом языке (например, "квартиры в центре",
+               "apartments", "премиум консультация"). Будь конкретен для лучших результатов.
+        limit: Максимальное количество высокоуверенных результатов для возврата. По умолчанию 5, максимум 10.
+               Возвращаются только результаты с уровнем сходства выше 70%.
+        category: Необязательный фильтр для поиска только в определенной категории (например, "Недвижимость",
+                 "Услуги"). Используй это для сужения поиска, когда знаешь категорию.
+
+    Returns:
+        Отформатированная строка с одним из трех исходов:
+        1. HIGH-CONFIDENCE RESULTS: Список продуктов с названиями, описаниями, ценами
+           и уровнем уверенности (70-100%). Ты можешь безопасно использовать эту информацию.
+        2. NO RELEVANT PRODUCTS FOUND: Все результаты отфильтрованы как нерелевантные (out-of-distribution).
+           Запрошенный продукт/услуга недоступны. Вежливо сообщи об этом клиенту.
+        3. DATABASE EMPTY: В базе данных пока нет продуктов. Предложи альтернативный способ связи.
+
+    Examples:
+        Правильное использование:
+        - query: "квартиры в центре" → Вернет квартиры с уверенностью 85-95%
+        - query: "консультационные услуги" → Вернет предложения по консультированию
+        - query: "недвижимость", category: "Недвижимость" → Только недвижимость
+
+        Примеры OOD (не найдено):
+        - query: "пицца" → Вернет NO RELEVANT PRODUCTS FOUND (мы не продаем пиццу)
+        - query: "автомобили" → Вернет NO RELEVANT PRODUCTS FOUND (нет в нашем каталоге)
+    """
+    try:
+        # Limit validation
+        limit = min(max(1, limit), 10)
+
+        logger.info(f"Embedding search tool called with query: '{query}', limit: {limit}")
+
+        # Create database session
+        engine = create_async_engine(settings.db.url, echo=settings.db.echo)
+        session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+        async with session_factory() as session:
+            # Initialize embedding service
+            embedding_service = EmbeddingService()
+
+            # Perform semantic search (get more results to account for filtering)
+            all_results = await embedding_service.search_similar_products(
+                query=query,
+                session=session,
+                limit=limit * 2,  # Get more results to filter
+                category_filter=category,
+                include_inactive=False
+            )
+
+            # Handle empty database
+            if not all_results:
+                return (
+                    f"⚠️ DATABASE EMPTY\n\n"
+                    f"No products/services are currently in the database.\n"
+                    f"Please add products using the populate_embeddings.py script."
+                )
+
+            # CRITICAL: Filter out OOD results (similarity < threshold)
+            high_confidence_results = [r for r in all_results if not r['is_ood']]
+            low_confidence_results = [r for r in all_results if r['is_ood']]
+
+            # If NO high-confidence results, return OOD message
+            if not high_confidence_results:
+                best_similarity = all_results[0]['similarity'] if all_results else 0
+                return (
+                    f"⚠️ NO RELEVANT PRODUCTS FOUND\n\n"
+                    f"Your query '{query}' did not match any products/services in our catalog.\n"
+                    f"The search found {len(all_results)} result(s), but the best match had only "
+                    f"{best_similarity*100:.1f}% similarity (threshold: 70%).\n\n"
+                    f"This means we likely don't offer products/services related to '{query}'.\n"
+                    f"Please inform the customer politely that this specific item/service is not available.\n\n"
+                    f"💡 Suggestion: Ask the customer to clarify their request or check what we actually offer."
+                )
+
+            # Return only high-confidence results
+            results = high_confidence_results[:limit]
+
+            formatted_output = f"✅ Found {len(results)} relevant result(s) for query: '{query}'\n"
+
+            # Add info about filtered OOD results
+            if low_confidence_results:
+                formatted_output += f"(Filtered out {len(low_confidence_results)} low-confidence results)\n"
+
+            formatted_output += "\n"
+
+            for idx, result in enumerate(results, 1):
+                similarity = result['similarity']
+                confidence_pct = int(similarity * 100)
+
+                formatted_output += f"[{idx}] {result['title']} (confidence: {confidence_pct}%)\n"
+                formatted_output += f"Description: {result['description']}\n"
+
+                if result['category']:
+                    formatted_output += f"Category: {result['category']}\n"
+
+                if result['price']:
+                    formatted_output += f"Price: {result['price']}\n"
+
+                if result['tags']:
+                    formatted_output += f"Tags: {result['tags']}\n"
+
+                if result['url']:
+                    formatted_output += f"URL: {result['url']}\n"
+
+                formatted_output += "\n"
+
+            # Add usage guidance
+            formatted_output += (
+                f"💡 Usage: These results are HIGH CONFIDENCE matches. "
+                f"You can safely use this information to answer the customer's question.\n"
+            )
+
+            logger.info(
+                f"Embedding search completed: {len(results)} high-confidence results, "
+                f"{len(low_confidence_results)} OOD filtered out"
+            )
+
+            return formatted_output
+
+    except Exception as e:
+        error_msg = f"❌ Error performing embedding search: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
+    finally:
+        # Clean up database connection
+        if 'engine' in locals():
+            await engine.dispose()
+
+
+# Create the tool using @function_tool decorator
+# This makes it available to OpenAI Agents SDK
+embedding_search = function_tool(_embedding_search_implementation)
