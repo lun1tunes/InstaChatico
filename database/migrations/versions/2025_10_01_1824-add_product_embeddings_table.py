@@ -14,7 +14,7 @@ from pgvector.sqlalchemy import Vector
 
 # revision identifiers, used by Alembic.
 revision: str = 'add_product_embeddings'
-down_revision: Union[str, None] = None  # Update this to the latest migration ID
+down_revision: Union[str, None] = '46e554b1b3e6'  # add_foreign_key_constraint_media_id
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
