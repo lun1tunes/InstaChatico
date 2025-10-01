@@ -18,7 +18,7 @@ from core.models.instagram_comment import InstagramComment
 from core.models.media import Media
 from core.services.media_service import MediaService
 from core.tasks.answer_tasks import generate_answer_async
-from core.tasks.classification_tasks import classify_comment_task, classify_comment_async
+from core.tasks.classification_tasks import classify_comment_async, classify_comment_task
 
 from .helpers import extract_comment_data, get_existing_comment, should_skip_comment
 from .schemas import TestCommentPayload, WebhookPayload
@@ -148,12 +148,12 @@ async def test_comment_processing(
     but returns the answer in the response instead of posting to Instagram.
     All database records are created as in production mode.
 
-    Only accessible when DEVELOPMENT_MODE=true in environment.
+    Only accessible when dev mode is enabled.
     """
     # Check if development mode is enabled
     development_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
     if not development_mode:
-        raise HTTPException(status_code=403, detail="Test endpoint only accessible in DEVELOPMENT_MODE=true")
+        raise HTTPException(status_code=403, detail="Test endpoint only accessible in dev mode")
 
     logger.info(f"Processing test comment: {test_data.comment_id}")
 
