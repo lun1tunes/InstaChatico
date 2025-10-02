@@ -19,56 +19,20 @@ class InstagramGraphAPIService:
         if not self.access_token:
             raise ValueError("Instagram access token is required")
 
-        # Log token info for debugging (without exposing the actual token)
-        logger.debug(
-            f"Instagram service initialized with token: {self.access_token[:10]}...{self.access_token[-4:] if len(self.access_token) > 14 else '***'}"
-        )
-        logger.debug(f"Base URL: {self.base_url}")
-
-    async def send_reply_to_comment(
-        self, comment_id: str, message: str
-    ) -> Dict[str, Any]:
-        """
-        Send a reply to an Instagram comment using Instagram Graph API
-
-        Args:
-            comment_id: The ID of the Instagram comment to reply to (from instagram_comments table)
-            message: The message to send as a reply
-
-        Returns:
-            Dict containing the API response
-        """
-        # Use the Instagram Graph API endpoint for posting replies to comments
-        # Match the working Postman request: POST https://graph.instagram.com/v23.0/{comment_id}/replies?message={message}
+    async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
+        """Send reply to Instagram comment via Graph API."""
         url = f"{self.base_url}/{comment_id}/replies"
-
-        # Instagram Graph API expects access_token as query parameter and message in the URL
         params = {"access_token": self.access_token, "message": message}
 
         try:
-            logger.debug(f"Sending reply to comment {comment_id} with URL: {url}")
-            # Do not log full params at INFO; keep only at DEBUG
-            logger.debug(f"Request params: {params}")
 
             async with aiohttp.ClientSession() as session:
-                # Use POST request with query parameters to match your working Postman request
                 async with session.post(url, params=params) as response:
                     response_data = await response.json()
 
-                    logger.debug(f"Response status: {response.status}")
-                    logger.debug(f"Response data: {response_data}")
-
                     if response.status == 200:
-                        logger.info(f"Successfully sent reply to comment {comment_id}")
-                        # Extract reply_id from response to prevent infinite loops
-                        reply_id = (
-                            response_data.get("id")
-                            if isinstance(response_data, dict)
-                            else None
-                        )
-                        logger.debug(
-                            f"Extracted reply_id: {reply_id} from response: {response_data}"
-                        )
+                        logger.info(f"Sent reply to comment {comment_id}")
+                        reply_id = response_data.get("id") if isinstance(response_data, dict) else None
                         return {
                             "success": True,
                             "response": response_data,

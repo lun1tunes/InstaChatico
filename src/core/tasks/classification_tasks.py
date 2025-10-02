@@ -1,38 +1,27 @@
-import asyncio
 import logging
-from datetime import datetime
-from ..utils.time import now_db_utc
 from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from ..celery_app import celery_app
 from ..models import CommentClassification, InstagramComment, ProcessingStatus, Media
 from ..services.classification_service import CommentClassificationService
 from ..services.media_service import MediaService
-from ..config import settings
+from ..utils.time import now_db_utc
+from ..utils.task_helpers import async_task, get_db_session, retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, max_retries=3)
-def classify_comment_task(self, comment_id: str):
-    """Синхронная обертка для асинхронной задачи классификации"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(classify_comment_async(comment_id, self))
-    finally:
-        loop.close()
+@async_task
+async def classify_comment_task(self, comment_id: str):
+    """Classify Instagram comment using AI."""
+    return await classify_comment_async(comment_id, self)
 
 
 async def classify_comment_async(comment_id: str, task_instance=None):
-    """Асинхронная задача классификации комментария"""
-    # Create a fresh engine and session for this task
-    engine = create_async_engine(settings.db.url, echo=settings.db.echo)
-    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-
-    async with session_factory() as session:
+    """Async comment classification task."""
+    async with get_db_session() as session:
         try:
             # Получаем комментарий
             result = await session.execute(
@@ -47,23 +36,15 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 return {"status": "error", "reason": "comment_not_found"}
 
             # Ensure media data exists before classification
-            logger.debug(f"Ensuring media data exists for comment {comment_id} (media_id: {comment.media_id})")
             media_service = MediaService()
             media = await media_service.get_or_create_media(comment.media_id, session)
 
             if not media:
                 logger.error(f"Failed to get/create media {comment.media_id} for comment {comment_id}")
-                # Retry the classification task after a delay
                 if task_instance and task_instance.request.retries < task_instance.max_retries:
-                    retry_countdown = 30  # Wait 30 seconds for media to be processed
-                    logger.warning(
-                        f"Retrying classification for comment {comment_id} in {retry_countdown} seconds (waiting for media data)"
-                    )
-                    raise task_instance.retry(countdown=retry_countdown)
-                else:
-                    return {"status": "error", "reason": "media_data_unavailable"}
-
-            logger.debug(f"Media data confirmed for comment {comment_id}: {media.id}")
+                    logger.warning(f"Retrying classification for comment {comment_id} in 30s (waiting for media)")
+                    raise task_instance.retry(countdown=30)
+                return {"status": "error", "reason": "media_data_unavailable"}
 
             # Создаем или получаем запись классификации
             if comment.classification:
@@ -188,44 +169,19 @@ async def classify_comment_async(comment_id: str, task_instance=None):
         except Exception as exc:
             logger.exception(f"Error processing comment {comment_id}")
             await session.rollback()
-
-            # Повторная попытка
-            if task_instance and task_instance.request.retries < task_instance.max_retries:
-                retry_countdown = 2**task_instance.request.retries * 60
-                raise task_instance.retry(countdown=retry_countdown, exc=exc)
-
-            # Если превышено количество попыток
-            try:
-                if "classification" in locals() and classification:
-                    classification.processing_status = ProcessingStatus.FAILED
-                    classification.last_error = str(exc)
-                    await session.commit()
-            except Exception:
-                pass
-
-            return {"status": "error", "reason": str(exc)}
-        finally:
-            await engine.dispose()
+            return retry_with_backoff(task_instance, exc)
 
 
 @celery_app.task
-def retry_failed_classifications():
-    """Повторная обработка неудачных классификаций"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(retry_failed_classifications_async())
-    finally:
-        loop.close()
+@async_task
+async def retry_failed_classifications():
+    """Retry failed classifications."""
+    return await retry_failed_classifications_async()
 
 
 async def retry_failed_classifications_async():
-    """Асинхронная обработка повторных попыток"""
-    # Create a fresh engine and session for this task
-    engine = create_async_engine(settings.db.url, echo=settings.db.echo)
-    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-
-    async with session_factory() as session:
+    """Async retry failed classifications."""
+    async with get_db_session() as session:
         try:
             # Находим комментарии для повторной обработки
             result = await session.execute(
@@ -248,5 +204,3 @@ async def retry_failed_classifications_async():
         except Exception as e:
             logger.error(f"Error in retry task: {e}")
             return {"error": str(e)}
-        finally:
-            await engine.dispose()

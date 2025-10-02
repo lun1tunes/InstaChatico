@@ -1,11 +1,10 @@
-"""Base service class with common functionality for all services."""
+"""Base service class with common functionality."""
 
 import html
 import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, Optional
 
 from agents import SQLiteSession
 

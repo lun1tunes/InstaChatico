@@ -13,22 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 class MediaService:
-    """Service for managing Instagram media information"""
+    """Manage Instagram media information."""
 
     def __init__(self, instagram_service: InstagramGraphAPIService = None):
         self.instagram_service = instagram_service or InstagramGraphAPIService()
 
     async def get_or_create_media(self, media_id: str, session: AsyncSession) -> Optional[Media]:
-        """
-        Get media from database or fetch from Instagram API if not exists
-
-        Args:
-            media_id: The Instagram media ID
-            session: Database session
-
-        Returns:
-            Media object or None if failed
-        """
+        """Get media from DB or fetch from Instagram API."""
         try:
             # First, check if media already exists in database
             existing_media = await session.execute(select(Media).where(Media.id == media_id))
@@ -81,15 +72,7 @@ class MediaService:
             return None
 
     def _parse_timestamp(self, timestamp_str: Optional[str]) -> Optional[datetime]:
-        """
-        Parse Instagram timestamp string to datetime object
-
-        Args:
-            timestamp_str: Instagram timestamp string (ISO format)
-
-        Returns:
-            datetime object or None
-        """
+        """Parse ISO timestamp string to datetime."""
         if not timestamp_str:
             return None
 
@@ -105,37 +88,13 @@ class MediaService:
             return None
 
     def _parse_owner(self, owner_data: Optional[dict]) -> Optional[str]:
-        """
-        Parse Instagram owner data to string
-
-        Args:
-            owner_data: Instagram owner data (dict with 'id' key)
-
-        Returns:
-            owner ID string or None
-        """
+        """Parse owner data to owner ID string."""
         if not owner_data:
             return None
-
-        if isinstance(owner_data, dict):
-            return owner_data.get("id")
-
-        if isinstance(owner_data, str):
-            return owner_data
-
-        return None
+        return owner_data.get("id") if isinstance(owner_data, dict) else (owner_data if isinstance(owner_data, str) else None)
 
     async def ensure_media_exists(self, media_id: str, session: AsyncSession) -> bool:
-        """
-        Ensure media exists in database, queue task if not found
-
-        Args:
-            media_id: The Instagram media ID
-            session: Database session
-
-        Returns:
-            True if media exists or task was queued, False if failed
-        """
+        """Ensure media exists in DB, queue task if not found."""
         try:
             # Check if media already exists
             existing_media = await session.execute(select(Media).where(Media.id == media_id))

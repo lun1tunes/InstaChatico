@@ -1,10 +1,6 @@
-"""
-Telegram Notification Service
+"""Telegram Notification Service for Instagram comment alerts."""
 
-This module handles sending urgent issue notifications to Telegram chat
-when Instagram comments are classified as urgent issues or complaints.
-"""
-
+import html
 import logging
 from typing import Any, Dict
 
@@ -16,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramAlertService:
-    """Service for sending alert notifications to Telegram for urgent issues and critical feedback"""
+    """Send alert notifications to Telegram for urgent/critical feedback."""
 
     def __init__(
         self,
@@ -33,6 +29,11 @@ class TelegramAlertService:
         else:
             self.thread_id = None
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
+
+    @staticmethod
+    def _escape_html(text: str) -> str:
+        """Escape HTML special characters for Telegram."""
+        return html.escape(text or "", quote=True)
 
     async def send_urgent_issue_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -118,271 +119,132 @@ class TelegramAlertService:
             logger.exception("Error sending Telegram notification")
             return {"success": False, "error": str(e)}
 
+    def _prepare_message_data(self, comment_data: Dict[str, Any]) -> Dict[str, str]:
+        """Extract and escape comment data for Telegram message."""
+        data = {
+            'comment_id': comment_data.get("comment_id", "Unknown"),
+            'comment_text': comment_data.get("comment_text", "No text available"),
+            'classification': comment_data.get("classification", "Unknown"),
+            'confidence': comment_data.get("confidence", 0),
+            'reasoning': comment_data.get("reasoning", "No reasoning provided"),
+            'media_id': comment_data.get("media_id", "Unknown"),
+            'username': comment_data.get("username", "Unknown user"),
+            'timestamp': comment_data.get("timestamp", "Unknown time"),
+        }
+
+        # Escape HTML and truncate
+        escaped = {k: self._escape_html(str(v)) for k, v in data.items()}
+        if len(escaped['comment_text']) > 1000:
+            escaped['comment_text'] = escaped['comment_text'][:997] + "..."
+        if len(escaped['reasoning']) > 500:
+            escaped['reasoning'] = escaped['reasoning'][:497] + "..."
+
+        escaped['confidence'] = data['confidence']  # Keep original number
+        return escaped
+
     def _format_urgent_message(self, comment_data: Dict[str, Any]) -> str:
-        """Format the urgent issue message for Telegram"""
-
-        # Extract data with fallbacks
-        comment_id = comment_data.get("comment_id", "Unknown")
-        comment_text = comment_data.get("comment_text", "No text available")
-        classification = comment_data.get("classification", "Unknown")
-        confidence = comment_data.get("confidence", 0)
-        reasoning = comment_data.get("reasoning", "No reasoning provided")
-        media_id = comment_data.get("media_id", "Unknown")
-        username = comment_data.get("username", "Unknown user")
-        timestamp = comment_data.get("timestamp", "Unknown time")
-
-        # Create formatted message with HTML formatting (more reliable than Markdown)
-        def escape_html(text: str) -> str:
-            if not text:
-                return ""
-            # Escape HTML special characters
-            return (
-                text.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace('"', "&quot;")
-                .replace("'", "&#x27;")
-            )
-
-        # Escape HTML special characters
-        html_username = escape_html(username)
-        html_comment_id = escape_html(comment_id)
-        html_media_id = escape_html(media_id)
-        html_timestamp = escape_html(timestamp)
-        html_classification = escape_html(classification)
-        html_comment_text = escape_html(comment_text)
-        html_reasoning = escape_html(reasoning)
-
-        # Truncate very long messages to avoid Telegram limits
-        if len(html_comment_text) > 1000:
-            html_comment_text = html_comment_text[:997] + "..."
-
-        if len(html_reasoning) > 500:
-            html_reasoning = html_reasoning[:497] + "..."
-
-        message = f"""🚨 <b>URGENT ISSUE DETECTED</b> 🚨
+        """Format urgent issue notification."""
+        d = self._prepare_message_data(comment_data)
+        return f"""🚨 <b>URGENT ISSUE DETECTED</b> 🚨
 
 📱 <b>Instagram Comment Alert</b>
 
-👤 <b>Instagram Username:</b> {html_username}
-⏰ <b>Time:</b> {html_timestamp}
-🆔 <b>Comment ID:</b> <code>{html_comment_id}</code>
-📸 <b>Media ID:</b> <code>{html_media_id}</code>
+👤 <b>Instagram Username:</b> {d['username']}
+⏰ <b>Time:</b> {d['timestamp']}
+🆔 <b>Comment ID:</b> <code>{d['comment_id']}</code>
+📸 <b>Media ID:</b> <code>{d['media_id']}</code>
 
 💬 <b>Comment Text:</b>
-<pre>{html_comment_text}</pre>
+<pre>{d['comment_text']}</pre>
 
 🤖 <b>AI Analysis:</b>
-• <b>Classification:</b> {html_classification}
-• <b>Confidence:</b> {confidence}%
+• <b>Classification:</b> {d['classification']}
+• <b>Confidence:</b> {d['confidence']}%
 
 🧠 <b>AI Reasoning:</b>
-{html_reasoning}
+{d['reasoning']}
 
 ⚠️ <b>Action Required:</b> This comment has been classified as an urgent issue or complaint that requires immediate attention.
 
 #urgent #instagram #complaint #customer_service"""
 
-        return message
-
     def _format_critical_message(self, comment_data: Dict[str, Any]) -> str:
-        """Format the critical feedback message for Telegram"""
-
-        # Extract data with fallbacks
-        comment_id = comment_data.get("comment_id", "Unknown")
-        comment_text = comment_data.get("comment_text", "No text available")
-        classification = comment_data.get("classification", "Unknown")
-        confidence = comment_data.get("confidence", 0)
-        reasoning = comment_data.get("reasoning", "No reasoning provided")
-        media_id = comment_data.get("media_id", "Unknown")
-        username = comment_data.get("username", "Unknown user")
-        timestamp = comment_data.get("timestamp", "Unknown time")
-
-        # Create formatted message with HTML formatting (more reliable than Markdown)
-        def escape_html(text: str) -> str:
-            if not text:
-                return ""
-            # Escape HTML special characters
-            return (
-                text.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace('"', "&quot;")
-                .replace("'", "&#x27;")
-            )
-
-        # Escape HTML special characters
-        html_username = escape_html(username)
-        html_comment_id = escape_html(comment_id)
-        html_media_id = escape_html(media_id)
-        html_timestamp = escape_html(timestamp)
-        html_classification = escape_html(classification)
-        html_comment_text = escape_html(comment_text)
-        html_reasoning = escape_html(reasoning)
-
-        # Truncate very long messages to avoid Telegram limits
-        if len(html_comment_text) > 1000:
-            html_comment_text = html_comment_text[:997] + "..."
-
-        if len(html_reasoning) > 500:
-            html_reasoning = html_reasoning[:497] + "..."
-
-        message = f"""⚠️ <b>CRITICAL FEEDBACK DETECTED</b> ⚠️
+        """Format critical feedback notification."""
+        d = self._prepare_message_data(comment_data)
+        return f"""⚠️ <b>CRITICAL FEEDBACK DETECTED</b> ⚠️
 
 📱 <b>Instagram Comment Alert</b>
 
-👤 <b>Instagram Username:</b> {html_username}
-⏰ <b>Time:</b> {html_timestamp}
-🆔 <b>Comment ID:</b> <code>{html_comment_id}</code>
-📸 <b>Media ID:</b> <code>{html_media_id}</code>
+👤 <b>Instagram Username:</b> {d['username']}
+⏰ <b>Time:</b> {d['timestamp']}
+🆔 <b>Comment ID:</b> <code>{d['comment_id']}</code>
+📸 <b>Media ID:</b> <code>{d['media_id']}</code>
 
 💬 <b>Comment Text:</b>
-<pre>{html_comment_text}</pre>
+<pre>{d['comment_text']}</pre>
 
 🤖 <b>AI Analysis:</b>
-• <b>Classification:</b> {html_classification}
-• <b>Confidence:</b> {confidence}%
+• <b>Classification:</b> {d['classification']}
+• <b>Confidence:</b> {d['confidence']}%
 
 🧠 <b>AI Reasoning:</b>
-{html_reasoning}
+{d['reasoning']}
 
 📋 <b>Action Required:</b> This comment contains critical feedback that may require attention or follow-up.
 
 #critical #instagram #feedback #customer_service"""
 
-        return message
-
     def _format_partnership_message(self, comment_data: Dict[str, Any]) -> str:
-        """Format the partnership proposal message for Telegram"""
-
-        # Extract data with fallbacks
-        comment_id = comment_data.get("comment_id", "Unknown")
-        comment_text = comment_data.get("comment_text", "No text available")
-        classification = comment_data.get("classification", "Unknown")
-        confidence = comment_data.get("confidence", 0)
-        reasoning = comment_data.get("reasoning", "No reasoning provided")
-        media_id = comment_data.get("media_id", "Unknown")
-        username = comment_data.get("username", "Unknown user")
-        timestamp = comment_data.get("timestamp", "Unknown time")
-
-        # Create formatted message with HTML formatting
-        def escape_html(text: str) -> str:
-            if not text:
-                return ""
-            return (
-                text.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace('"', "&quot;")
-                .replace("'", "&#x27;")
-            )
-
-        # Escape HTML special characters
-        html_username = escape_html(username)
-        html_comment_id = escape_html(comment_id)
-        html_media_id = escape_html(media_id)
-        html_timestamp = escape_html(timestamp)
-        html_classification = escape_html(classification)
-        html_comment_text = escape_html(comment_text)
-        html_reasoning = escape_html(reasoning)
-
-        # Truncate very long messages
-        if len(html_comment_text) > 1000:
-            html_comment_text = html_comment_text[:997] + "..."
-
-        if len(html_reasoning) > 500:
-            html_reasoning = html_reasoning[:497] + "..."
-
-        message = f"""🤝 <b>PARTNERSHIP PROPOSAL</b> 🤝
+        """Format partnership proposal notification."""
+        d = self._prepare_message_data(comment_data)
+        return f"""🤝 <b>PARTNERSHIP PROPOSAL</b> 🤝
 
 📱 <b>Business Opportunity Alert</b>
 
-👤 <b>Instagram Username:</b> {html_username}
-⏰ <b>Time:</b> {html_timestamp}
-🆔 <b>Comment ID:</b> <code>{html_comment_id}</code>
-📸 <b>Media ID:</b> <code>{html_media_id}</code>
+👤 <b>Instagram Username:</b> {d['username']}
+⏰ <b>Time:</b> {d['timestamp']}
+🆔 <b>Comment ID:</b> <code>{d['comment_id']}</code>
+📸 <b>Media ID:</b> <code>{d['media_id']}</code>
 
 💬 <b>Proposal Text:</b>
-<pre>{html_comment_text}</pre>
+<pre>{d['comment_text']}</pre>
 
 🤖 <b>AI Classification Analysis:</b>
-📊 <b>Classification:</b> {html_classification}
-🎯 <b>Confidence:</b> {confidence}%
+📊 <b>Classification:</b> {d['classification']}
+🎯 <b>Confidence:</b> {d['confidence']}%
 
 💭 <b>AI Reasoning:</b>
-<i>{html_reasoning}</i>
+<i>{d['reasoning']}</i>
 
 ✅ <b>Action Required:</b> This comment contains a potential business partnership or collaboration proposal. Consider reviewing and responding to this opportunity.
 
 #partnership #business #collaboration #opportunity"""
 
-        return message
-
     def _format_toxic_message(self, comment_data: Dict[str, Any]) -> str:
-        """Format the toxic/abusive comment message for Telegram"""
-
-        # Extract data with fallbacks
-        comment_id = comment_data.get("comment_id", "Unknown")
-        comment_text = comment_data.get("comment_text", "No text available")
-        classification = comment_data.get("classification", "Unknown")
-        confidence = comment_data.get("confidence", 0)
-        reasoning = comment_data.get("reasoning", "No reasoning provided")
-        media_id = comment_data.get("media_id", "Unknown")
-        username = comment_data.get("username", "Unknown user")
-        timestamp = comment_data.get("timestamp", "Unknown time")
-
-        # Create formatted message with HTML formatting
-        def escape_html(text: str) -> str:
-            if not text:
-                return ""
-            return (
-                text.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace('"', "&quot;")
-                .replace("'", "&#x27;")
-            )
-
-        # Escape HTML special characters
-        html_username = escape_html(username)
-        html_comment_id = escape_html(comment_id)
-        html_media_id = escape_html(media_id)
-        html_timestamp = escape_html(timestamp)
-        html_classification = escape_html(classification)
-        html_comment_text = escape_html(comment_text)
-        html_reasoning = escape_html(reasoning)
-
-        # Truncate very long messages
-        if len(html_comment_text) > 1000:
-            html_comment_text = html_comment_text[:997] + "..."
-
-        if len(html_reasoning) > 500:
-            html_reasoning = html_reasoning[:497] + "..."
-
-        message = f"""🚫 <b>TOXIC / ABUSIVE CONTENT</b> 🚫
+        """Format toxic/abusive content notification."""
+        d = self._prepare_message_data(comment_data)
+        return f"""🚫 <b>TOXIC / ABUSIVE CONTENT</b> 🚫
 
 📱 <b>Moderation Alert</b>
 
-👤 <b>Instagram Username:</b> {html_username}
-⏰ <b>Time:</b> {html_timestamp}
-🆔 <b>Comment ID:</b> <code>{html_comment_id}</code>
-📸 <b>Media ID:</b> <code>{html_media_id}</code>
+👤 <b>Instagram Username:</b> {d['username']}
+⏰ <b>Time:</b> {d['timestamp']}
+🆔 <b>Comment ID:</b> <code>{d['comment_id']}</code>
+📸 <b>Media ID:</b> <code>{d['media_id']}</code>
 
 💬 <b>Comment Text:</b>
-<pre>{html_comment_text}</pre>
+<pre>{d['comment_text']}</pre>
 
 🤖 <b>AI Classification Analysis:</b>
-📊 <b>Classification:</b> {html_classification}
-🎯 <b>Confidence:</b> {confidence}%
+📊 <b>Classification:</b> {d['classification']}
+🎯 <b>Confidence:</b> {d['confidence']}%
 
 💭 <b>AI Reasoning:</b>
-<i>{html_reasoning}</i>
+<i>{d['reasoning']}</i>
 
 ⛔ <b>Action Required:</b> This comment violates Instagram community guidelines and contains toxic/abusive content. Consider hiding, deleting, or reporting this comment for moderation.
 
 #toxic #abusive #moderation #violation #instagram"""
-
-        return message
 
     async def send_partnership_proposal_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -496,83 +358,42 @@ class TelegramAlertService:
             }
 
     async def send_log_alert(self, log_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Send application log alerts to Telegram LOGS thread with HTML formatting.
-        Expects keys: level, logger, message, trace_id, timestamp, exception (optional)
-        """
+        """Send app log alerts to Telegram with HTML formatting."""
         try:
             if not self.bot_token or not self.chat_id:
-                logger.error("Telegram bot token or chat ID not configured")
                 return {"success": False, "error": "Telegram configuration missing"}
 
+            emoji_map = {"WARNING": "⚠️", "ERROR": "🔴", "CRITICAL": "🚨"}
             level = str(log_data.get("level", "WARNING"))
-            logger_name = str(log_data.get("logger", "-"))
-            message = str(log_data.get("message", ""))
-            trace_id = str(log_data.get("trace_id", "-"))
-            timestamp = str(log_data.get("timestamp", ""))
-            exception = log_data.get("exception", "")
-
-            # HTML escape function
-            def esc(text: str) -> str:
-                return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-            # Choose emoji based on level
-            emoji_map = {
-                "WARNING": "⚠️",
-                "ERROR": "🔴",
-                "CRITICAL": "🚨",
-            }
             emoji = emoji_map.get(level, "ℹ️")
 
-            # Format message with HTML for beautiful display
-            safe_msg = esc(message)[:3500]
-            safe_exception = esc(exception)[:3500] if exception else ""
+            # Escape and truncate
+            safe_msg = self._escape_html(str(log_data.get("message", "")))[:3500]
+            safe_exception = self._escape_html(log_data.get("exception", ""))[:3500] if log_data.get("exception") else ""
 
             text_parts = [
                 f"{emoji} <b>APP LOG ALERT</b>",
-                f"<b>Level:</b> {esc(level)}",
-                f"<b>Logger:</b> {esc(logger_name)}",
-                f"<b>Trace:</b> <code>{esc(trace_id)}</code>",
-                f"<b>Time:</b> {esc(timestamp)}",
+                f"<b>Level:</b> {self._escape_html(level)}",
+                f"<b>Logger:</b> {self._escape_html(str(log_data.get('logger', '-')))}",
+                f"<b>Trace:</b> <code>{self._escape_html(str(log_data.get('trace_id', '-')))}</code>",
+                f"<b>Time:</b> {self._escape_html(str(log_data.get('timestamp', '')))}",
                 "",
                 f"<b>Message:</b>",
                 f"<pre>{safe_msg}</pre>",
             ]
 
             if safe_exception:
-                text_parts.extend(
-                    [
-                        "",
-                        f"<b>Details:</b>",
-                        f"<pre>{safe_exception}</pre>",
-                    ]
-                )
+                text_parts.extend(["", f"<b>Details:</b>", f"<pre>{safe_exception}</pre>"])
 
             text = "\n".join(text_parts)
 
-            # Telegram max message ~4096 chars
+            # Truncate if too long
             if len(text) > 3900:
-                # Truncate if too long
-                if safe_exception:
-                    safe_exception = safe_exception[:1500] + "..."
                 safe_msg = safe_msg[:2000] + "..."
-                text_parts = [
-                    f"{emoji} <b>APP LOG ALERT</b>",
-                    f"<b>Level:</b> {esc(level)}",
-                    f"<b>Logger:</b> {esc(logger_name)}",
-                    f"<b>Trace:</b> <code>{esc(trace_id)}</code>",
-                    f"<b>Time:</b> {esc(timestamp)}",
-                    "",
-                    f"<b>Message:</b>",
-                    f"<pre>{safe_msg}</pre>",
-                ]
+                safe_exception = (safe_exception[:1500] + "...") if safe_exception else ""
+                text_parts[7] = f"<pre>{safe_msg}</pre>"
                 if safe_exception:
-                    text_parts.extend(
-                        [
-                            "",
-                            f"<b>Details:</b>",
-                            f"<pre>{safe_exception}</pre>",
-                        ]
-                    )
+                    text_parts[9] = f"<pre>{safe_exception}</pre>"
                 text = "\n".join(text_parts)
 
             return await self._send_message(text, parse_mode="HTML")

@@ -1,40 +1,28 @@
-import asyncio
 import logging
-import redis
-from datetime import datetime
-from ..utils.time import now_db_utc
-from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from ..celery_app import celery_app
 from ..config import settings
-
 from ..models import QuestionAnswer, CommentClassification, InstagramComment, AnswerStatus, ProcessingStatus, Media
 from ..services.answer_service import QuestionAnswerService
 from ..services.media_service import MediaService
+from ..utils.time import now_db_utc
+from ..utils.task_helpers import async_task, get_db_session, retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, max_retries=3)
-def generate_answer_task(self, comment_id: str):
-    """Синхронная обертка для асинхронной задачи генерации ответа"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(generate_answer_async(comment_id, self))
-    finally:
-        loop.close()
+@async_task
+async def generate_answer_task(self, comment_id: str):
+    """Generate answer for Instagram comment question."""
+    return await generate_answer_async(comment_id, self)
 
 
 async def generate_answer_async(comment_id: str, task_instance=None):
-    """Асинхронная задача генерации ответа на вопрос"""
-    # Create a fresh engine and session for this task
-    engine = create_async_engine(settings.db.url, echo=settings.db.echo)
-    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-
-    async with session_factory() as session:
+    """Async answer generation task."""
+    async with get_db_session() as session:
         try:
             # Получаем комментарий с классификацией
             result = await session.execute(
@@ -186,43 +174,19 @@ async def generate_answer_async(comment_id: str, task_instance=None):
         except Exception as exc:
             logger.exception(f"Error processing answer for comment {comment_id}")
             await session.rollback()
-
-            # Повторная попытка
-            if task_instance and task_instance.request.retries < task_instance.max_retries:
-                retry_countdown = 2**task_instance.request.retries * 60
-                raise task_instance.retry(countdown=retry_countdown, exc=exc)
-
-            # Если превышено количество попыток
-            try:
-                if "answer_record" in locals() and answer_record:
-                    answer_record.processing_status = AnswerStatus.FAILED
-                    answer_record.last_error = str(exc)
-                    await session.commit()
-            except Exception:
-                pass
-
-            return {"status": "error", "reason": str(exc)}
-        finally:
-            await engine.dispose()
+            return retry_with_backoff(task_instance, exc)
 
 
 @celery_app.task
-def retry_failed_answers():
-    """Периодическая задача для повторной обработки неудачных ответов"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(retry_failed_answers_async())
-    finally:
-        loop.close()
+@async_task
+async def retry_failed_answers():
+    """Retry failed answer generation."""
+    return await retry_failed_answers_async()
 
 
 async def retry_failed_answers_async():
-    """Асинхронная функция для повторной обработки неудачных ответов"""
-    engine = create_async_engine(settings.db.url, echo=settings.db.echo)
-    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-
-    async with session_factory() as session:
+    """Async retry failed answers."""
+    async with get_db_session() as session:
         try:
             # Находим записи с ошибками, которые можно повторить
             result = await session.execute(
@@ -242,22 +206,15 @@ async def retry_failed_answers_async():
                 retry_count += 1
 
             logger.info(f"Queued {retry_count} failed answers for retry")
-
         except Exception as exc:
             logger.error(f"Error in retry_failed_answers: {exc}")
-        finally:
-            await engine.dispose()
 
 
 @celery_app.task(bind=True, max_retries=3)
-def process_pending_questions_task(self):
-    """Периодическая задача для обработки всех ожидающих вопросов."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(process_pending_questions_async(self))
-    finally:
-        loop.close()
+@async_task
+async def process_pending_questions_task(self):
+    """Process all pending questions."""
+    return await process_pending_questions_async(self)
 
 
 async def process_pending_questions_async(task_instance=None):

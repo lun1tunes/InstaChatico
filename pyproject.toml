@@ -25,6 +25,7 @@ pgvector = "^0.3.6"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.0.0"
+pytest = "^8.4.2"
 
 [tool.black]
 line-length = 120
