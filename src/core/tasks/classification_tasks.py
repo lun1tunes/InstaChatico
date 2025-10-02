@@ -82,22 +82,17 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             # Классификация with session management and media context
             classification_result = await classifier.classify_comment(comment.text, conversation_id, media_context)
 
-            # Сохраняем результат
-            classification.classification = classification_result["classification"]
-            classification.confidence = classification_result["confidence"]
-            classification.reasoning = classification_result["reasoning"]
-            classification.llm_raw_response = classification_result["llm_raw_response"]
-            classification.input_tokens = classification_result.get("input_tokens")
-            classification.output_tokens = classification_result.get("output_tokens")
-            classification.meta_data = {
-                "context_used": classification_result.get("context_used", False),
-                "conversation_continuity": classification_result.get("conversation_continuity", False),
-                "session_used": classification_result.get("session_used", False),
-            }
+            # Сохраняем результат (classification_result is now a Pydantic model)
+            classification.classification = classification_result.classification
+            classification.confidence = classification_result.confidence
+            classification.reasoning = classification_result.reasoning
+            classification.input_tokens = classification_result.input_tokens
+            classification.output_tokens = classification_result.output_tokens
+            classification.meta_data = {}
 
-            if classification_result.get("error"):
+            if classification_result.error:
                 classification.processing_status = ProcessingStatus.FAILED
-                classification.last_error = classification_result["error"]
+                classification.last_error = classification_result.error
             else:
                 classification.processing_status = ProcessingStatus.COMPLETED
                 classification.processing_completed_at = now_db_utc()
@@ -105,10 +100,10 @@ async def classify_comment_async(comment_id: str, task_instance=None):
 
             await session.commit()
 
-            logger.info(f"Comment {comment_id} classified: {classification_result['classification']}")
+            logger.info(f"Comment {comment_id} classified: {classification_result.classification}")
 
             # Trigger answer generation if comment is classified as a question
-            if classification_result["classification"].lower() == "question / inquiry":
+            if classification_result.classification and classification_result.classification.lower() == "question / inquiry":
                 logger.info(f"Triggering answer generation for question {comment_id}")
                 # Use direct async call that works in the same event loop
                 try:
@@ -121,7 +116,7 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                     logger.debug(f"Answer details: {answer_result}")
 
                     # Trigger Instagram reply if answer was successfully generated
-                    if answer_result.get("answer") and not answer_result.get("error"):
+                    if answer_result.get("answer") and answer_result.get("status") == "success":
                         try:
                             logger.info(f"Queueing Instagram reply for comment {comment_id}")
                             logger.debug(f"Task args: {[comment_id, answer_result['answer']]}")
@@ -138,12 +133,12 @@ async def classify_comment_async(comment_id: str, task_instance=None):
 
             # Trigger Telegram notification if comment requires attention
             # Note: "toxic / abusive" is NOT notified - we ignore such comments
-            elif classification_result["classification"].lower() in [
+            elif classification_result.classification and classification_result.classification.lower() in [
                 "urgent issue / complaint",
                 "critical feedback",
                 "partnership proposal",
             ]:
-                classification_lower = classification_result["classification"].lower()
+                classification_lower = classification_result.classification.lower()
                 notification_type_map = {
                     "urgent issue / complaint": "urgent issue",
                     "critical feedback": "critical feedback",
@@ -162,8 +157,8 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             return {
                 "status": "success",
                 "comment_id": comment_id,
-                "classification": classification_result["classification"],
-                "confidence": classification_result["confidence"],
+                "classification": classification_result.classification,
+                "confidence": classification_result.confidence,
             }
 
         except Exception as exc:

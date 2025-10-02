@@ -16,6 +16,7 @@ from core.models import db_helper
 from core.models.comment_classification import CommentClassification, ProcessingStatus
 from core.models.instagram_comment import InstagramComment
 from core.models.media import Media
+from core.schemas.webhook import WebhookProcessingResponse, TestCommentResponse
 from core.services.media_service import MediaService
 from core.tasks.answer_tasks import generate_answer_async
 from core.tasks.classification_tasks import classify_comment_async, classify_comment_task
@@ -124,11 +125,10 @@ async def process_webhook(
                 skipped_count += 1
 
         logger.info(f"Webhook complete: {processed_count} new, {skipped_count} skipped")
-        return {
-            "status": "ok",
-            "processed": processed_count,
-            "skipped": skipped_count,
-        }
+        return WebhookProcessingResponse(
+            status="success",
+            message=f"Processed {processed_count} new comments, skipped {skipped_count}",
+        )
 
     except Exception:
         logger.exception("Unexpected error processing webhook")
@@ -224,27 +224,18 @@ async def test_comment_processing(
         classification_type = classification_result.get("classification", "").lower()
         logger.info(f"Test comment classified as: {classification_type}")
 
-        response_data = {
-            "status": "success",
-            "comment_id": test_data.comment_id,
-            "classification": classification_result.get("classification"),
-            "confidence": classification_result.get("confidence"),
-            "reasoning": None,
-            "answer": None,
-            "answer_confidence": None,
-            "answer_quality_score": None,
-            "processing_details": {
-                "classification_result": classification_result,
-            },
-        }
-
         # Get reasoning from database
         comment_with_class = await session.execute(
             select(InstagramComment).where(InstagramComment.id == test_data.comment_id)
         )
         comment_obj = comment_with_class.scalar_one_or_none()
+        reasoning = None
         if comment_obj and hasattr(comment_obj, "classification") and comment_obj.classification:
-            response_data["reasoning"] = comment_obj.classification.reasoning
+            reasoning = comment_obj.classification.reasoning
+
+        # Prepare processing details
+        processing_details = {"classification_result": classification_result}
+        answer_text = None
 
         # Step 6: If it's a question, generate answer
         if classification_type == "question / inquiry":
@@ -252,19 +243,23 @@ async def test_comment_processing(
             answer_result = await generate_answer_async(test_data.comment_id, task_instance=None)
 
             if answer_result.get("status") == "error":
-                response_data["answer_error"] = answer_result.get("reason")
-                response_data["status"] = "partial_success"
+                processing_details["answer_error"] = answer_result.get("reason")
             else:
-                response_data["answer"] = answer_result.get("answer")
-                response_data["answer_confidence"] = answer_result.get("confidence")
-                response_data["answer_quality_score"] = answer_result.get("quality_score")
-                response_data["processing_details"]["answer_result"] = answer_result
+                answer_text = answer_result.get("answer")
+                processing_details["answer_result"] = answer_result
 
             logger.info(f"Test comment processing complete. Answer generated: {bool(answer_result.get('answer'))}")
         else:
             logger.info(f"Test comment is not a question, skipping answer generation")
 
-        return response_data
+        return TestCommentResponse(
+            status="success",
+            message=f"Test comment processed: {classification_type}",
+            comment_id=test_data.comment_id,
+            classification=classification_result.get("classification"),
+            answer=answer_text,
+            processing_details=processing_details,
+        )
 
     except HTTPException:
         raise

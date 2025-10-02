@@ -6,6 +6,7 @@ from agents import Runner, SQLiteSession
 from .base_service import BaseService
 from ..agents import comment_classification_agent
 from ..config import settings
+from ..schemas.classification import ClassificationResponse
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,7 @@ class CommentClassificationService(BaseService):
         comment_text: str,
         conversation_id: Optional[str] = None,
         media_context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> ClassificationResponse:
         """Classify comment using OpenAI agent with optional session context."""
         try:
             # Format input with conversation and media context
@@ -178,19 +179,16 @@ class CommentClassificationService(BaseService):
                 f"Classification result: {classification_result.classification} (confidence: {classification_result.confidence})"
             )
 
-            return {
-                "classification": classification_result.classification,
-                "confidence": classification_result.confidence,
-                "reasoning": classification_result.reasoning,
-                "context_used": classification_result.context_used,
-                "conversation_continuity": classification_result.conversation_continuity,
-                "llm_raw_response": str(classification_result),
-                "conversation_id": conversation_id,
-                "session_used": conversation_id is not None,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "error": None,
-            }
+            return ClassificationResponse(
+                status="success",
+                comment_id=conversation_id or "unknown",
+                classification=classification_result.classification,
+                confidence=classification_result.confidence,
+                reasoning=classification_result.reasoning,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                error=None,
+            )
 
         except Exception as e:
             logger.error(f"Classification error: {e}")
@@ -243,14 +241,13 @@ class CommentClassificationService(BaseService):
         # Return sanitized text without context
         return sanitized_text
 
-    def _create_error_response(self, error_message: str) -> Dict[str, Any]:
+    def _create_error_response(self, error_message: str) -> ClassificationResponse:
         """Return safe fallback response on classification error."""
-        return {
-            "classification": "spam / irrelevant",  # Safe fallback
-            "confidence": 0,
-            "reasoning": f"Classification failed: {error_message}",
-            "context_used": False,
-            "conversation_continuity": False,
-            "llm_raw_response": None,
-            "error": error_message,
-        }
+        return ClassificationResponse(
+            status="error",
+            comment_id="unknown",
+            classification="spam / irrelevant",  # Safe fallback
+            confidence=0,
+            reasoning=f"Classification failed: {error_message}",
+            error=error_message,
+        )

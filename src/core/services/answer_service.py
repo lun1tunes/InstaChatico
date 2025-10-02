@@ -7,6 +7,7 @@ from agents import Runner
 from .base_service import BaseService
 from ..agents import get_comment_response_agent
 from ..config import settings
+from ..schemas.answer import AnswerResponse
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class QuestionAnswerService(BaseService):
         question_text: str,
         conversation_id: Optional[str] = None,
         media_context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> AnswerResponse:
         """Generate answer for customer question with session context."""
         start_time = time.time()
 
@@ -81,40 +82,30 @@ class QuestionAnswerService(BaseService):
                 tokens_used = self._estimate_tokens(sanitized_text + answer_result.answer)
                 logger.debug(f"Token usage estimated: {tokens_used}")
 
-            return {
-                "answer": answer_result.answer,
-                "confidence": answer_result.confidence,
-                "quality_score": answer_result.quality_score,
-                "tokens_used": tokens_used,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "processing_time_ms": processing_time_ms,
-                "llm_raw_response": str(result),
-                "conversation_id": conversation_id,
-                "session_used": conversation_id is not None,
-                "meta_data": {
-                    "question_length": len(question_text),
-                    "answer_length": len(answer_result.answer),
-                    "model_used": settings.openai.model_comment_response,
-                    "reasoning": answer_result.reasoning,
-                    "is_helpful": answer_result.is_helpful,
-                    "contains_contact_info": answer_result.contains_contact_info,
-                    "tone": answer_result.tone,
-                },
-            }
+            return AnswerResponse(
+                status="success",
+                comment_id=conversation_id or "unknown",
+                answer=answer_result.answer,
+                answer_confidence=answer_result.confidence,
+                answer_quality_score=answer_result.quality_score,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                processing_time_ms=processing_time_ms,
+                error=None,
+            )
 
         except Exception as e:
             logger.error(f"Answer generation error: {e}")
             return self._create_error_response(str(e))
 
-    def _create_error_response(self, error_message: str) -> Dict[str, Any]:
+    def _create_error_response(self, error_message: str) -> AnswerResponse:
         """Return error response with metadata."""
-        return {
-            "answer": None,
-            "confidence": 0.0,
-            "quality_score": 0,
-            "tokens_used": 0,
-            "processing_time_ms": 0,
-            "error": error_message,
-            "meta_data": {"error": True},
-        }
+        return AnswerResponse(
+            status="error",
+            comment_id="unknown",
+            answer=None,
+            answer_confidence=0.0,
+            answer_quality_score=0,
+            processing_time_ms=0,
+            error=error_message,
+        )

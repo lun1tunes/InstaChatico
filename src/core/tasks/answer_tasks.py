@@ -125,20 +125,18 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             logger.debug(f"Calling generate_answer with conversation_id: {conversation_id} and media context")
             answer_result = await answer_service.generate_answer(comment.text, conversation_id, media_context)
 
-            # Сохраняем результат
-            if answer_result.get("error"):
+            # Сохраняем результат (answer_result is now a Pydantic model)
+            if answer_result.error:
                 answer_record.processing_status = AnswerStatus.FAILED
-                answer_record.last_error = answer_result["error"]
+                answer_record.last_error = answer_result.error
             else:
-                answer_record.answer = answer_result["answer"]
-                answer_record.answer_confidence = answer_result["confidence"]
-                answer_record.answer_quality_score = answer_result["quality_score"]
-                answer_record.llm_raw_response = answer_result.get("llm_raw_response", "")
-                answer_record.tokens_used = answer_result.get("tokens_used", 0)
-                answer_record.input_tokens = answer_result.get("input_tokens")
-                answer_record.output_tokens = answer_result.get("output_tokens")
-                answer_record.processing_time_ms = answer_result.get("processing_time_ms", 0)
-                answer_record.meta_data = answer_result.get("meta_data", {})
+                answer_record.answer = answer_result.answer
+                answer_record.answer_confidence = answer_result.answer_confidence
+                answer_record.answer_quality_score = answer_result.answer_quality_score
+                answer_record.input_tokens = answer_result.input_tokens
+                answer_record.output_tokens = answer_result.output_tokens
+                answer_record.processing_time_ms = answer_result.processing_time_ms
+                answer_record.meta_data = {}
 
                 answer_record.processing_status = AnswerStatus.COMPLETED
                 answer_record.processing_completed_at = now_db_utc()
@@ -147,17 +145,16 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             await session.commit()
 
             logger.info(f"Answer generated for comment {comment_id}")
-            logger.debug(f"Answer sample: {str(answer_result.get('answer', ''))[:100]}...")
-            logger.debug(f"Answer result keys: {list(answer_result.keys())}")
+            logger.debug(f"Answer sample: {str(answer_result.answer)[:100] if answer_result.answer else 'N/A'}...")
 
             # Trigger Instagram reply if answer was successfully generated
-            if answer_result.get("answer") and not answer_result.get("error"):
+            if answer_result.answer and answer_result.status == "success":
                 try:
                     logger.info(f"Queueing Instagram reply for comment {comment_id}")
-                    logger.debug(f"Reply args: {[comment_id, answer_result['answer']]}")
+                    logger.debug(f"Reply args: {[comment_id, answer_result.answer]}")
                     result = celery_app.send_task(
                         "core.tasks.instagram_reply_tasks.send_instagram_reply_task",
-                        args=[comment_id, answer_result["answer"]],
+                        args=[comment_id, answer_result.answer],
                     )
                     logger.info(f"Reply task queued (task_id={result.id})")
                 except Exception as e:
@@ -166,9 +163,9 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             return {
                 "status": "success",
                 "comment_id": comment_id,
-                "answer": answer_result.get("answer"),
-                "confidence": answer_result.get("confidence"),
-                "quality_score": answer_result.get("quality_score"),
+                "answer": answer_result.answer,
+                "confidence": answer_result.answer_confidence,
+                "quality_score": answer_result.answer_quality_score,
             }
 
         except Exception as exc:
