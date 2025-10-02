@@ -42,6 +42,10 @@ class CommentClassification(Base):
     llm_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     meta_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # Token usage tracking
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Relationship
     comment: Mapped[InstagramComment] = relationship(
         back_populates="classification",

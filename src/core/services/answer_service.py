@@ -61,13 +61,33 @@ class QuestionAnswerService(BaseService):
             answer_result = result.final_output
             processing_time_ms = int((time.time() - start_time) * 1000)
 
+            # Extract token usage if available
+            input_tokens = None
+            output_tokens = None
+            tokens_used = None
+
+            if hasattr(result, 'usage'):
+                usage = result.usage
+                if usage:
+                    input_tokens = getattr(usage, 'input_tokens', None) or getattr(usage, 'prompt_tokens', None)
+                    output_tokens = getattr(usage, 'output_tokens', None) or getattr(usage, 'completion_tokens', None)
+                    if input_tokens and output_tokens:
+                        tokens_used = input_tokens + output_tokens
+
+                    logger.debug(f"Token usage - Input: {input_tokens}, Output: {output_tokens}, Total: {tokens_used}")
+
+            # Fallback to estimation if usage not available
+            if tokens_used is None:
+                tokens_used = self._estimate_tokens(sanitized_text + answer_result.answer)
+                logger.debug(f"Token usage estimated: {tokens_used}")
+
             return {
                 "answer": answer_result.answer,
                 "confidence": answer_result.confidence,
                 "quality_score": answer_result.quality_score,
-                "tokens_used": self._estimate_tokens(
-                    sanitized_text + answer_result.answer
-                ),
+                "tokens_used": tokens_used,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
                 "processing_time_ms": processing_time_ms,
                 "llm_raw_response": str(result),
                 "conversation_id": conversation_id,

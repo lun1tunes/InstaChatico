@@ -77,8 +77,6 @@ async def send_telegram_notification_async(comment_id: str, task_instance=None):
                 "classification": comment.classification.classification,
                 "confidence": comment.classification.confidence,
                 "reasoning": comment.classification.reasoning,
-                "sentiment_score": comment.classification.meta_data.get("sentiment_score", 0),
-                "toxicity_score": comment.classification.meta_data.get("toxicity_score", 0),
                 "media_id": comment.media_id,
                 "username": comment.username or "Unknown user",
                 "timestamp": comment.created_at.isoformat() if comment.created_at else "Unknown time",

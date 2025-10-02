@@ -127,8 +127,6 @@ class TelegramAlertService:
         classification = comment_data.get("classification", "Unknown")
         confidence = comment_data.get("confidence", 0)
         reasoning = comment_data.get("reasoning", "No reasoning provided")
-        sentiment_score = comment_data.get("sentiment_score", 0)
-        toxicity_score = comment_data.get("toxicity_score", 0)
         media_id = comment_data.get("media_id", "Unknown")
         username = comment_data.get("username", "Unknown user")
         timestamp = comment_data.get("timestamp", "Unknown time")
@@ -177,8 +175,6 @@ class TelegramAlertService:
 🤖 <b>AI Analysis:</b>
 • <b>Classification:</b> {html_classification}
 • <b>Confidence:</b> {confidence}%
-• <b>Sentiment:</b> {sentiment_score}/100
-• <b>Toxicity:</b> {toxicity_score}/100
 
 🧠 <b>AI Reasoning:</b>
 {html_reasoning}
@@ -198,8 +194,6 @@ class TelegramAlertService:
         classification = comment_data.get("classification", "Unknown")
         confidence = comment_data.get("confidence", 0)
         reasoning = comment_data.get("reasoning", "No reasoning provided")
-        sentiment_score = comment_data.get("sentiment_score", 0)
-        toxicity_score = comment_data.get("toxicity_score", 0)
         media_id = comment_data.get("media_id", "Unknown")
         username = comment_data.get("username", "Unknown user")
         timestamp = comment_data.get("timestamp", "Unknown time")
@@ -248,8 +242,6 @@ class TelegramAlertService:
 🤖 <b>AI Analysis:</b>
 • <b>Classification:</b> {html_classification}
 • <b>Confidence:</b> {confidence}%
-• <b>Sentiment:</b> {sentiment_score}/100
-• <b>Toxicity:</b> {toxicity_score}/100
 
 🧠 <b>AI Reasoning:</b>
 {html_reasoning}
@@ -269,8 +261,6 @@ class TelegramAlertService:
         classification = comment_data.get("classification", "Unknown")
         confidence = comment_data.get("confidence", 0)
         reasoning = comment_data.get("reasoning", "No reasoning provided")
-        sentiment_score = comment_data.get("sentiment_score", 0)
-        toxicity_score = comment_data.get("toxicity_score", 0)
         media_id = comment_data.get("media_id", "Unknown")
         username = comment_data.get("username", "Unknown user")
         timestamp = comment_data.get("timestamp", "Unknown time")
@@ -318,8 +308,6 @@ class TelegramAlertService:
 🤖 <b>AI Classification Analysis:</b>
 📊 <b>Classification:</b> {html_classification}
 🎯 <b>Confidence:</b> {confidence}%
-📈 <b>Sentiment Score:</b> {sentiment_score}/100
-⚠️ <b>Toxicity Score:</b> {toxicity_score}/100
 
 💭 <b>AI Reasoning:</b>
 <i>{html_reasoning}</i>
@@ -339,8 +327,6 @@ class TelegramAlertService:
         classification = comment_data.get("classification", "Unknown")
         confidence = comment_data.get("confidence", 0)
         reasoning = comment_data.get("reasoning", "No reasoning provided")
-        sentiment_score = comment_data.get("sentiment_score", 0)
-        toxicity_score = comment_data.get("toxicity_score", 0)
         media_id = comment_data.get("media_id", "Unknown")
         username = comment_data.get("username", "Unknown user")
         timestamp = comment_data.get("timestamp", "Unknown time")
@@ -388,8 +374,6 @@ class TelegramAlertService:
 🤖 <b>AI Classification Analysis:</b>
 📊 <b>Classification:</b> {html_classification}
 🎯 <b>Confidence:</b> {confidence}%
-📈 <b>Sentiment Score:</b> {sentiment_score}/100
-⚠️ <b>Toxicity Score:</b> {toxicity_score}/100
 
 💭 <b>AI Reasoning:</b>
 <i>{html_reasoning}</i>

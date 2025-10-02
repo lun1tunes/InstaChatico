@@ -106,10 +106,9 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             classification.confidence = classification_result["confidence"]
             classification.reasoning = classification_result["reasoning"]
             classification.llm_raw_response = classification_result["llm_raw_response"]
+            classification.input_tokens = classification_result.get("input_tokens")
+            classification.output_tokens = classification_result.get("output_tokens")
             classification.meta_data = {
-                "contains_question": classification_result["contains_question"],
-                "sentiment_score": classification_result["sentiment_score"],
-                "toxicity_score": classification_result["toxicity_score"],
                 "context_used": classification_result.get("context_used", False),
                 "conversation_continuity": classification_result.get("conversation_continuity", False),
                 "session_used": classification_result.get("session_used", False),

@@ -162,6 +162,18 @@ class CommentClassificationService(BaseService):
             # Extract the final output from the result
             classification_result = result.final_output
 
+            # Extract token usage if available
+            input_tokens = None
+            output_tokens = None
+
+            if hasattr(result, 'usage'):
+                usage = result.usage
+                if usage:
+                    input_tokens = getattr(usage, 'input_tokens', None) or getattr(usage, 'prompt_tokens', None)
+                    output_tokens = getattr(usage, 'output_tokens', None) or getattr(usage, 'completion_tokens', None)
+
+                    logger.debug(f"Token usage - Input: {input_tokens}, Output: {output_tokens}")
+
             logger.info(
                 f"Classification result: {classification_result.classification} (confidence: {classification_result.confidence})"
             )
@@ -169,15 +181,14 @@ class CommentClassificationService(BaseService):
             return {
                 "classification": classification_result.classification,
                 "confidence": classification_result.confidence,
-                "contains_question": classification_result.contains_question,
-                "sentiment_score": classification_result.sentiment_score,
-                "toxicity_score": classification_result.toxicity_score,
                 "reasoning": classification_result.reasoning,
                 "context_used": classification_result.context_used,
                 "conversation_continuity": classification_result.conversation_continuity,
                 "llm_raw_response": str(classification_result),
                 "conversation_id": conversation_id,
                 "session_used": conversation_id is not None,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
                 "error": None,
             }
 
@@ -237,97 +248,9 @@ class CommentClassificationService(BaseService):
         return {
             "classification": "spam / irrelevant",  # Safe fallback
             "confidence": 0,
-            "contains_question": False,
-            "sentiment_score": 0,
-            "toxicity_score": 0,
             "reasoning": f"Classification failed: {error_message}",
             "context_used": False,
             "conversation_continuity": False,
             "llm_raw_response": None,
             "error": error_message,
         }
-
-    def _detect_question(self, text: str) -> bool:
-        """Detect questions in multiple languages (EN, RU, ES, FR, DE)."""
-        question_indicators = [
-            # English
-            "?",
-            "what",
-            "how",
-            "when",
-            "where",
-            "why",
-            "who",
-            "which",
-            "can",
-            "could",
-            "would",
-            "should",
-            # Russian
-            "как",
-            "что",
-            "где",
-            "когда",
-            "почему",
-            "зачем",
-            "кто",
-            "какой",
-            "можете",
-            "можно",
-            # Spanish
-            "qué",
-            "cómo",
-            "cuándo",
-            "dónde",
-            "por qué",
-            "quién",
-            "cuál",
-            "puede",
-            "puedo",
-            # French
-            "quoi",
-            "comment",
-            "quand",
-            "où",
-            "pourquoi",
-            "qui",
-            "peut",
-            "peux",
-            # German
-            "was",
-            "wie",
-            "wann",
-            "wo",
-            "warum",
-            "wer",
-            "kann",
-            "können",
-        ]
-        text_lower = text.lower()
-        return any(indicator in text_lower for indicator in question_indicators)
-
-    def _estimate_sentiment(self, classification: str, confidence: int) -> int:
-        """Estimate sentiment score (-100 to 100) from classification."""
-        sentiment_map = {
-            "positive feedback": confidence,
-            "critical feedback": -confidence,
-            "urgent issue / complaint": -confidence - 20,  # More negative for urgent issues
-            "question / inquiry": 0,  # Neutral for questions
-            "partnership proposal": confidence // 2,  # Mildly positive (business opportunity)
-            "toxic / abusive": -100,  # Most negative
-            "spam / irrelevant": -50,
-            "unknown": 0,
-        }
-        return max(-100, min(100, sentiment_map.get(classification, 0)))
-
-    def _estimate_toxicity(self, classification: str, confidence: int) -> int:
-        """Estimate toxicity score (0 to 100) from classification."""
-        if classification == "toxic / abusive":
-            return 100  # Highest toxicity
-        elif classification in ["critical feedback", "urgent issue / complaint"]:
-            return min(100, confidence + 20)
-        elif classification == "spam / irrelevant":
-            return 60
-        elif classification in ["positive feedback", "partnership proposal"]:
-            return 0  # No toxicity
-        return 10  # Low toxicity for questions

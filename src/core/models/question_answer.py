@@ -44,7 +44,9 @@ class QuestionAnswer(Base):
 
     # LLM metadata
     llm_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
-    tokens_used: Mapped[int | None] = mapped_column(nullable=True)
+    tokens_used: Mapped[int | None] = mapped_column(nullable=True)  # Kept for backward compatibility
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     processing_time_ms: Mapped[int | None] = mapped_column(nullable=True)
 
     # Additional metadata

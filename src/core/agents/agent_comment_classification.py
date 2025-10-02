@@ -32,9 +32,6 @@ class ClassificationResult(BaseModel):
     reasoning: str = Field(
         description="Brief explanation of why this classification was chosen, including context considerations"
     )
-    contains_question: bool = Field(description="Whether the comment contains a question or is a follow-up question")
-    sentiment_score: int = Field(ge=-100, le=100, description="Sentiment score from -100 (negative) to 100 (positive)")
-    toxicity_score: int = Field(ge=0, le=100, description="Toxicity score from 0 (safe) to 100 (toxic)")
     context_used: bool = Field(
         default=False, description="Whether conversation context was available and used in classification"
     )

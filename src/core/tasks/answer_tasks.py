@@ -147,6 +147,8 @@ async def generate_answer_async(comment_id: str, task_instance=None):
                 answer_record.answer_quality_score = answer_result["quality_score"]
                 answer_record.llm_raw_response = answer_result.get("llm_raw_response", "")
                 answer_record.tokens_used = answer_result.get("tokens_used", 0)
+                answer_record.input_tokens = answer_result.get("input_tokens")
+                answer_record.output_tokens = answer_result.get("output_tokens")
                 answer_record.processing_time_ms = answer_result.get("processing_time_ms", 0)
                 answer_record.meta_data = answer_result.get("meta_data", {})
 
