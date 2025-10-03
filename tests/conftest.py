@@ -38,24 +38,56 @@ def event_loop():
 
 @pytest.fixture(scope="function")
 async def test_db_engine():
-    """Create test database engine."""
-    # Use in-memory SQLite for fast tests
+    """
+    Create test database engine with SQLite.
+
+    Automatically converts JSONB (PostgreSQL) to JSON (SQLite-compatible).
+    """
+    from sqlalchemy import JSON
+    from sqlalchemy.dialects.postgresql import JSONB
+
+    # Import all models to ensure they're loaded
+    from core.models import media, instagram_comment
+
+    # Store original types for restoration
+    original_types = {}
+
+    # Replace JSONB columns with JSON for SQLite compatibility
+    # This needs to be done before metadata.create_all()
+    for table_name, table in Base.metadata.tables.items():
+        for column in table.columns:
+            if isinstance(column.type, JSONB):
+                # Store original type
+                original_types[(table_name, column.name)] = column.type
+                # Replace JSONB with JSON
+                column.type = JSON()
+
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         poolclass=NullPool,
         echo=False
     )
 
-    # Create all tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        # Create all tables
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-    yield engine
+        yield engine
 
-    # Cleanup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+    finally:
+        # Cleanup
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await engine.dispose()
+
+        # Restore original JSONB types
+        for (table_name, column_name), original_type in original_types.items():
+            if table_name in Base.metadata.tables:
+                table = Base.metadata.tables[table_name]
+                for column in table.columns:
+                    if column.name == column_name:
+                        column.type = original_type
 
 
 @pytest.fixture(scope="function")
@@ -89,6 +121,11 @@ def api_client() -> Generator[TestClient, None, None]:
     import os
     # Add src directory to path for imports
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
+
+    # Reload settings to pick up environment changes
+    import importlib
+    from core import config
+    importlib.reload(config)
 
     from main import app
 
