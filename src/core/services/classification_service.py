@@ -137,7 +137,7 @@ class CommentClassificationService(BaseService):
         """Classify comment using OpenAI agent with optional session context."""
         try:
             # Format input with conversation and media context
-            formatted_input = self._format_input_with_context(comment_text, conversation_id, media_context)
+            formatted_input = self._format_input_with_context(comment_text, conversation_id, media_context, username)
 
             if len(formatted_input) > 2000:  # Increased limit for context
                 formatted_input = formatted_input[:2000] + "..."
@@ -167,11 +167,11 @@ class CommentClassificationService(BaseService):
             input_tokens = None
             output_tokens = None
 
-            if hasattr(result, 'usage'):
+            if hasattr(result, "usage"):
                 usage = result.usage
                 if usage:
-                    input_tokens = getattr(usage, 'input_tokens', None) or getattr(usage, 'prompt_tokens', None)
-                    output_tokens = getattr(usage, 'output_tokens', None) or getattr(usage, 'completion_tokens', None)
+                    input_tokens = getattr(usage, "input_tokens", None) or getattr(usage, "prompt_tokens", None)
+                    output_tokens = getattr(usage, "output_tokens", None) or getattr(usage, "completion_tokens", None)
 
                     logger.debug(f"Token usage - Input: {input_tokens}, Output: {output_tokens}")
 
@@ -202,9 +202,14 @@ class CommentClassificationService(BaseService):
         comment_text: str,
         conversation_id: Optional[str] = None,
         media_context: Optional[Dict[str, Any]] = None,
+        username: Optional[str] = None,
     ) -> str:
-        """Format comment with media context and conversation info."""
+        """Format comment with media context, conversation info, and username attribution."""
         sanitized_text = self._sanitize_input(comment_text)
+
+        # Add username attribution for multi-user conversation tracking
+        if username:
+            sanitized_text = f"@{username}: {sanitized_text}"
 
         # Build context information
         context_parts = []
@@ -216,6 +221,9 @@ class CommentClassificationService(BaseService):
                 media_info.append(f"Post caption: {media_context['caption'][:200]}...")
             if media_context.get("media_type"):
                 media_info.append(f"Post type: {media_context['media_type']}")
+            if media_context.get("media_context"):
+                # AI-analyzed image description
+                media_info.append(f"Image analysis: {media_context['media_context'][:500]}...")
             if media_context.get("username"):
                 media_info.append(f"Post author: @{media_context['username']}")
             if media_context.get("comments_count") is not None:

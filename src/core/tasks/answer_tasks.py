@@ -111,6 +111,7 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             media_context = {
                 "caption": media.caption,
                 "media_type": media.media_type,
+                "media_context": media.media_context,  # AI-analyzed image description
                 "username": media.username,
                 "comments_count": media.comments_count,
                 "like_count": media.like_count,
@@ -123,7 +124,9 @@ async def generate_answer_async(comment_id: str, task_instance=None):
             logger.debug(f"Initializing QuestionAnswerService for comment: {comment_id}")
             answer_service = QuestionAnswerService()
             logger.debug(f"Calling generate_answer with conversation_id: {conversation_id} and media context")
-            answer_result = await answer_service.generate_answer(comment.text, conversation_id, media_context)
+            answer_result = await answer_service.generate_answer(
+                comment.text, conversation_id, media_context, username=comment.username
+            )
 
             # Сохраняем результат (answer_result is now a Pydantic model)
             if answer_result.error:

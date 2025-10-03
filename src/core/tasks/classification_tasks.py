@@ -71,6 +71,7 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             media_context = {
                 "caption": media.caption,
                 "media_type": media.media_type,
+                "media_context": media.media_context,  # AI-analyzed image description
                 "username": media.username,
                 "comments_count": media.comments_count,
                 "like_count": media.like_count,
@@ -80,7 +81,9 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             }
 
             # Классификация with session management and media context
-            classification_result = await classifier.classify_comment(comment.text, conversation_id, media_context)
+            classification_result = await classifier.classify_comment(
+                comment.text, conversation_id, media_context, username=comment.username
+            )
 
             # Сохраняем результат (classification_result is now a Pydantic model)
             classification.classification = classification_result.classification

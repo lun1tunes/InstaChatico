@@ -27,6 +27,7 @@ class QuestionAnswerService(BaseService):
         question_text: str,
         conversation_id: Optional[str] = None,
         media_context: Optional[Dict[str, Any]] = None,
+        username: Optional[str] = None,
     ) -> AnswerResponse:
         """Generate answer for customer question with session context."""
         start_time = time.time()
@@ -34,6 +35,10 @@ class QuestionAnswerService(BaseService):
         try:
             # Sanitize input
             sanitized_text = self._sanitize_input(question_text)
+
+            # Add username attribution for multi-user conversation tracking
+            if username:
+                sanitized_text = f"@{username}: {sanitized_text}"
 
             if len(sanitized_text) > 1000:
                 sanitized_text = sanitized_text[:1000] + "..."

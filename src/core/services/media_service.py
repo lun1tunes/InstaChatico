@@ -64,6 +64,16 @@ class MediaService:
             await session.refresh(media)
 
             logger.info(f"Created media record for {media_id}")
+
+            # Queue image analysis task if media is an image
+            if media.media_type in ["IMAGE", "CAROUSEL_ALBUM"] and media.media_url:
+                try:
+                    from core.tasks.media_tasks import analyze_media_image_task
+                    analyze_media_image_task.delay(media_id)
+                    logger.info(f"Queued image analysis task for media {media_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to queue image analysis for {media_id}: {e}")
+
             return media
 
         except Exception:

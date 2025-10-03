@@ -20,6 +20,9 @@ class Media(Base):
     media_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True, comment="Type of media (IMAGE, VIDEO, CAROUSEL_ALBUM)"
     )
+    media_context: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="AI-generated detailed description and context of the media image"
+    )
     comments_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Number of comments on the post")
     like_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Number of likes on the post")
     shortcode: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Instagram shortcode")

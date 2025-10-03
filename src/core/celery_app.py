@@ -15,6 +15,7 @@ celery_app = Celery(
         "core.tasks.instagram_reply_tasks",
         "core.tasks.telegram_tasks",
         "core.tasks.health_tasks",
+        "core.tasks.media_tasks",
     ],
 )
 
@@ -24,6 +25,7 @@ import core.tasks.answer_tasks
 import core.tasks.instagram_reply_tasks
 import core.tasks.telegram_tasks
 import core.tasks.health_tasks
+import core.tasks.media_tasks
 
 # Настройки Celery
 celery_app.conf.update(
@@ -46,6 +48,7 @@ celery_app.conf.update(
     task_routes={
         "core.tasks.classification_tasks.classify_comment_task": {"queue": "llm_queue"},
         "core.tasks.answer_tasks.generate_answer_task": {"queue": "llm_queue"},
+        "core.tasks.media_tasks.analyze_media_image_task": {"queue": "llm_queue"},
         "core.tasks.instagram_reply_tasks.send_instagram_reply_task": {
             "queue": "instagram_queue"
         },
