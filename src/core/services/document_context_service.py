@@ -53,9 +53,7 @@ class DocumentContextService:
                 context_parts.append("\n---\n")
 
             context = "\n".join(context_parts)
-            logger.info(
-                f"Retrieved context for client {client_id}: {len(context)} characters from {len(documents)} documents"
-            )
+            logger.info(f"Retrieved context: {len(context)} characters from {len(documents)} documents")
 
             return context
 
@@ -96,18 +94,17 @@ class DocumentContextService:
             logger.error(f"Error getting document summary: {e}")
             return {"error": str(e)}
 
-    async def format_context_for_agent(self, client_id: str, session: AsyncSession) -> str:
+    async def format_context_for_agent(self, session: AsyncSession) -> str:
         """
         Format document context for AI agent (alias for get_client_context).
 
         Args:
-            client_id: Instagram business account ID
             session: Database session
 
         Returns:
             Formatted markdown context for agent
         """
-        return await self.get_client_context(client_id, session)
+        return await self.get_client_context(session)
 
 
 # Singleton instance

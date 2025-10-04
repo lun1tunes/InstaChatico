@@ -5,7 +5,6 @@ IMPORTANT: This tool does NOT provide prices - prices come from embedding_search
 """
 
 import logging
-from typing import Optional
 from agents import function_tool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
@@ -15,7 +14,7 @@ from ...services.document_context_service import document_context_service
 logger = logging.getLogger(__name__)
 
 
-async def _document_context_implementation(client_id: Optional[str] = None) -> str:
+async def _document_context_implementation() -> str:
     """
     Получить контекст бизнес-документов компании для ответов клиентам.
 
@@ -37,10 +36,6 @@ async def _document_context_implementation(client_id: Optional[str] = None) -> s
     - Вопросов о ценах (используй embedding_search)
     - Информации, которая может быстро устареть
 
-    Args:
-        client_id: ID клиента (Instagram аккаунт). Опционально - если не указан,
-                  используется username из медиа-контекста или "default_client".
-
     Returns:
         Отформатированный Markdown-контекст с бизнес-информацией из документов,
         или сообщение что документы отсутствуют.
@@ -55,38 +50,17 @@ async def _document_context_implementation(client_id: Optional[str] = None) -> s
         - Клиент: "Сколько стоит услуга?" → ❌ НЕ используй document_context, используй embedding_search
     """
     try:
-        logger.info(f"Document context tool called with client_id: '{client_id}'")
+        logger.info("Document context tool called")
 
         # Create database session
         engine = create_async_engine(settings.db.url, echo=settings.db.echo)
         session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
         async with session_factory() as session:
-            # If no client_id specified, get ALL documents (for single Instagram account apps)
-            # Or try to get from the first available client
-            if not client_id:
-                from sqlalchemy import select
-                from ...models.document import Document
-
-                # Check if any completed documents exist
-                result = await session.execute(
-                    select(Document).where(Document.processing_status == "completed").limit(1)
-                )
-                first_doc = result.scalar_one_or_none()
-
-                if not first_doc:
-                    return (
-                        f"⚠️ NO BUSINESS DOCUMENTS AVAILABLE\n\n"
-                        f"No business documents have been uploaded yet.\n"
-                        f"Please inform the customer that specific business information "
-                        f"(hours, location, policies) should be requested via direct contact.\n\n"
-                        f"💡 Suggestion: Provide contact information (phone, email, DM) for detailed inquiries."
-                    )
-
-            # Get formatted context from service (no client_id needed)
+            # Get formatted context from service
             context = await document_context_service.get_client_context(session=session)
 
-            if not context or context.strip() == "# Business Information":
+            if not context or context.strip() == "# Business Information" or context.strip() == "":
                 return (
                     f"⚠️ NO BUSINESS DOCUMENTS AVAILABLE\n\n"
                     f"No business documents have been uploaded.\n"
