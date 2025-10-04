@@ -13,6 +13,9 @@ from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
+# Suppress non-critical pdfminer font warnings
+logging.getLogger("pdfminer.pdffont").setLevel(logging.ERROR)
+
 
 class DocumentProcessingService:
     """Service for processing documents with pdfplumber."""

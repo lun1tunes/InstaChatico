@@ -14,7 +14,7 @@ from ..utils.task_helpers import async_task, get_db_session, retry_with_backoff
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, max_retries=3)
+@celery_app.task(bind=True, max_retries=3, queue="llm_queue")
 def process_media_task(self, media_id: str):
     """Синхронная обертка для асинхронной задачи обработки медиа"""
     loop = asyncio.new_event_loop()
@@ -93,7 +93,7 @@ async def process_media_async(media_id: str, task_instance=None):
             await engine.dispose()
 
 
-@celery_app.task
+@celery_app.task(queue="llm_queue")
 def process_media_batch_task(media_ids: list[str]):
     """Обработка нескольких медиа за раз"""
     loop = asyncio.new_event_loop()
@@ -120,7 +120,7 @@ async def process_media_batch_async(media_ids: list[str]):
     return {"status": "completed", "total": len(media_ids), "results": results}
 
 
-@celery_app.task(bind=True, max_retries=3)
+@celery_app.task(bind=True, max_retries=3, queue="llm_queue")
 @async_task
 async def analyze_media_image_task(self, media_id: str):
     """Analyze media image and store context using AI."""
@@ -147,7 +147,9 @@ async def analyze_media_image_async(media_id: str, task_instance=None):
                 return {"status": "skipped", "reason": "no_media_url"}
 
             if media.media_type not in ["IMAGE", "CAROUSEL_ALBUM"]:
-                logger.info(f"Media {media_id} is type {media.media_type}, skipping analysis (only IMAGE and CAROUSEL supported)")
+                logger.info(
+                    f"Media {media_id} is type {media.media_type}, skipping analysis (only IMAGE and CAROUSEL supported)"
+                )
                 return {"status": "skipped", "reason": f"unsupported_type_{media.media_type}"}
 
             # Check if already analyzed
@@ -158,10 +160,7 @@ async def analyze_media_image_async(media_id: str, task_instance=None):
             # Perform AI analysis
             logger.debug(f"Analyzing image at URL: {media.media_url}")
             analysis_service = MediaAnalysisService()
-            media_context = await analysis_service.analyze_media_image(
-                media_url=media.media_url,
-                caption=media.caption
-            )
+            media_context = await analysis_service.analyze_media_image(media_url=media.media_url, caption=media.caption)
 
             if not media_context:
                 logger.error(f"Failed to analyze media {media_id} - no context returned")
@@ -171,7 +170,9 @@ async def analyze_media_image_async(media_id: str, task_instance=None):
             media.media_context = media_context
             await session.commit()
 
-            logger.info(f"Successfully analyzed and updated media {media_id}. Context length: {len(media_context)} chars")
+            logger.info(
+                f"Successfully analyzed and updated media {media_id}. Context length: {len(media_context)} chars"
+            )
 
             return {
                 "status": "success",

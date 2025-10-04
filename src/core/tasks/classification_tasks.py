@@ -180,6 +180,12 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             }
 
         except Exception as exc:
+            # Don't log Retry exceptions as errors - they're expected behavior
+            from celery.exceptions import Retry
+
+            if isinstance(exc, Retry):
+                raise  # Re-raise without logging as error
+
             logger.exception(f"Error processing comment {comment_id}")
             await session.rollback()
             return retry_with_backoff(task_instance, exc)
