@@ -58,6 +58,15 @@ class DocsSettings(BaseModel):
     password: str = os.getenv("DOCS_PASSWORD", "")
 
 
+class S3Settings(BaseSettings):
+    """S3 storage settings for SelectCloud."""
+    aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
+    aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
+    bucket_name: str = os.getenv("BUCKET_NAME", "").strip()
+    s3_url: str = os.getenv("S3_URL", "s3.ru-7.storage.selcloud.ru").strip()
+    region: str = os.getenv("AWS_REGION", "ru-7").strip()
+
+
 class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     app_secret: str = os.getenv("APP_SECRET", "app_secret").strip()
@@ -70,6 +79,7 @@ class Settings(BaseSettings):
     telegram: TelegramSettings = TelegramSettings()
     health: HealthSettings = HealthSettings()
     docs: DocsSettings = DocsSettings()
+    s3: S3Settings = S3Settings()
 
 
 settings = Settings()

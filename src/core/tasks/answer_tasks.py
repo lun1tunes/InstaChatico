@@ -120,6 +120,13 @@ async def generate_answer_async(comment_id: str, task_instance=None):
                 "is_comment_enabled": media.is_comment_enabled,
             }
 
+            # NOTE: Business documents are accessed via document_context TOOL, not injected here
+            # The agent will call document_context() tool when needed for:
+            # - Business hours, location, promotions, policies (general info)
+            # Prices come ONLY from embedding_search tool (product_embeddings table)
+            # This separation ensures the agent only fetches documents when actually needed
+            logger.debug(f"Media context prepared. Agent has document_context tool for business info.")
+
             # Генерируем ответ с использованием сессии и медиа контекста
             logger.debug(f"Initializing QuestionAnswerService for comment: {comment_id}")
             answer_service = QuestionAnswerService()

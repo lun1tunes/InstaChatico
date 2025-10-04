@@ -9,6 +9,7 @@ __all__ = (
     "AnswerStatus",
     "Media",
     "ProductEmbedding",
+    "ClientDocument",
 )
 
 from .base import Base
@@ -18,3 +19,4 @@ from .comment_classification import CommentClassification, ProcessingStatus
 from .question_answer import QuestionAnswer, AnswerStatus
 from .media import Media
 from .product_embedding import ProductEmbedding
+from .client_document import ClientDocument

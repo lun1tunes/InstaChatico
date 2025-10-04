@@ -96,7 +96,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "cd /app && alembic -c database/alembic.ini upgrade head && cd /app/src && uvicorn main:app --host 0.0.0.0 --port $PORT --reload"
+    command: sh -c "cd /app/src && uvicorn main:app --host 0.0.0.0 --port $PORT --reload"
     security_opt:
       - no-new-privileges:true
 

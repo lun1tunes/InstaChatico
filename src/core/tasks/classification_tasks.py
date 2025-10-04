@@ -46,6 +46,18 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                     raise task_instance.retry(countdown=30)
                 return {"status": "error", "reason": "media_data_unavailable"}
 
+            # IMPORTANT: Wait for media_context to be analyzed before classification
+            # Classification needs full media context (image analysis) for accurate categorization
+            if media.media_type in ["IMAGE", "CAROUSEL_ALBUM"] and media.media_url and not media.media_context:
+                logger.info(f"Media {comment.media_id} image analysis not complete yet, waiting...")
+                if task_instance and task_instance.request.retries < task_instance.max_retries:
+                    retry_countdown = 10  # Short retry - image analysis is usually fast
+                    logger.warning(f"Retrying classification for comment {comment_id} in {retry_countdown}s (waiting for media_context)")
+                    raise task_instance.retry(countdown=retry_countdown)
+                else:
+                    logger.warning(f"Max retries reached, proceeding without media_context for {comment.media_id}")
+                    # Continue anyway - better to classify without image context than to fail completely
+
             # Создаем или получаем запись классификации
             if comment.classification:
                 classification = comment.classification

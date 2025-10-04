@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from .instructions.instruction_response import RESPONSE_INSTRUCTIONS
-from .tools import embedding_search
+from .tools import embedding_search, document_context
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +30,15 @@ def create_comment_response_agent() -> Agent:
     # Load instructions from external file for better security and maintainability
     enhanced_instructions = RESPONSE_INSTRUCTIONS
 
-    # Create and return the configured agent with embedding search tool
+    # Create and return the configured agent with all tools:
+    # - embedding_search: For product/service prices (ONLY source of price info)
+    # - document_context: For business info (hours, location, promotions, policies)
     return Agent(
         name="InstagramCommentResponder",
         instructions=enhanced_instructions,
         output_type=AnswerResult,
         model=settings.openai.model_comment_response,
-        tools=[embedding_search],  # Add semantic search capability
+        tools=[embedding_search, document_context],
     )
 
 

@@ -117,6 +117,10 @@ class CommentClassificationService(BaseService):
         if media_context.get("permalink"):
             description_parts.append(f"Post URL: {media_context['permalink']}")
 
+        # NOTE: Business documents are NOT used in classification
+        # They are only used in answer generation (see answer_tasks.py)
+        # Classification only needs media context to categorize comments
+
         return "\n".join(description_parts)
 
     def _generate_conversation_id(self, comment_id: str, parent_id: Optional[str] = None) -> str:
