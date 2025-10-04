@@ -52,11 +52,9 @@ def process_document_task(self, document_id: str):
                 if not success:
                     raise Exception(f"Failed to download from S3: {error}")
 
-                # Process document with Docling
+                # Process document with pdfplumber/python-docx
                 success, markdown, content_hash, error = document_processing_service.process_document(
-                    file_content=file_content,
-                    filename=document.document_name,
-                    document_type=document.document_type
+                    file_content=file_content, filename=document.document_name, document_type=document.document_type
                 )
 
                 if not success:
@@ -108,9 +106,7 @@ def reprocess_failed_documents():
         async with db_helper.session_factory() as session:
             try:
                 # Find failed documents
-                stmt = select(ClientDocument).where(
-                    ClientDocument.processing_status == "failed"
-                ).limit(10)
+                stmt = select(ClientDocument).where(ClientDocument.processing_status == "failed").limit(10)
 
                 result = await session.execute(stmt)
                 failed_docs = result.scalars().all()

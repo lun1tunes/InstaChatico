@@ -15,12 +15,7 @@ from core.services.s3_service import s3_service
 from core.services.document_processing_service import document_processing_service
 from core.services.document_context_service import document_context_service
 from core.tasks.document_tasks import process_document_task
-from .schemas import (
-    DocumentUploadResponse,
-    DocumentResponse,
-    DocumentListResponse,
-    DocumentSummaryResponse
-)
+from .schemas import DocumentUploadResponse, DocumentResponse, DocumentListResponse, DocumentSummaryResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -33,7 +28,7 @@ async def register_document(
     document_name: str = Form(...),
     client_name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     """
     Register a document that's already in S3 (uploaded by main app).
@@ -45,7 +40,7 @@ async def register_document(
     Flow:
     1. Main app uploads file to S3
     2. Main app calls this endpoint with S3 URL + metadata
-    3. This app downloads from S3, processes with Docling to markdown
+    3. This app downloads from S3, processes with pdfplumber to markdown
     4. Markdown stored in DB and used by answer agent
     """
     try:
@@ -57,35 +52,29 @@ async def register_document(
             # Format: https://s3.ru-7.storage.selcloud.ru/bucket/path/to/file.pdf
             parts = s3_url.split(f"{s3_service.s3_url}/")
             if len(parts) > 1:
-                s3_key = parts[1].split('/', 1)[1] if '/' in parts[1] else parts[1]
+                s3_key = parts[1].split("/", 1)[1] if "/" in parts[1] else parts[1]
         elif s3_service.bucket_name in s3_url:
             # Format: https://bucket.s3.ru-7.storage.selcloud.ru/path/to/file.pdf
             parts = s3_url.split(f"{s3_service.bucket_name}.", 1)
             if len(parts) > 1:
-                s3_key = parts[1].split('/', 1)[1] if '/' in parts[1] else None
+                s3_key = parts[1].split("/", 1)[1] if "/" in parts[1] else None
 
         if not s3_key:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot extract S3 key from URL. Expected format: https://{s3_service.s3_url}/{s3_service.bucket_name}/path/to/file"
+                detail=f"Cannot extract S3 key from URL. Expected format: https://{s3_service.s3_url}/{s3_service.bucket_name}/path/to/file",
             )
 
         # Detect document type from filename
         document_type = document_processing_service.detect_document_type(document_name)
 
-        if document_type == 'other':
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file type. Supported: PDF, Excel, CSV, Word, TXT"
-            )
+        if document_type == "other":
+            raise HTTPException(status_code=400, detail=f"Unsupported file type. Supported: PDF, Excel, CSV, Word, TXT")
 
         # Verify file exists in S3
         success, file_content, error = s3_service.download_file(s3_key)
         if not success:
-            raise HTTPException(
-                status_code=404,
-                detail=f"File not found in S3: {error}"
-            )
+            raise HTTPException(status_code=404, detail=f"File not found in S3: {error}")
 
         file_size = len(file_content) if file_content else 0
 
@@ -100,7 +89,7 @@ async def register_document(
             s3_key=s3_key,
             s3_url=s3_url,
             file_size_bytes=file_size,
-            processing_status="pending"
+            processing_status="pending",
         )
 
         session.add(document)
@@ -127,7 +116,7 @@ async def upload_document(
     client_id: str = Form(...),
     client_name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     """
     Upload a document directly to this app (alternative to /register).
@@ -144,34 +133,25 @@ async def upload_document(
 
         # Detect document type
         document_type = document_processing_service.detect_document_type(file.filename)
-        
-        if document_type == 'other':
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file type. Supported: PDF, Excel, CSV, Word, TXT"
-            )
+
+        if document_type == "other":
+            raise HTTPException(status_code=400, detail=f"Unsupported file type. Supported: PDF, Excel, CSV, Word, TXT")
 
         # Check file size
         file_content = await file.read()
         file_size = len(file_content)
         max_size = 50 * 1024 * 1024  # 50MB
-        
+
         if file_size > max_size:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large. Maximum size: {max_size / 1024 / 1024}MB"
-            )
+            raise HTTPException(status_code=413, detail=f"File too large. Maximum size: {max_size / 1024 / 1024}MB")
 
         # Generate S3 key
         s3_key = s3_service.generate_upload_key(file.filename, client_id)
 
         # Upload to S3
         from io import BytesIO
-        success, s3_url_or_error = s3_service.upload_file(
-            BytesIO(file_content),
-            s3_key,
-            content_type=file.content_type
-        )
+
+        success, s3_url_or_error = s3_service.upload_file(BytesIO(file_content), s3_key, content_type=file.content_type)
 
         if not success:
             raise HTTPException(status_code=500, detail=f"Failed to upload to S3: {s3_url_or_error}")
@@ -187,7 +167,7 @@ async def upload_document(
             s3_key=s3_key,
             s3_url=s3_url_or_error,
             file_size_bytes=file_size,
-            processing_status="pending"
+            processing_status="pending",
         )
 
         session.add(document)
@@ -214,18 +194,18 @@ async def list_documents(
     status: Optional[str] = Query(None),
     limit: int = Query(100, le=500),
     offset: int = Query(0, ge=0),
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     """List documents with optional filters."""
     try:
         # Build query
         stmt = select(ClientDocument)
-        
+
         if client_id:
             stmt = stmt.where(ClientDocument.client_id == client_id)
         if status:
             stmt = stmt.where(ClientDocument.processing_status == status)
-        
+
         # Get total count
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total_result = await session.execute(count_stmt)
@@ -236,10 +216,7 @@ async def list_documents(
         result = await session.execute(stmt)
         documents = result.scalars().all()
 
-        return DocumentListResponse(
-            total=total,
-            documents=[DocumentResponse.model_validate(doc) for doc in documents]
-        )
+        return DocumentListResponse(total=total, documents=[DocumentResponse.model_validate(doc) for doc in documents])
 
     except Exception as e:
         logger.error(f"Error listing documents: {e}")
@@ -248,8 +225,7 @@ async def list_documents(
 
 @router.get("/summary", response_model=DocumentSummaryResponse)
 async def get_documents_summary(
-    client_id: str = Query(...),
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
+    client_id: str = Query(...), session: AsyncSession = Depends(db_helper.scoped_session_dependency)
 ):
     """Get summary statistics for client documents."""
     try:
@@ -261,10 +237,7 @@ async def get_documents_summary(
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
-async def get_document(
-    document_id: UUID,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
-):
+async def get_document(document_id: UUID, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
     """Get a specific document by ID."""
     try:
         stmt = select(ClientDocument).where(ClientDocument.id == document_id)
@@ -284,10 +257,7 @@ async def get_document(
 
 
 @router.delete("/{document_id}")
-async def delete_document(
-    document_id: UUID,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
-):
+async def delete_document(document_id: UUID, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
     """Delete a document (from DB and S3)."""
     try:
         # Get document
@@ -318,10 +288,7 @@ async def delete_document(
 
 
 @router.post("/{document_id}/reprocess")
-async def reprocess_document(
-    document_id: UUID,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency)
-):
+async def reprocess_document(document_id: UUID, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
     """Reprocess a failed document."""
     try:
         # Get document

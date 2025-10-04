@@ -20,7 +20,7 @@ class ClientDocument(Base):
     """
     Client business documents for AI context.
 
-    Stores documents uploaded to S3, processed with Docling,
+    Stores documents uploaded to S3, processed with pdfplumber/python-docx,
     and converted to markdown for use in AI agent responses.
     """
 
@@ -28,76 +28,36 @@ class ClientDocument(Base):
 
     # Primary key
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        comment="Unique document identifier"
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, comment="Unique document identifier"
     )
 
     # Client identification (single Instagram account per app instance)
     client_id: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        index=True,
-        comment="Instagram business account ID"
+        String(100), nullable=False, index=True, comment="Instagram business account ID"
     )
-    client_name: Mapped[str | None] = mapped_column(
-        String(200),
-        nullable=True,
-        comment="Business name"
-    )
+    client_name: Mapped[str | None] = mapped_column(String(200), nullable=True, comment="Business name")
 
     # Document metadata
-    document_name: Mapped[str] = mapped_column(
-        String(500),
-        nullable=False,
-        comment="Original document filename"
-    )
+    document_name: Mapped[str] = mapped_column(String(500), nullable=False, comment="Original document filename")
     document_type: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        index=True,
-        comment="Document type: pdf, excel, csv, word, txt"
+        String(50), nullable=False, index=True, comment="Document type: pdf, excel, csv, word, txt"
     )
-    description: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Human-readable document description"
-    )
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Human-readable document description")
 
     # S3 storage
-    s3_bucket: Mapped[str] = mapped_column(
-        String(200),
-        nullable=False,
-        comment="S3 bucket name"
-    )
-    s3_key: Mapped[str] = mapped_column(
-        String(500),
-        nullable=False,
-        comment="S3 object key/path"
-    )
-    s3_url: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        comment="Full S3 URL or presigned URL"
-    )
+    s3_bucket: Mapped[str] = mapped_column(String(200), nullable=False, comment="S3 bucket name")
+    s3_key: Mapped[str] = mapped_column(String(500), nullable=False, comment="S3 object key/path")
+    s3_url: Mapped[str] = mapped_column(Text, nullable=False, comment="Full S3 URL or presigned URL")
     file_size_bytes: Mapped[int | None] = mapped_column(
-        BigInteger,
-        nullable=True,
-        comment="Original file size in bytes"
+        BigInteger, nullable=True, comment="Original file size in bytes"
     )
 
     # Processed content
     markdown_content: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Document content extracted and converted to markdown"
+        Text, nullable=True, comment="Document content extracted and converted to markdown"
     )
     content_hash: Mapped[str | None] = mapped_column(
-        String(64),
-        nullable=True,
-        index=True,
-        comment="SHA-256 hash of content for deduplication"
+        String(64), nullable=True, index=True, comment="SHA-256 hash of content for deduplication"
     )
 
     # Processing status
@@ -106,50 +66,34 @@ class ClientDocument(Base):
         nullable=False,
         default="pending",
         index=True,
-        comment="Processing status: pending, processing, completed, failed"
+        comment="Processing status: pending, processing, completed, failed",
     )
     processing_error: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Error message if processing failed"
+        Text, nullable=True, comment="Error message if processing failed"
     )
     processed_at: Mapped[datetime | None] = mapped_column(
-        DateTime,
-        nullable=True,
-        comment="When document processing completed"
+        DateTime, nullable=True, comment="When document processing completed"
     )
 
     # AI/Search metadata
     embedding_status: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        default="pending",
-        comment="Vector embedding status for future semantic search"
+        String(50), nullable=False, default="pending", comment="Vector embedding status for future semantic search"
     )
-    tags: Mapped[dict | None] = mapped_column(
-        JSONB,
-        nullable=True,
-        comment="Categorization tags and metadata"
-    )
+    tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="Categorization tags and metadata")
 
     # Audit fields
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
-        nullable=False,
-        comment="When record was created"
+        DateTime, default=datetime.utcnow, nullable=False, comment="When record was created"
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
         nullable=False,
-        comment="When record was last updated"
+        comment="When record was last updated",
     )
     created_by: Mapped[str | None] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="User/system who uploaded the document"
+        String(100), nullable=True, comment="User/system who uploaded the document"
     )
 
     # Table constraints
@@ -160,7 +104,7 @@ class ClientDocument(Base):
             "client_id",
             "content_hash",
             unique=True,
-            postgresql_where="content_hash IS NOT NULL"
+            postgresql_where="content_hash IS NOT NULL",
         ),
         # Additional indexes
         Index("idx_client_documents_client_id", "client_id"),
