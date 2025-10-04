@@ -13,6 +13,11 @@ from agents import function_tool
 
 logger = logging.getLogger(__name__)
 
+# Suppress verbose HTTP client logs that include large base64 image data
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("aiohttp").setLevel(logging.WARNING)
+
 
 async def _analyze_image_implementation(image_url: str, additional_context: Optional[str] = None) -> str:
     """
@@ -96,7 +101,8 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
         else:
             image_format = "jpeg"
 
-        logger.info(f"Downloaded image ({len(image_data)} bytes, format: {image_format})")
+        # Log only at debug level to avoid verbose output
+        logger.debug(f"Downloaded image ({len(image_data)} bytes, format: {image_format})")
 
         # Инициализируем OpenAI клиент
         client = AsyncOpenAI(api_key=settings.openai.api_key)
