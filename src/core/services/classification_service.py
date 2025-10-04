@@ -141,7 +141,7 @@ class CommentClassificationService(BaseService):
         """Classify comment using OpenAI agent with optional session context."""
         try:
             # Format input with conversation and media context
-            formatted_input = self._format_input_with_context(comment_text, conversation_id, media_context, username)
+            formatted_input = self._format_input_with_context(comment_text, conversation_id, media_context)
 
             if len(formatted_input) > 2000:  # Increased limit for context
                 formatted_input = formatted_input[:2000] + "..."
@@ -206,14 +206,9 @@ class CommentClassificationService(BaseService):
         comment_text: str,
         conversation_id: Optional[str] = None,
         media_context: Optional[Dict[str, Any]] = None,
-        username: Optional[str] = None,
     ) -> str:
-        """Format comment with media context, conversation info, and username attribution."""
+        """Format comment with media context and conversation info."""
         sanitized_text = self._sanitize_input(comment_text)
-
-        # Add username attribution for multi-user conversation tracking
-        if username:
-            sanitized_text = f"@{username}: {sanitized_text}"
 
         # Build context information
         context_parts = []
