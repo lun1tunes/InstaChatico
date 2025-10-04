@@ -32,9 +32,7 @@ class ChannelAliasFilter(logging.Filter):
 
 
 # Trace context
-trace_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "trace_id", default=None
-)
+trace_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("trace_id", default=None)
 
 
 class TraceIdFilter(logging.Filter):
@@ -54,13 +52,9 @@ class TelegramLogHandler(logging.Handler):
         """Send log message to Telegram LOGS thread."""
         try:
             trace_id = getattr(record, "trace_id", "-")
-            timestamp = datetime.utcfromtimestamp(record.created).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            timestamp = datetime.utcfromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
             message = self.format(record)
-            exception_text = (
-                self.formatException(record.exc_info) if record.exc_info else None
-            )
+            exception_text = self.formatException(record.exc_info) if record.exc_info else None
 
             # Build log data
             log_data = {
@@ -144,9 +138,7 @@ def configure_logging() -> None:
             "uvicorn_console": {
                 "class": "logging.StreamHandler",
                 "formatter": "uvicorn_access",
-                "level": (
-                    "INFO" if level == "DEBUG" else level
-                ),  # Reduce uvicorn access verbosity in DEBUG
+                "level": ("INFO" if level == "DEBUG" else level),  # Reduce uvicorn access verbosity in DEBUG
                 "stream": "ext://sys.stdout",
                 "filters": ["channel", "trace"],
             },
@@ -188,6 +180,16 @@ def configure_logging() -> None:
                 "level": level,
                 "propagate": False,
             },
+            "celery.pool": {
+                "handlers": ["console"],
+                "level": "WARNING",  # Suppress verbose DEBUG task pool logs
+                "propagate": False,
+            },
+            "celery.bootsteps": {
+                "handlers": ["console"],
+                "level": "WARNING",  # Suppress verbose DEBUG worker startup logs
+                "propagate": False,
+            },
             # SQLAlchemy warnings/errors (DB constraint violations, etc.)
             "sqlalchemy": {
                 "handlers": ["console", "telegram_alerts"],
@@ -202,7 +204,12 @@ def configure_logging() -> None:
             },
             "openai": {
                 "handlers": ["console"],
-                "level": level if level == "DEBUG" else "WARNING",
+                "level": "WARNING",  # Always suppress OpenAI verbose logs
+                "propagate": False,
+            },
+            "openai._base_client": {
+                "handlers": ["console"],
+                "level": "WARNING",  # Suppress verbose request/response logs with large payloads
                 "propagate": False,
             },
             "httpx": {

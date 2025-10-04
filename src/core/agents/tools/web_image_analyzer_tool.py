@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # Suppress verbose HTTP client logs that include large base64 image data
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("openai._base_client").setLevel(logging.WARNING)
 logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
 
