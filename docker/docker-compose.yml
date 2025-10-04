@@ -65,30 +65,18 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: instagram_api
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:${PORT:-4291}:${PORT:-4291}"
     volumes:
       - ../src:/app/src
+      - ../database:/app/database
       - conversations_data:/app/src/conversations
     environment:
-      - PORT=${PORT:-4291}
-      - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
-      - LOGS_LEVEL_CELERY=${LOGS_LEVEL_CELERY:-}
-      - LOGS_LEVEL_REDIS=${LOGS_LEVEL_REDIS:-}
-      - DATABASE_URL=${DATABASE_URL}
+      # Override Redis connection for Docker networking
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TOKEN=${TOKEN}
-      - INSTA_TOKEN=${INSTA_TOKEN}
-      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
-      - APP_SECRET=${APP_SECRET:-default_app_secret}
-      - DOCS_USERNAME=${DOCS_USERNAME}
-      - DOCS_PASSWORD=${DOCS_PASSWORD}
-      - TG_TOKEN=${TG_TOKEN}
-      - TG_CHAT_ID=${TG_CHAT_ID}
-      - TG_CHAT_ALERTS_THREAD_ID=${TG_CHAT_ALERTS_THREAD_ID}
-      - TG_CHAT_LOGS_THREAD_ID=${TG_CHAT_LOGS_THREAD_ID}
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,7 +84,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "cd /app/src && uvicorn main:app --host 0.0.0.0 --port $PORT --reload"
+    command: sh -c "cd /app/database && alembic upgrade head && cd /app/src && uvicorn main:app --host 0.0.0.0 --port ${PORT:-4291} --reload"
     security_opt:
       - no-new-privileges:true
 
@@ -105,23 +93,16 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: instagram_celery_worker
+    env_file:
+      - .env
     volumes:
       - ../src:/app/src
+      - ../database:/app/database
       - conversations_data:/app/src/conversations
     environment:
-      - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
-      - LOGS_LEVEL_CELERY=${LOGS_LEVEL_CELERY:-}
-      - DATABASE_URL=${DATABASE_URL}
+      # Override Redis connection for Docker networking
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - INSTA_TOKEN=${INSTA_TOKEN}
-      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
-      - APP_SECRET=${APP_SECRET:-default_app_secret}
-      - TG_TOKEN=${TG_TOKEN}
-      - TG_CHAT_ID=${TG_CHAT_ID}
-      - TG_CHAT_ALERTS_THREAD_ID=${TG_CHAT_ALERTS_THREAD_ID}
-      - TG_CHAT_LOGS_THREAD_ID=${TG_CHAT_LOGS_THREAD_ID}
     depends_on:
       postgres:
         condition: service_healthy
@@ -129,7 +110,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "cd /app/src && python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} --concurrency=4 --without-gossip --without-mingle --without-heartbeat -Q llm_queue,instagram_queue"
+    command: sh -c "cd /app/database && alembic upgrade head && cd /app/src && python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} --concurrency=4 --without-gossip --without-mingle --without-heartbeat -Q llm_queue,instagram_queue"
     security_opt:
       - no-new-privileges:true
 
@@ -138,24 +119,17 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: instagram_celery_beat
+    env_file:
+      - .env
     volumes:
       - ../src:/app/src
+      - ../database:/app/database
       - conversations_data:/app/src/conversations
       - celerybeat_schedule:/app/celerybeat
     environment:
-      - LOGS_LEVEL=${LOGS_LEVEL:-INFO}
-      - LOGS_LEVEL_CELERY=${LOGS_LEVEL_CELERY:-}
-      - DATABASE_URL=${DATABASE_URL}
+      # Override Redis connection for Docker networking
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - INSTA_TOKEN=${INSTA_TOKEN}
-      - INSTAGRAM_API_VERSION=${INSTAGRAM_API_VERSION:-v23.0}
-      - APP_SECRET=${APP_SECRET:-default_app_secret}
-      - TG_TOKEN=${TG_TOKEN}
-      - TG_CHAT_ID=${TG_CHAT_ID} 
-      - TG_CHAT_ALERTS_THREAD_ID=${TG_CHAT_ALERTS_THREAD_ID}
-      - TG_CHAT_LOGS_THREAD_ID=${TG_CHAT_LOGS_THREAD_ID}  
     depends_on:
       postgres:
         condition: service_healthy
@@ -163,7 +137,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "mkdir -p /app/celerybeat && cd /app/src && celery -A celery_worker beat --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} -s /app/celerybeat/celerybeat-schedule"
+    command: sh -c "cd /app/database && alembic upgrade head && mkdir -p /app/celerybeat && cd /app/src && celery -A celery_worker beat --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} -s /app/celerybeat/celerybeat-schedule"
     security_opt:
       - no-new-privileges:true
 

@@ -52,7 +52,9 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 logger.info(f"Media {comment.media_id} image analysis not complete yet, waiting...")
                 if task_instance and task_instance.request.retries < task_instance.max_retries:
                     retry_countdown = 10  # Short retry - image analysis is usually fast
-                    logger.warning(f"Retrying classification for comment {comment_id} in {retry_countdown}s (waiting for media_context)")
+                    logger.warning(
+                        f"Retrying classification for comment {comment_id} in {retry_countdown}s (waiting for media_context)"
+                    )
                     raise task_instance.retry(countdown=retry_countdown)
                 else:
                     logger.warning(f"Max retries reached, proceeding without media_context for {comment.media_id}")
@@ -93,9 +95,7 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             }
 
             # Классификация with session management and media context
-            classification_result = await classifier.classify_comment(
-                comment.text, conversation_id, media_context, username=comment.username
-            )
+            classification_result = await classifier.classify_comment(comment.text, conversation_id, media_context)
 
             # Сохраняем результат (classification_result is now a Pydantic model)
             classification.classification = classification_result.classification
@@ -118,7 +118,10 @@ async def classify_comment_async(comment_id: str, task_instance=None):
             logger.info(f"Comment {comment_id} classified: {classification_result.classification}")
 
             # Trigger answer generation if comment is classified as a question
-            if classification_result.classification and classification_result.classification.lower() == "question / inquiry":
+            if (
+                classification_result.classification
+                and classification_result.classification.lower() == "question / inquiry"
+            ):
                 logger.info(f"Triggering answer generation for question {comment_id}")
                 # Use direct async call that works in the same event loop
                 try:

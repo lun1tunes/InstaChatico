@@ -4,7 +4,9 @@ Extracts text, prices, financial data, and visual descriptions from images.
 """
 
 import logging
+import base64
 from typing import Optional
+import aiohttp
 from openai import AsyncOpenAI
 from ...config import settings
 from agents import function_tool
@@ -73,6 +75,29 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
     try:
         logger.info(f"Starting image analysis for URL: {image_url}")
 
+        # Download the image first (Instagram URLs require this)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                if response.status != 200:
+                    raise Exception(f"Failed to download image: HTTP {response.status}")
+
+                # Determine image format from content-type or default to jpeg
+                content_type = response.headers.get("content-type", "image/jpeg")
+                image_data = await response.read()
+
+        # Encode image to base64
+        base64_image = base64.b64encode(image_data).decode("utf-8")
+        if "png" in content_type:
+            image_format = "png"
+        elif "webp" in content_type:
+            image_format = "webp"
+        elif "gif" in content_type:
+            image_format = "gif"
+        else:
+            image_format = "jpeg"
+
+        logger.info(f"Downloaded image ({len(image_data)} bytes, format: {image_format})")
+
         # Инициализируем OpenAI клиент
         client = AsyncOpenAI(api_key=settings.openai.api_key)
 
@@ -120,8 +145,8 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
         else:
             prompt = base_prompt
 
-        # Вызываем OpenAI Vision API
-        response = await client.chat.completions.create(
+        # Вызываем OpenAI Vision API with base64 encoded image
+        api_response = await client.chat.completions.create(
             model="gpt-4o",  # Используем GPT-4o для анализа изображений
             messages=[
                 {
@@ -131,7 +156,7 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": image_url,
+                                "url": f"data:image/{image_format};base64,{base64_image}",
                                 "detail": "high",  # Высокое качество для детального анализа
                             },
                         },
@@ -143,9 +168,9 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
         )
 
         # Извлекаем результат
-        analysis_result = response.choices[0].message.content
+        analysis_result = api_response.choices[0].message.content
 
-        logger.info(f"Image analysis completed for URL: {image_url}")
+        logger.info(f"Image analysis completed successfully ({len(analysis_result)} chars)")
 
         return analysis_result
 

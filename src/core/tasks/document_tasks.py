@@ -18,7 +18,7 @@ from core.services.document_processing_service import document_processing_servic
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, max_retries=3)
+@celery_app.task(bind=True, max_retries=3, queue="llm_queue")
 def process_document_task(self, document_id: str):
     """
     Process document: Download from S3, extract content, save markdown.
@@ -74,24 +74,34 @@ def process_document_task(self, document_id: str):
             except Exception as e:
                 logger.error(f"Error processing document {document_id}: {e}", exc_info=True)
 
-                # Update document with error
-                try:
-                    stmt = select(ClientDocument).where(ClientDocument.id == document_id)
-                    result = await session.execute(stmt)
-                    document = result.scalar_one_or_none()
+                # Rollback current session first
+                await session.rollback()
 
-                    if document:
-                        document.processing_status = "failed"
-                        document.processing_error = str(e)
-                        await session.commit()
-                except:
-                    pass
+                # Update document with error using a fresh session
+                try:
+                    async with db_helper.session_factory() as error_session:
+                        stmt = select(ClientDocument).where(ClientDocument.id == document_id)
+                        result = await error_session.execute(stmt)
+                        document = result.scalar_one_or_none()
+
+                        if document:
+                            document.processing_status = "failed"
+                            document.processing_error = str(e)
+                            await error_session.commit()
+                except Exception as commit_error:
+                    logger.error(f"Failed to update error status: {commit_error}")
 
                 # Retry task
                 raise self.retry(exc=e, countdown=60)
 
-    # Run async function
-    asyncio.run(_process())
+    # Run async function with a fresh event loop
+    # This ensures no conflicts with existing event loops
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_process())
+    finally:
+        loop.close()
 
 
 @celery_app.task

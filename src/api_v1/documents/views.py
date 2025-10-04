@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.models.db_helper import db_helper
 from core.models.client_document import ClientDocument
+from core.config import settings
 from core.services.s3_service import s3_service
 from core.services.document_processing_service import document_processing_service
 from core.services.document_context_service import document_context_service
@@ -45,24 +46,58 @@ async def register_document(
     """
     try:
         # Extract S3 key from URL
-        # Expected format: https://<bucket>.s3.<region>.storage.selcloud.ru/<key>
-        # or: https://s3.<region>.storage.selcloud.ru/<bucket>/<key>
+        # Supported formats:
+        # 1. S3 URI: s3://bucket/path/to/file.pdf
+        # 2. HTTPS URL: https://s3.region.storage.selcloud.ru/bucket/path/to/file.pdf
+        # 3. HTTPS URL: https://bucket.s3.region.storage.selcloud.ru/path/to/file.pdf
         s3_key = None
-        if s3_service.s3_url in s3_url:
-            # Format: https://s3.ru-7.storage.selcloud.ru/bucket/path/to/file.pdf
-            parts = s3_url.split(f"{s3_service.s3_url}/")
+
+        logger.info(f"Processing S3 URL: {s3_url}")
+        logger.info(f"Expected bucket: {s3_service.bucket_name}")
+
+        if s3_url.startswith("s3://"):
+            # S3 URI format: s3://bucket/path/to/file.pdf
+            uri_path = s3_url.replace("s3://", "")
+            parts = uri_path.split("/", 1)
+            logger.info(f"S3 URI parts: bucket='{parts[0]}', path='{parts[1] if len(parts) > 1 else 'NONE'}'")
+
             if len(parts) > 1:
-                s3_key = parts[1].split("/", 1)[1] if "/" in parts[1] else parts[1]
+                bucket_from_uri = parts[0]
+                if bucket_from_uri == s3_service.bucket_name:
+                    s3_key = parts[1]
+                    logger.info(f"Extracted S3 key from URI: {s3_key}")
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Bucket mismatch. URI has '{bucket_from_uri}' but expected '{s3_service.bucket_name}'",
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid S3 URI format. Must be: s3://{s3_service.bucket_name}/path/to/file",
+                )
+        elif settings.s3.s3_url in s3_url:
+            # Format: https://s3.ru-7.storage.selcloud.ru/bucket/path/to/file.pdf
+            parts = s3_url.split(f"{settings.s3.s3_url}/")
+            if len(parts) > 1:
+                # Remove bucket name from path
+                path = parts[1]
+                if path.startswith(f"{s3_service.bucket_name}/"):
+                    s3_key = path.replace(f"{s3_service.bucket_name}/", "", 1)
+                else:
+                    s3_key = path
+                logger.info(f"Extracted S3 key from HTTPS URL: {s3_key}")
         elif s3_service.bucket_name in s3_url:
             # Format: https://bucket.s3.ru-7.storage.selcloud.ru/path/to/file.pdf
             parts = s3_url.split(f"{s3_service.bucket_name}.", 1)
             if len(parts) > 1:
                 s3_key = parts[1].split("/", 1)[1] if "/" in parts[1] else None
+                logger.info(f"Extracted S3 key from bucket subdomain URL: {s3_key}")
 
         if not s3_key:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot extract S3 key from URL. Expected format: https://{s3_service.s3_url}/{s3_service.bucket_name}/path/to/file",
+                detail=f"Cannot extract S3 key from URL. Supported formats: s3://{s3_service.bucket_name}/path/to/file OR https://{settings.s3.s3_url}/{s3_service.bucket_name}/path/to/file",
             )
 
         # Detect document type from filename
