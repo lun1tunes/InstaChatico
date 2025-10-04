@@ -25,7 +25,7 @@ COPY src/ /app/src/
 COPY database/ /app/database/
 
 # Создаем директории и устанавливаем права
-RUN mkdir -p /app/src/conversations && \
+RUN mkdir -p /app/src/conversations /app/celerybeat && \
     chown -R instagram-worker:instagram-worker /app
 
 # Переключаемся на пользователя instagram-worker
