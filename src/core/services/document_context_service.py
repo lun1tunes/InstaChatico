@@ -9,7 +9,7 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.models.client_document import ClientDocument
+from core.models.document import Document
 
 logger = logging.getLogger(__name__)
 
@@ -17,34 +17,29 @@ logger = logging.getLogger(__name__)
 class DocumentContextService:
     """Service for retrieving document context for AI agents."""
 
-    async def get_client_context(
-        self,
-        client_id: str,
-        session: AsyncSession
-    ) -> str:
+    async def get_client_context(self, session: AsyncSession) -> str:
         """
-        Get formatted markdown context from all client documents.
+        Get formatted markdown context from all documents.
 
         Args:
-            client_id: Instagram business account ID
             session: Database session
 
         Returns:
             Formatted markdown string with all document content
         """
         try:
-            # Fetch all completed documents for client
-            stmt = select(ClientDocument).where(
-                ClientDocument.client_id == client_id,
-                ClientDocument.processing_status == "completed",
-                ClientDocument.markdown_content.isnot(None)
-            ).order_by(ClientDocument.created_at.desc())
+            # Fetch all completed documents
+            stmt = (
+                select(Document)
+                .where(Document.processing_status == "completed", Document.markdown_content.isnot(None))
+                .order_by(Document.created_at.desc())
+            )
 
             result = await session.execute(stmt)
             documents = result.scalars().all()
 
             if not documents:
-                logger.info(f"No documents found for client {client_id}")
+                logger.info("No documents found")
                 return ""
 
             # Format documents into context
@@ -58,7 +53,9 @@ class DocumentContextService:
                 context_parts.append("\n---\n")
 
             context = "\n".join(context_parts)
-            logger.info(f"Retrieved context for client {client_id}: {len(context)} characters from {len(documents)} documents")
+            logger.info(
+                f"Retrieved context for client {client_id}: {len(context)} characters from {len(documents)} documents"
+            )
 
             return context
 
@@ -66,25 +63,18 @@ class DocumentContextService:
             logger.error(f"Error retrieving document context: {e}", exc_info=True)
             return ""
 
-    async def get_document_summary(
-        self,
-        client_id: str,
-        session: AsyncSession
-    ) -> dict:
+    async def get_document_summary(self, session: AsyncSession) -> dict:
         """
-        Get summary statistics about client documents.
+        Get summary statistics about documents.
 
         Args:
-            client_id: Instagram business account ID
             session: Database session
 
         Returns:
             Dict with document statistics
         """
         try:
-            stmt = select(ClientDocument).where(
-                ClientDocument.client_id == client_id
-            )
+            stmt = select(Document)
 
             result = await session.execute(stmt)
             documents = result.scalars().all()
@@ -99,18 +89,14 @@ class DocumentContextService:
                 "completed": completed,
                 "failed": failed,
                 "pending": pending,
-                "types": list(set(d.document_type for d in documents))
+                "types": list(set(d.document_type for d in documents)),
             }
 
         except Exception as e:
             logger.error(f"Error getting document summary: {e}")
             return {"error": str(e)}
 
-    async def format_context_for_agent(
-        self,
-        client_id: str,
-        session: AsyncSession
-    ) -> str:
+    async def format_context_for_agent(self, client_id: str, session: AsyncSession) -> str:
         """
         Format document context for AI agent (alias for get_client_context).
 

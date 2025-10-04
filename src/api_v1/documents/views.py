@@ -10,7 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.models.db_helper import db_helper
-from core.models.client_document import ClientDocument
+from core.models.document import Document
 from core.config import settings
 from core.services.s3_service import s3_service
 from core.services.document_processing_service import document_processing_service
@@ -24,10 +24,8 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 @router.post("/register", response_model=DocumentUploadResponse)
 async def register_document(
-    client_id: str = Form(...),
     s3_url: str = Form(...),
     document_name: str = Form(...),
-    client_name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
@@ -114,9 +112,7 @@ async def register_document(
         file_size = len(file_content) if file_content else 0
 
         # Create database record
-        document = ClientDocument(
-            client_id=client_id,
-            client_name=client_name,
+        document = Document(
             document_name=document_name,
             document_type=document_type,
             description=description,
@@ -148,8 +144,6 @@ async def register_document(
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
-    client_id: str = Form(...),
-    client_name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
@@ -181,7 +175,7 @@ async def upload_document(
             raise HTTPException(status_code=413, detail=f"File too large. Maximum size: {max_size / 1024 / 1024}MB")
 
         # Generate S3 key
-        s3_key = s3_service.generate_upload_key(file.filename, client_id)
+        s3_key = s3_service.generate_upload_key(file.filename)
 
         # Upload to S3
         from io import BytesIO
@@ -192,9 +186,7 @@ async def upload_document(
             raise HTTPException(status_code=500, detail=f"Failed to upload to S3: {s3_url_or_error}")
 
         # Create database record
-        document = ClientDocument(
-            client_id=client_id,
-            client_name=client_name,
+        document = Document(
             document_name=file.filename,
             document_type=document_type,
             description=description,
@@ -225,7 +217,6 @@ async def upload_document(
 
 @router.get("", response_model=DocumentListResponse)
 async def list_documents(
-    client_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     limit: int = Query(100, le=500),
     offset: int = Query(0, ge=0),
@@ -234,12 +225,10 @@ async def list_documents(
     """List documents with optional filters."""
     try:
         # Build query
-        stmt = select(ClientDocument)
+        stmt = select(Document)
 
-        if client_id:
-            stmt = stmt.where(ClientDocument.client_id == client_id)
         if status:
-            stmt = stmt.where(ClientDocument.processing_status == status)
+            stmt = stmt.where(Document.processing_status == status)
 
         # Get total count
         count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -247,7 +236,7 @@ async def list_documents(
         total = total_result.scalar()
 
         # Get documents
-        stmt = stmt.order_by(ClientDocument.created_at.desc()).limit(limit).offset(offset)
+        stmt = stmt.order_by(Document.created_at.desc()).limit(limit).offset(offset)
         result = await session.execute(stmt)
         documents = result.scalars().all()
 
@@ -259,12 +248,10 @@ async def list_documents(
 
 
 @router.get("/summary", response_model=DocumentSummaryResponse)
-async def get_documents_summary(
-    client_id: str = Query(...), session: AsyncSession = Depends(db_helper.scoped_session_dependency)
-):
-    """Get summary statistics for client documents."""
+async def get_documents_summary(session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
+    """Get summary statistics for documents."""
     try:
-        summary = await document_context_service.get_document_summary(client_id, session)
+        summary = await document_context_service.get_document_summary(session)
         return DocumentSummaryResponse(**summary)
     except Exception as e:
         logger.error(f"Error getting summary: {e}")
@@ -275,7 +262,7 @@ async def get_documents_summary(
 async def get_document(document_id: UUID, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
     """Get a specific document by ID."""
     try:
-        stmt = select(ClientDocument).where(ClientDocument.id == document_id)
+        stmt = select(Document).where(Document.id == document_id)
         result = await session.execute(stmt)
         document = result.scalar_one_or_none()
 

@@ -66,18 +66,15 @@ async def _document_context_implementation(client_id: Optional[str] = None) -> s
             # Or try to get from the first available client
             if not client_id:
                 from sqlalchemy import select
-                from ...models.client_document import ClientDocument
+                from ...models.document import Document
 
-                # Get first available client_id with completed documents
+                # Check if any completed documents exist
                 result = await session.execute(
-                    select(ClientDocument.client_id).where(ClientDocument.processing_status == "completed").limit(1)
+                    select(Document).where(Document.processing_status == "completed").limit(1)
                 )
-                first_client = result.scalar_one_or_none()
+                first_doc = result.scalar_one_or_none()
 
-                if first_client:
-                    client_id = first_client
-                    logger.info(f"Auto-detected client_id: '{client_id}'")
-                else:
+                if not first_doc:
                     return (
                         f"⚠️ NO BUSINESS DOCUMENTS AVAILABLE\n\n"
                         f"No business documents have been uploaded yet.\n"
@@ -86,13 +83,13 @@ async def _document_context_implementation(client_id: Optional[str] = None) -> s
                         f"💡 Suggestion: Provide contact information (phone, email, DM) for detailed inquiries."
                     )
 
-            # Get formatted context from service
-            context = await document_context_service.get_client_context(client_id=client_id, session=session)
+            # Get formatted context from service (no client_id needed)
+            context = await document_context_service.get_client_context(session=session)
 
             if not context or context.strip() == "# Business Information":
                 return (
                     f"⚠️ NO BUSINESS DOCUMENTS AVAILABLE\n\n"
-                    f"No business documents have been uploaded for client '{client_id}'.\n"
+                    f"No business documents have been uploaded.\n"
                     f"Please inform the customer that specific business information "
                     f"(hours, location, policies) should be requested via direct contact.\n\n"
                     f"💡 Suggestion: Provide contact information (phone, email, DM) for detailed inquiries."
@@ -106,7 +103,7 @@ async def _document_context_implementation(client_id: Optional[str] = None) -> s
                 f"always use embedding_search for price information."
             )
 
-            logger.info(f"Document context retrieved: {len(context)} characters for client '{client_id}'")
+            logger.info(f"Document context retrieved: {len(context)} characters")
             return formatted_output
 
     except Exception as e:

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.celery_app import celery_app
 from core.models.db_helper import db_helper
-from core.models.client_document import ClientDocument
+from core.models.document import Document
 from core.services.s3_service import s3_service
 from core.services.document_processing_service import document_processing_service
 
@@ -32,7 +32,7 @@ def process_document_task(self, document_id: str):
         async with db_helper.session_factory() as session:
             try:
                 # Fetch document
-                stmt = select(ClientDocument).where(ClientDocument.id == document_id)
+                stmt = select(Document).where(Document.id == document_id)
                 result = await session.execute(stmt)
                 document = result.scalar_one_or_none()
 

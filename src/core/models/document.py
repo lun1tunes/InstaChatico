@@ -24,7 +24,7 @@ class Document(Base):
 
     Stores documents uploaded to S3, processed with pdfplumber/python-docx,
     and converted to markdown for use in AI agent responses.
-
+    
     Single-tenant architecture: One app instance per client.
     """
 
