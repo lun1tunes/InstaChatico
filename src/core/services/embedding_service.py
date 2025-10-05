@@ -30,6 +30,23 @@ class EmbeddingService:
         # Can be adjusted via EMBEDDING_SIMILARITY_THRESHOLD env variable
         self.SIMILARITY_THRESHOLD = settings.embedding.similarity_threshold
 
+    async def __aenter__(self):
+        """Async context manager entry"""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit - cleanup client"""
+        await self.close()
+        return False
+
+    async def close(self):
+        """Close the OpenAI client to prevent event loop errors"""
+        try:
+            await self.client.close()
+            logger.debug("EmbeddingService client closed successfully")
+        except Exception as e:
+            logger.warning(f"Error closing EmbeddingService client: {e}")
+
     async def generate_embedding(self, text: str) -> List[float]:
         """Generate normalized embedding vector using OpenAI API (1536 dims)"""
         try:

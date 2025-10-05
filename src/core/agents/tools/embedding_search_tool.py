@@ -85,88 +85,87 @@ async def _embedding_search_implementation(
         session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
         async with session_factory() as session:
-            # Initialize embedding service
-            embedding_service = EmbeddingService()
-
-            # Perform semantic search (get more results to account for filtering)
-            all_results = await embedding_service.search_similar_products(
-                query=query,
-                session=session,
-                limit=limit * 2,  # Get more results to filter
-                category_filter=category,
-                include_inactive=False
-            )
-
-            # Handle empty database
-            if not all_results:
-                return (
-                    f"⚠️ DATABASE EMPTY\n\n"
-                    f"No products/services are currently in the database.\n"
-                    f"Please add products using the populate_embeddings.py script."
+            # Initialize embedding service with proper cleanup
+            async with EmbeddingService() as embedding_service:
+                # Perform semantic search (get more results to account for filtering)
+                all_results = await embedding_service.search_similar_products(
+                    query=query,
+                    session=session,
+                    limit=limit * 2,  # Get more results to filter
+                    category_filter=category,
+                    include_inactive=False
                 )
 
-            # CRITICAL: Filter out OOD results (similarity < threshold)
-            high_confidence_results = [r for r in all_results if not r['is_ood']]
-            low_confidence_results = [r for r in all_results if r['is_ood']]
+                # Handle empty database
+                if not all_results:
+                    return (
+                        f"⚠️ DATABASE EMPTY\n\n"
+                        f"No products/services are currently in the database.\n"
+                        f"Please add products using the populate_embeddings.py script."
+                    )
 
-            # If NO high-confidence results, return OOD message
-            if not high_confidence_results:
-                best_similarity = all_results[0]['similarity'] if all_results else 0
-                threshold_pct = int(embedding_service.SIMILARITY_THRESHOLD * 100)
-                return (
-                    f"⚠️ NO RELEVANT PRODUCTS FOUND\n\n"
-                    f"Your query '{query}' did not match any products/services in our catalog.\n"
-                    f"The search found {len(all_results)} result(s), but the best match had only "
-                    f"{best_similarity*100:.1f}% similarity (threshold: {threshold_pct}%).\n\n"
-                    f"This means we likely don't offer products/services related to '{query}'.\n"
-                    f"Please inform the customer politely that this specific item/service is not available.\n\n"
-                    f"💡 Suggestion: Ask the customer to clarify their request or check what we actually offer."
-                )
+                # CRITICAL: Filter out OOD results (similarity < threshold)
+                high_confidence_results = [r for r in all_results if not r['is_ood']]
+                low_confidence_results = [r for r in all_results if r['is_ood']]
 
-            # Return only high-confidence results
-            results = high_confidence_results[:limit]
+                # If NO high-confidence results, return OOD message
+                if not high_confidence_results:
+                    best_similarity = all_results[0]['similarity'] if all_results else 0
+                    threshold_pct = int(embedding_service.SIMILARITY_THRESHOLD * 100)
+                    return (
+                        f"⚠️ NO RELEVANT PRODUCTS FOUND\n\n"
+                        f"Your query '{query}' did not match any products/services in our catalog.\n"
+                        f"The search found {len(all_results)} result(s), but the best match had only "
+                        f"{best_similarity*100:.1f}% similarity (threshold: {threshold_pct}%).\n\n"
+                        f"This means we likely don't offer products/services related to '{query}'.\n"
+                        f"Please inform the customer politely that this specific item/service is not available.\n\n"
+                        f"💡 Suggestion: Ask the customer to clarify their request or check what we actually offer."
+                    )
 
-            formatted_output = f"✅ Found {len(results)} relevant result(s) for query: '{query}'\n"
+                # Return only high-confidence results
+                results = high_confidence_results[:limit]
 
-            # Add info about filtered OOD results
-            if low_confidence_results:
-                formatted_output += f"(Filtered out {len(low_confidence_results)} low-confidence results)\n"
+                formatted_output = f"✅ Found {len(results)} relevant result(s) for query: '{query}'\n"
 
-            formatted_output += "\n"
-
-            for idx, result in enumerate(results, 1):
-                similarity = result['similarity']
-                confidence_pct = int(similarity * 100)
-
-                formatted_output += f"[{idx}] {result['title']} (confidence: {confidence_pct}%)\n"
-                formatted_output += f"Description: {result['description']}\n"
-
-                if result['category']:
-                    formatted_output += f"Category: {result['category']}\n"
-
-                if result['price']:
-                    formatted_output += f"Price: {result['price']}\n"
-
-                if result['tags']:
-                    formatted_output += f"Tags: {result['tags']}\n"
-
-                if result['url']:
-                    formatted_output += f"URL: {result['url']}\n"
+                # Add info about filtered OOD results
+                if low_confidence_results:
+                    formatted_output += f"(Filtered out {len(low_confidence_results)} low-confidence results)\n"
 
                 formatted_output += "\n"
 
-            # Add usage guidance
-            formatted_output += (
-                f"💡 Usage: These results are HIGH CONFIDENCE matches. "
-                f"You can safely use this information to answer the customer's question.\n"
-            )
+                for idx, result in enumerate(results, 1):
+                    similarity = result['similarity']
+                    confidence_pct = int(similarity * 100)
 
-            logger.info(
-                f"Embedding search completed: {len(results)} high-confidence results, "
-                f"{len(low_confidence_results)} OOD filtered out"
-            )
+                    formatted_output += f"[{idx}] {result['title']} (confidence: {confidence_pct}%)\n"
+                    formatted_output += f"Description: {result['description']}\n"
 
-            return formatted_output
+                    if result['category']:
+                        formatted_output += f"Category: {result['category']}\n"
+
+                    if result['price']:
+                        formatted_output += f"Price: {result['price']}\n"
+
+                    if result['tags']:
+                        formatted_output += f"Tags: {result['tags']}\n"
+
+                    if result['url']:
+                        formatted_output += f"URL: {result['url']}\n"
+
+                    formatted_output += "\n"
+
+                # Add usage guidance
+                formatted_output += (
+                    f"💡 Usage: These results are HIGH CONFIDENCE matches. "
+                    f"You can safely use this information to answer the customer's question.\n"
+                )
+
+                logger.info(
+                    f"Embedding search completed: {len(results)} high-confidence results, "
+                    f"{len(low_confidence_results)} OOD filtered out"
+                )
+
+                return formatted_output
 
     except Exception as e:
         error_msg = f"❌ Error performing embedding search: {str(e)}"

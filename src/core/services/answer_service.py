@@ -67,20 +67,26 @@ class QuestionAnswerService(BaseService):
             answer_result = result.final_output
             processing_time_ms = int((time.time() - start_time) * 1000)
 
-            # Extract token usage if available
+            # Extract token usage from raw_responses (OpenAI Agents SDK structure)
             input_tokens = None
             output_tokens = None
             tokens_used = None
 
-            if hasattr(result, 'usage'):
-                usage = result.usage
-                if usage:
-                    input_tokens = getattr(usage, 'input_tokens', None) or getattr(usage, 'prompt_tokens', None)
-                    output_tokens = getattr(usage, 'output_tokens', None) or getattr(usage, 'completion_tokens', None)
+            # OpenAI Agents SDK stores usage in raw_responses[0].usage, not result.usage
+            if hasattr(result, 'raw_responses') and result.raw_responses:
+                first_response = result.raw_responses[0]
+                if hasattr(first_response, 'usage') and first_response.usage:
+                    usage = first_response.usage
+                    input_tokens = getattr(usage, 'input_tokens', None)
+                    output_tokens = getattr(usage, 'output_tokens', None)
                     if input_tokens and output_tokens:
                         tokens_used = input_tokens + output_tokens
 
                     logger.debug(f"Token usage - Input: {input_tokens}, Output: {output_tokens}, Total: {tokens_used}")
+                else:
+                    logger.debug("No usage data in raw_responses[0]")
+            else:
+                logger.debug("No raw_responses available for token extraction")
 
             # Fallback to estimation if usage not available
             if tokens_used is None:

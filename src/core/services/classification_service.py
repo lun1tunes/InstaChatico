@@ -167,17 +167,23 @@ class CommentClassificationService(BaseService):
             # Extract the final output from the result
             classification_result = result.final_output
 
-            # Extract token usage if available
+            # Extract token usage from raw_responses (OpenAI Agents SDK structure)
             input_tokens = None
             output_tokens = None
 
-            if hasattr(result, "usage"):
-                usage = result.usage
-                if usage:
-                    input_tokens = getattr(usage, "input_tokens", None) or getattr(usage, "prompt_tokens", None)
-                    output_tokens = getattr(usage, "output_tokens", None) or getattr(usage, "completion_tokens", None)
+            # OpenAI Agents SDK stores usage in raw_responses[0].usage, not result.usage
+            if hasattr(result, "raw_responses") and result.raw_responses:
+                first_response = result.raw_responses[0]
+                if hasattr(first_response, "usage") and first_response.usage:
+                    usage = first_response.usage
+                    input_tokens = getattr(usage, "input_tokens", None)
+                    output_tokens = getattr(usage, "output_tokens", None)
 
                     logger.debug(f"Token usage - Input: {input_tokens}, Output: {output_tokens}")
+                else:
+                    logger.debug("No usage data in raw_responses[0]")
+            else:
+                logger.debug("No raw_responses available for token extraction")
 
             logger.info(
                 f"Classification result: {classification_result.classification} (confidence: {classification_result.confidence})"

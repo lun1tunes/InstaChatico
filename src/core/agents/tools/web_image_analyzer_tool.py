@@ -105,9 +105,6 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
         # Log only at debug level to avoid verbose output
         logger.debug(f"Downloaded image ({len(image_data)} bytes, format: {image_format})")
 
-        # Инициализируем OpenAI клиент
-        client = AsyncOpenAI(api_key=settings.openai.api_key)
-
         # Базовый промт с подробными инструкциями
         base_prompt = """
         Ты - эксперт по анализу изображений с особым фокусом на извлечение максимально полной информации.
@@ -152,34 +149,36 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
         else:
             prompt = base_prompt
 
-        # Вызываем OpenAI Vision API with base64 encoded image
-        api_response = await client.chat.completions.create(
-            model="gpt-4o",  # Используем GPT-4o для анализа изображений
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/{image_format};base64,{base64_image}",
-                                "detail": "high",  # Высокое качество для детального анализа
+        # Инициализируем OpenAI клиент с автоматическим закрытием (async context manager)
+        async with AsyncOpenAI(api_key=settings.openai.api_key) as client:
+            # Вызываем OpenAI Vision API with base64 encoded image
+            api_response = await client.chat.completions.create(
+                model="gpt-4o",  # Используем GPT-4o для анализа изображений
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/{image_format};base64,{base64_image}",
+                                    "detail": "high",  # Высокое качество для детального анализа
+                                },
                             },
-                        },
-                    ],
-                }
-            ],
-            max_tokens=2000,
-            temperature=0.1,  # Низкая температура для более точного анализа
-        )
+                        ],
+                    }
+                ],
+                max_tokens=2000,
+                temperature=0.1,  # Низкая температура для более точного анализа
+            )
 
-        # Извлекаем результат
-        analysis_result = api_response.choices[0].message.content
+            # Извлекаем результат
+            analysis_result = api_response.choices[0].message.content
 
-        logger.info(f"Image analysis completed successfully ({len(analysis_result)} chars)")
+            logger.info(f"Image analysis completed successfully ({len(analysis_result)} chars)")
 
-        return analysis_result
+            return analysis_result
 
     except Exception as e:
         logger.error(f"Error in image analysis for {image_url}: {e}")
