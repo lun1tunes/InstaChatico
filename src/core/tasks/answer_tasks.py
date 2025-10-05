@@ -1,14 +1,10 @@
+"""Answer generation tasks - refactored using Clean Architecture."""
+
 import logging
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from ..celery_app import celery_app
-from ..config import settings
-from ..models import QuestionAnswer, CommentClassification, InstagramComment, AnswerStatus, ProcessingStatus, Media
-from ..services.answer_service import QuestionAnswerService
-from ..services.media_service import MediaService
-from ..utils.time import now_db_utc
-from ..utils.task_helpers import async_task, get_db_session, retry_with_backoff
+from ..use_cases.generate_answer import GenerateAnswerUseCase
+from ..utils.task_helpers import async_task, get_db_session
 
 logger = logging.getLogger(__name__)
 
@@ -16,281 +12,25 @@ logger = logging.getLogger(__name__)
 @celery_app.task(bind=True, max_retries=3)
 @async_task
 async def generate_answer_task(self, comment_id: str):
-    """Generate answer for Instagram comment question."""
-    return await generate_answer_async(comment_id, self)
-
-
-async def generate_answer_async(comment_id: str, task_instance=None):
-    """Async answer generation task."""
+    """Generate answer for Instagram comment question - orchestration only."""
     async with get_db_session() as session:
-        try:
-            # Получаем комментарий с классификацией
-            result = await session.execute(
-                select(InstagramComment)
-                .options(selectinload(InstagramComment.classification))
-                .where(InstagramComment.id == comment_id)
-            )
-            comment = result.scalar_one_or_none()
+        use_case = GenerateAnswerUseCase(session)
+        result = await use_case.execute(comment_id, retry_count=self.request.retries)
 
-            if not comment:
-                logger.warning(f"Comment {comment_id} not found")
-                return {"status": "error", "reason": "comment_not_found"}
+        # Handle retry logic
+        if result["status"] == "retry" and self.request.retries < self.max_retries:
+            raise self.retry(countdown=10)
 
-            if not comment.classification:
-                logger.warning(f"Comment {comment_id} has no classification")
-                return {"status": "error", "reason": "no_classification"}
-
-            # Проверяем, что комментарий классифицирован как вопрос
-            if comment.classification.classification.lower() != "question / inquiry":
-                logger.info(f"Comment {comment_id} is not a question, skipping answer generation")
-                return {"status": "skipped", "reason": "not_a_question"}
-
-            # Проверяем, что классификация завершена
-            if comment.classification.processing_status != ProcessingStatus.COMPLETED:
-                logger.warning(f"Comment {comment_id} classification not completed yet")
-                return {"status": "error", "reason": "classification_not_completed"}
-
-            # Use conversation_id from the comment (set during classification)
-            conversation_id = comment.conversation_id
-            if not conversation_id:
-                logger.info(f"Comment {comment_id} has no conversation_id, generating one")
-                # Fallback: generate conversation_id if not set
-                if comment.parent_id:
-                    conversation_id = f"first_question_comment_{comment.parent_id}"
-                else:
-                    conversation_id = f"first_question_comment_{comment_id}"
-                # Update the comment with the generated conversation_id
-                comment.conversation_id = conversation_id
-                await session.commit()
-
-            logger.debug(f"Using conversation_id for comment {comment_id}: {conversation_id}")
-
-            # Создаем или получаем запись ответа
-            existing_answer = await session.execute(
-                select(QuestionAnswer).where(QuestionAnswer.comment_id == comment_id)
-            )
-            answer_record = existing_answer.scalar_one_or_none()
-
-            if answer_record:
-                # Если уже есть запись, проверяем статус
-                if answer_record.processing_status == AnswerStatus.COMPLETED:
-                    logger.info(f"Answer for comment {comment_id} already exists and completed")
-                    return {"status": "skipped", "reason": "already_completed"}
-
-                # Если в процессе или ошибка, обновляем статус
-                answer_record.processing_status = AnswerStatus.PROCESSING
-                answer_record.processing_started_at = now_db_utc()
-                answer_record.retry_count = task_instance.request.retries if task_instance else 0
-            else:
-                # Создаем новую запись
-                answer_record = QuestionAnswer(
-                    comment_id=comment_id,
-                    processing_status=AnswerStatus.PROCESSING,
-                    processing_started_at=now_db_utc(),
-                    retry_count=task_instance.request.retries if task_instance else 0,
-                )
-                session.add(answer_record)
-
-            await session.commit()
-
-            # Ensure media data exists for answer generation
-            logger.debug(
-                f"Ensuring media data exists for answer generation (comment: {comment_id}, media_id: {comment.media_id})"
-            )
-            media_service = MediaService()
-            media = await media_service.get_or_create_media(comment.media_id, session)
-
-            if not media:
-                logger.error(f"Failed to get/create media {comment.media_id} for answer generation")
-                answer_record.processing_status = AnswerStatus.FAILED
-                answer_record.last_error = "Media data unavailable"
-                await session.commit()
-                return {"status": "error", "reason": "media_data_unavailable"}
-
-            # Prepare media context for answer generation
-            media_context = {
-                "caption": media.caption,
-                "media_type": media.media_type,
-                "media_context": media.media_context,  # AI-analyzed image description
-                "username": media.username,
-                "comments_count": media.comments_count,
-                "like_count": media.like_count,
-                "permalink": media.permalink,
-                "media_url": media.media_url,
-                "is_comment_enabled": media.is_comment_enabled,
-            }
-
-            # NOTE: Business documents are accessed via document_context TOOL, not injected here
-            # The agent will call document_context() tool when needed for:
-            # - Business hours, location, promotions, policies (general info)
-            # Prices come ONLY from embedding_search tool (product_embeddings table)
-            # This separation ensures the agent only fetches documents when actually needed
-            logger.debug(f"Media context prepared. Agent has document_context tool for business info.")
-
-            # Генерируем ответ с использованием сессии и медиа контекста
-            logger.debug(f"Initializing QuestionAnswerService for comment: {comment_id}")
-            answer_service = QuestionAnswerService()
-            logger.debug(f"Calling generate_answer with conversation_id: {conversation_id} and media context")
-            answer_result = await answer_service.generate_answer(
-                comment.text, conversation_id, media_context, username=comment.username
-            )
-
-            # Сохраняем результат (answer_result is now a Pydantic model)
-            if answer_result.error:
-                answer_record.processing_status = AnswerStatus.FAILED
-                answer_record.last_error = answer_result.error
-            else:
-                answer_record.answer = answer_result.answer
-                answer_record.answer_confidence = answer_result.answer_confidence
-                answer_record.answer_quality_score = answer_result.answer_quality_score
-                answer_record.input_tokens = answer_result.input_tokens
-                answer_record.output_tokens = answer_result.output_tokens
-                answer_record.processing_time_ms = answer_result.processing_time_ms
-                answer_record.meta_data = {}
-
-                answer_record.processing_status = AnswerStatus.COMPLETED
-                answer_record.processing_completed_at = now_db_utc()
-                answer_record.last_error = None
-
-            await session.commit()
-
-            logger.info(f"Answer generated for comment {comment_id}")
-            logger.debug(f"Answer sample: {str(answer_result.answer)[:100] if answer_result.answer else 'N/A'}...")
-
-            # Trigger Instagram reply if answer was successfully generated
-            if answer_result.answer and answer_result.status == "success":
-                try:
-                    logger.info(f"Queueing Instagram reply for comment {comment_id}")
-                    logger.debug(f"Reply args: {[comment_id, answer_result.answer]}")
-                    result = celery_app.send_task(
-                        "core.tasks.instagram_reply_tasks.send_instagram_reply_task",
-                        args=[comment_id, answer_result.answer],
-                    )
-                    logger.info(f"Reply task queued (task_id={result.id})")
-                except Exception as e:
-                    logger.exception(f"Failed to queue Instagram reply for comment {comment_id}")
-
-            return {
-                "status": "success",
-                "comment_id": comment_id,
-                "answer": answer_result.answer,
-                "confidence": answer_result.answer_confidence,
-                "quality_score": answer_result.answer_quality_score,
-            }
-
-        except Exception as exc:
-            logger.exception(f"Error processing answer for comment {comment_id}")
-            await session.rollback()
-            return retry_with_backoff(task_instance, exc)
-
-
-@celery_app.task
-@async_task
-async def retry_failed_answers():
-    """Retry failed answer generation."""
-    return await retry_failed_answers_async()
-
-
-async def retry_failed_answers_async():
-    """Async retry failed answers."""
-    async with get_db_session() as session:
-        try:
-            # Находим записи с ошибками, которые можно повторить
-            result = await session.execute(
-                select(QuestionAnswer).where(
-                    and_(
-                        QuestionAnswer.processing_status == AnswerStatus.FAILED,
-                        QuestionAnswer.retry_count < QuestionAnswer.max_retries,
-                    )
-                )
-            )
-            failed_answers = result.scalars().all()
-
-            retry_count = 0
-            for answer_record in failed_answers:
-                logger.info(f"Retrying answer generation for comment {answer_record.comment_id}")
-                generate_answer_task.delay(answer_record.comment_id)
-                retry_count += 1
-
-            logger.info(f"Queued {retry_count} failed answers for retry")
-        except Exception as exc:
-            logger.error(f"Error in retry_failed_answers: {exc}")
-
-
-@celery_app.task(bind=True, max_retries=3)
-@async_task
-async def process_pending_questions_task(self):
-    """Process all pending questions."""
-    return await process_pending_questions_async(self)
-
-
-async def process_pending_questions_async(task_instance=None):
-    # Ensure only one instance runs across workers to avoid duplicate sweeps
-    try:
-        redis_client = redis.Redis.from_url(settings.celery.broker_url)
-        lock_key = "process_pending_questions_lock"
-        # TTL slightly below schedule interval (1 minute)
-        if not redis_client.set(lock_key, "1", nx=True, ex=50):
-            logger.info("Another process_pending_questions is running; skipping this run")
-            return {"status": "skipped", "reason": "already_running"}
-    except Exception:
-        logger.warning("Failed to acquire process_pending_questions lock; proceeding anyway")
-
-    engine = create_async_engine(settings.db.url, echo=settings.db.echo)
-    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-
-    async with session_factory() as session:
-        try:
-            # Find comments classified as questions that don't have answers
-            stmt = (
-                select(InstagramComment)
-                .join(CommentClassification)
-                .outerjoin(QuestionAnswer)
-                .where(
-                    and_(
-                        CommentClassification.classification == "question / inquiry",
-                        CommentClassification.processing_status == ProcessingStatus.COMPLETED,
-                        QuestionAnswer.id.is_(None),
-                    )
-                )
-            )
-            result = await session.execute(stmt)
-            pending_comments = result.scalars().all()
-
-            if not pending_comments:
-                logger.info("No pending questions to process.")
-                return {"status": "success", "message": "No pending questions to process"}
-
-            logger.info(f"Processing {len(pending_comments)} pending questions.")
-            processed_count = 0
-            results = []
-
-            for comment in pending_comments:
-                try:
-                    answer_result = await generate_answer_async(comment.id)
-                    results.append({"comment_id": comment.id, "status": "success", "result": answer_result})
-                    processed_count += 1
-                    logger.info(f"Processed question comment {comment.id}")
-                except Exception as e:
-                    results.append({"comment_id": comment.id, "status": "error", "error": str(e)})
-                    logger.error(f"Failed to process question comment {comment.id}: {e}")
-
-            return {
-                "status": "success",
-                "processed_count": processed_count,
-                "total_found": len(pending_comments),
-                "results": results,
-            }
-
-        except Exception as e:
-            logger.error(f"Error in process_pending_questions: {e}")
-            await session.rollback()
-            return {"status": "error", "reason": str(e)}
-        finally:
-            await engine.dispose()
-            # Release lock by letting TTL expire; remove key if still present
+        # Trigger reply if answer generated successfully
+        if result["status"] == "success" and result.get("answer"):
+            logger.info(f"Triggering Instagram reply for comment {comment_id}")
             try:
-                if "redis_client" in locals():
-                    redis_client.delete("process_pending_questions_lock")
+                reply_result = celery_app.send_task(
+                    "core.tasks.instagram_reply_tasks.send_instagram_reply_task",
+                    args=[comment_id, result["answer"]]
+                )
+                logger.info(f"Reply task queued: {reply_result.id}")
             except Exception:
-                pass
+                logger.exception(f"Failed to queue reply task for {comment_id}")
+
+        return result

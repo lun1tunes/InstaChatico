@@ -18,8 +18,9 @@ from core.models.instagram_comment import InstagramComment
 from core.models.media import Media
 from core.schemas.webhook import WebhookProcessingResponse, TestCommentResponse
 from core.services.media_service import MediaService
-from core.tasks.answer_tasks import generate_answer_async
-from core.tasks.classification_tasks import classify_comment_async, classify_comment_task
+from core.use_cases.classify_comment import ClassifyCommentUseCase
+from core.use_cases.generate_answer import GenerateAnswerUseCase
+from core.tasks.classification_tasks import classify_comment_task
 
 from .helpers import extract_comment_data, get_existing_comment, should_skip_comment
 from .schemas import TestCommentPayload, WebhookPayload
@@ -213,9 +214,10 @@ async def test_comment_processing(
 
         await session.commit()
 
-        # Step 4: Run classification (synchronously for testing)
+        # Step 4: Run classification using use case (Clean Architecture!)
         logger.info(f"Running classification for test comment {test_data.comment_id}")
-        classification_result = await classify_comment_async(test_data.comment_id, task_instance=None)
+        use_case = ClassifyCommentUseCase(session)
+        classification_result = await use_case.execute(test_data.comment_id, retry_count=0)
 
         if classification_result.get("status") == "error":
             raise HTTPException(status_code=500, detail=f"Classification failed: {classification_result.get('reason')}")
@@ -237,10 +239,11 @@ async def test_comment_processing(
         processing_details = {"classification_result": classification_result}
         answer_text = None
 
-        # Step 6: If it's a question, generate answer
+        # Step 6: If it's a question, generate answer using use case
         if classification_type == "question / inquiry":
             logger.info(f"Generating answer for test question {test_data.comment_id}")
-            answer_result = await generate_answer_async(test_data.comment_id, task_instance=None)
+            answer_use_case = GenerateAnswerUseCase(session)
+            answer_result = await answer_use_case.execute(test_data.comment_id, retry_count=0)
 
             if answer_result.get("status") == "error":
                 processing_details["answer_error"] = answer_result.get("reason")
