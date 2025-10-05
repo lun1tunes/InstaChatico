@@ -42,9 +42,9 @@ class GenerateAnswerUseCase:
         # 4. Generate answer using service
         try:
             answer_result = await self.qa_service.generate_answer(
-                comment=comment,
-                classification=comment.classification,
-                session=self.session
+                question_text=comment.text,
+                conversation_id=comment.conversation_id,
+                username=comment.username,
             )
         except Exception as exc:
             answer_record.processing_status = AnswerStatus.FAILED
@@ -57,13 +57,13 @@ class GenerateAnswerUseCase:
 
         # 5. Update answer record with results
         answer_record.answer = answer_result.answer
-        answer_record.answer_confidence = answer_result.confidence
-        answer_record.answer_quality_score = answer_result.quality_score
-        answer_record.llm_raw_response = answer_result.llm_raw_response
+        answer_record.answer_confidence = answer_result.answer_confidence
+        answer_record.answer_quality_score = answer_result.answer_quality_score
+        answer_record.llm_raw_response = getattr(answer_result, 'llm_raw_response', None)
         answer_record.input_tokens = answer_result.input_tokens
         answer_record.output_tokens = answer_result.output_tokens
         answer_record.processing_time_ms = answer_result.processing_time_ms
-        answer_record.meta_data = answer_result.meta_data
+        answer_record.meta_data = getattr(answer_result, 'meta_data', None)
         answer_record.processing_status = AnswerStatus.COMPLETED
         answer_record.processing_completed_at = datetime.utcnow()
 
@@ -72,6 +72,6 @@ class GenerateAnswerUseCase:
         return {
             "status": "success",
             "answer": answer_result.answer,
-            "confidence": answer_result.confidence,
-            "quality_score": answer_result.quality_score,
+            "confidence": answer_result.answer_confidence,
+            "quality_score": answer_result.answer_quality_score,
         }

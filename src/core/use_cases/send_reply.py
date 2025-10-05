@@ -56,7 +56,7 @@ class SendReplyUseCase:
             }
 
         # 5. Send reply via Instagram API
-        result = await self.instagram_service.send_comment_reply(
+        result = await self.instagram_service.send_reply_to_comment(
             comment_id=comment_id,
             message=reply_text
         )
@@ -67,10 +67,12 @@ class SendReplyUseCase:
             answer_record.reply_sent_at = datetime.utcnow()
             answer_record.reply_status = "sent"
             answer_record.reply_response = result.get("response", {})
-            answer_record.reply_id = result.get("response", {}).get("id")
+            answer_record.reply_id = result.get("reply_id") or result.get("response", {}).get("id")
         else:
             answer_record.reply_status = "failed"
-            answer_record.reply_error = result.get("error", "Unknown error")
+            # Convert error to string if it's a dict
+            error = result.get("error", "Unknown error")
+            answer_record.reply_error = str(error) if isinstance(error, dict) else error
             answer_record.reply_response = result
 
         await self.session.commit()

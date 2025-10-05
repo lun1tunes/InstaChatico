@@ -104,12 +104,11 @@ class AnalyzeMediaUseCase:
         # 4. Analyze image
         analysis_result = await self.analysis_service.analyze_media_image(
             media_url=media.media_url,
-            media_type=media.media_type,
             caption=media.caption,
         )
 
-        if analysis_result.get("success"):
-            media.media_context = analysis_result.get("description")
+        if analysis_result:
+            media.media_context = analysis_result
             await self.session.commit()
 
             return {
@@ -120,5 +119,5 @@ class AnalyzeMediaUseCase:
         else:
             return {
                 "status": "error",
-                "reason": analysis_result.get("error", "Analysis failed"),
+                "reason": "Analysis failed - no result returned",
             }

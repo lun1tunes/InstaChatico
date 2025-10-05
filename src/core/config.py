@@ -27,7 +27,9 @@ class OpenAISettings(BaseModel):
 
 class EmbeddingSettings(BaseModel):
     """Settings for vector embedding search"""
-    similarity_threshold: float = float(os.getenv("EMBEDDING_SIMILARITY_THRESHOLD", "0.7"))
+    # Понижен порог для русскоязычного контента (0.45 вместо 0.7)
+    # text-embedding-3-small даёт более низкие similarity для русского языка
+    similarity_threshold: float = float(os.getenv("EMBEDDING_SIMILARITY_THRESHOLD", "0.45"))
     model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
     dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
 

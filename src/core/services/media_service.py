@@ -27,6 +27,16 @@ class MediaService:
 
             if media:
                 logger.debug(f"Media {media_id} already exists in database")
+
+                # Check if existing media needs analysis
+                if media.media_type in ["IMAGE", "CAROUSEL_ALBUM"] and media.media_url and not media.media_context:
+                    try:
+                        from core.tasks.media_tasks import analyze_media_image_task
+                        analyze_media_image_task.delay(media_id)
+                        logger.info(f"Queued image analysis task for existing media {media_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to queue image analysis for existing media {media_id}: {e}")
+
                 return media
 
             # Media doesn't exist, fetch from Instagram API
