@@ -49,18 +49,9 @@ celery_app.conf.update(
         "core.tasks.classification_tasks.classify_comment_task": {"queue": "llm_queue"},
         "core.tasks.answer_tasks.generate_answer_task": {"queue": "llm_queue"},
         "core.tasks.media_tasks.analyze_media_image_task": {"queue": "llm_queue"},
-        "core.tasks.instagram_reply_tasks.send_instagram_reply_task": {
-            "queue": "instagram_queue"
-        },
-        "core.tasks.instagram_reply_tasks.hide_instagram_comment_task": {
-            "queue": "instagram_queue"
-        },
-        "core.tasks.instagram_reply_tasks.process_pending_replies_task": {
-            "queue": "instagram_queue"
-        },
-        "core.tasks.telegram_tasks.send_telegram_notification_task": {
-            "queue": "instagram_queue"
-        },
+        "core.tasks.instagram_reply_tasks.send_instagram_reply_task": {"queue": "instagram_queue"},
+        "core.tasks.instagram_reply_tasks.hide_instagram_comment_task": {"queue": "instagram_queue"},
+        "core.tasks.telegram_tasks.send_telegram_notification_task": {"queue": "instagram_queue"},
     },
     task_soft_time_limit=300,
     task_time_limit=600,
@@ -85,10 +76,6 @@ celery_app.conf.beat_schedule = {
     "process-pending-questions": {
         "task": "core.tasks.answer_tasks.process_pending_questions_task",
         "schedule": crontab(minute="*"),  # Every minute
-    },
-    "process-pending-replies": {
-        "task": "core.tasks.instagram_reply_tasks.process_pending_replies_task",
-        "schedule": crontab(minute="*/5"),  # Every 5 minutes
     },
     "check-system-health": {
         "task": "core.tasks.health_tasks.check_system_health_task",

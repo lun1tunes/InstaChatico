@@ -597,3 +597,57 @@ This is the power of Clean Architecture! 🎉
 - ✅ KISS (Keep It Simple, Stupid)
 
 **You were RIGHT to ask about multiple use cases!** That's exactly how it should be. 🎉
+
+## **API Patterns: When to Use Use Cases vs Tasks**
+
+### **The Rule:**
+- **Use Cases in APIs** = Immediate response needed
+- **Tasks in APIs** = Background processing OK
+
+### **Use Cases in APIs (Synchronous):**
+```python
+# ✅ CORRECT - User expects immediate result
+@router.post("/{comment_id}/unhide")
+async def unhide_comment(comment_id: str, session: AsyncSession):
+    use_case = HideCommentUseCase(session)
+    result = await use_case.execute(comment_id, hide=False)
+    return result  # Immediate response
+```
+
+**When to use:**
+- ✅ Simple operations (unhide, data retrieval)
+- ✅ User expects immediate response
+- ✅ Test endpoints
+- ✅ Internal API calls
+
+### **Tasks in APIs (Asynchronous):**
+```python
+# ✅ CORRECT - User doesn't need immediate result
+@router.post("/{comment_id}/hide")
+async def hide_comment(comment_id: str):
+    task = celery_app.send_task("hide_instagram_comment_task", args=[comment_id])
+    return {"task_id": task.id, "status": "queued"}  # Background processing
+```
+
+**When to use:**
+- ✅ Heavy processing (AI classification)
+- ✅ External API calls (Instagram Graph API)
+- ✅ User-initiated long operations
+- ✅ Background jobs (notifications, cleanup)
+
+### **Why This Pattern?**
+
+| Operation | Use Case | Task | Reason |
+|-----------|----------|------|--------|
+| **Unhide comment** | ✅ | ❌ | Simple API call, user waits |
+| **Hide comment** | ❌ | ✅ | External API, can be async |
+| **Get comment data** | ✅ | ❌ | Data retrieval, immediate |
+| **Classify comment** | ❌ | ✅ | AI processing, heavy work |
+| **Send reply** | ❌ | ✅ | External API, can be async |
+| **Test endpoint** | ✅ | ❌ | Development, immediate feedback |
+
+### **Clean Architecture Benefits:**
+- ✅ **Consistent patterns** - Easy to understand
+- ✅ **Proper separation** - Business logic in use cases
+- ✅ **Testable** - Use cases can be tested independently
+- ✅ **Maintainable** - Change business logic without touching API

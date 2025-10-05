@@ -25,6 +25,7 @@ from core.schemas.comment import (
     CommentListItem,
 )
 from core.services.instagram_service import InstagramGraphAPIService
+from core.use_cases.hide_comment import HideCommentUseCase
 from core.utils.time import now_db_utc
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ router = APIRouter(tags=["Comments"], prefix="/comments")
 # ============================================================================
 # Comment Retrieval Endpoints
 # ============================================================================
+
 
 @router.get("/{comment_id}", response_model=CommentDetailResponse)
 async def get_comment(
@@ -46,9 +48,7 @@ async def get_comment(
     Returns:
         CommentDetailResponse with id, text, username, hiding status, etc.
     """
-    result = await session.execute(
-        select(InstagramComment).where(InstagramComment.id == comment_id)
-    )
+    result = await session.execute(select(InstagramComment).where(InstagramComment.id == comment_id))
     comment = result.scalar_one_or_none()
 
     if not comment:
@@ -84,16 +84,20 @@ async def get_comment_with_classification(
     }
 
     if comment.classification:
-        response_data.update({
-            "classification": comment.classification.classification,
-            "confidence": comment.classification.confidence,
-            "reasoning": comment.classification.reasoning,
-            "input_tokens": comment.classification.input_tokens,
-            "output_tokens": comment.classification.output_tokens,
-            "processing_status": comment.classification.processing_status.value if comment.classification.processing_status else None,
-            "processing_started_at": comment.classification.processing_started_at,
-            "processing_completed_at": comment.classification.processing_completed_at,
-        })
+        response_data.update(
+            {
+                "classification": comment.classification.classification,
+                "confidence": comment.classification.confidence,
+                "reasoning": comment.classification.reasoning,
+                "input_tokens": comment.classification.input_tokens,
+                "output_tokens": comment.classification.output_tokens,
+                "processing_status": (
+                    comment.classification.processing_status.value if comment.classification.processing_status else None
+                ),
+                "processing_started_at": comment.classification.processing_started_at,
+                "processing_completed_at": comment.classification.processing_completed_at,
+            }
+        )
 
     return CommentWithClassificationResponse(**response_data)
 
@@ -125,16 +129,22 @@ async def get_comment_with_answer(
     }
 
     if comment.question_answer:
-        response_data.update({
-            "answer": comment.question_answer.answer,
-            "answer_confidence": comment.question_answer.answer_confidence,
-            "answer_quality_score": comment.question_answer.answer_quality_score,
-            "input_tokens": comment.question_answer.input_tokens,
-            "output_tokens": comment.question_answer.output_tokens,
-            "processing_status": comment.question_answer.processing_status.value if comment.question_answer.processing_status else None,
-            "processing_started_at": comment.question_answer.processing_started_at,
-            "processing_completed_at": comment.question_answer.processing_completed_at,
-        })
+        response_data.update(
+            {
+                "answer": comment.question_answer.answer,
+                "answer_confidence": comment.question_answer.answer_confidence,
+                "answer_quality_score": comment.question_answer.answer_quality_score,
+                "input_tokens": comment.question_answer.input_tokens,
+                "output_tokens": comment.question_answer.output_tokens,
+                "processing_status": (
+                    comment.question_answer.processing_status.value
+                    if comment.question_answer.processing_status
+                    else None
+                ),
+                "processing_started_at": comment.question_answer.processing_started_at,
+                "processing_completed_at": comment.question_answer.processing_completed_at,
+            }
+        )
 
     return CommentWithAnswerResponse(**response_data)
 
@@ -152,10 +162,7 @@ async def get_comment_full(
     """
     result = await session.execute(
         select(InstagramComment)
-        .options(
-            selectinload(InstagramComment.classification),
-            selectinload(InstagramComment.question_answer)
-        )
+        .options(selectinload(InstagramComment.classification), selectinload(InstagramComment.question_answer))
         .where(InstagramComment.id == comment_id)
     )
     comment = result.scalar_one_or_none()
@@ -170,34 +177,44 @@ async def get_comment_full(
 
     # Add classification data
     if comment.classification:
-        response_data.update({
-            "classification": comment.classification.classification,
-            "confidence": comment.classification.confidence,
-            "reasoning": comment.classification.reasoning,
-            "classification_status": comment.classification.processing_status.value if comment.classification.processing_status else None,
-            "classification_started_at": comment.classification.processing_started_at,
-            "classification_completed_at": comment.classification.processing_completed_at,
-            "classification_input_tokens": comment.classification.input_tokens,
-            "classification_output_tokens": comment.classification.output_tokens,
-        })
+        response_data.update(
+            {
+                "classification": comment.classification.classification,
+                "confidence": comment.classification.confidence,
+                "reasoning": comment.classification.reasoning,
+                "classification_status": (
+                    comment.classification.processing_status.value if comment.classification.processing_status else None
+                ),
+                "classification_started_at": comment.classification.processing_started_at,
+                "classification_completed_at": comment.classification.processing_completed_at,
+                "classification_input_tokens": comment.classification.input_tokens,
+                "classification_output_tokens": comment.classification.output_tokens,
+            }
+        )
 
     # Add answer and reply data
     if comment.question_answer:
-        response_data.update({
-            "answer": comment.question_answer.answer,
-            "answer_confidence": comment.question_answer.answer_confidence,
-            "answer_quality_score": comment.question_answer.answer_quality_score,
-            "answer_status": comment.question_answer.processing_status.value if comment.question_answer.processing_status else None,
-            "answer_started_at": comment.question_answer.processing_started_at,
-            "answer_completed_at": comment.question_answer.processing_completed_at,
-            "answer_input_tokens": comment.question_answer.input_tokens,
-            "answer_output_tokens": comment.question_answer.output_tokens,
-            "answer_processing_time_ms": comment.question_answer.processing_time_ms,
-            "reply_sent": comment.question_answer.reply_sent,
-            "reply_sent_at": comment.question_answer.reply_sent_at,
-            "reply_status": comment.question_answer.reply_status,
-            "reply_id": comment.question_answer.reply_id,
-        })
+        response_data.update(
+            {
+                "answer": comment.question_answer.answer,
+                "answer_confidence": comment.question_answer.answer_confidence,
+                "answer_quality_score": comment.question_answer.answer_quality_score,
+                "answer_status": (
+                    comment.question_answer.processing_status.value
+                    if comment.question_answer.processing_status
+                    else None
+                ),
+                "answer_started_at": comment.question_answer.processing_started_at,
+                "answer_completed_at": comment.question_answer.processing_completed_at,
+                "answer_input_tokens": comment.question_answer.input_tokens,
+                "answer_output_tokens": comment.question_answer.output_tokens,
+                "answer_processing_time_ms": comment.question_answer.processing_time_ms,
+                "reply_sent": comment.question_answer.reply_sent,
+                "reply_sent_at": comment.question_answer.reply_sent_at,
+                "reply_status": comment.question_answer.reply_status,
+                "reply_id": comment.question_answer.reply_id,
+            }
+        )
 
     return CommentFullResponse(**response_data)
 
@@ -226,8 +243,7 @@ async def list_comments(
     """
     # Build query with filters
     query = select(InstagramComment).options(
-        selectinload(InstagramComment.classification),
-        selectinload(InstagramComment.question_answer)
+        selectinload(InstagramComment.classification), selectinload(InstagramComment.question_answer)
     )
 
     if is_hidden is not None:
@@ -239,9 +255,7 @@ async def list_comments(
         )
 
     if has_reply is not None:
-        query = query.join(InstagramComment.question_answer).where(
-            QuestionAnswer.reply_sent == has_reply
-        )
+        query = query.join(InstagramComment.question_answer).where(QuestionAnswer.reply_sent == has_reply)
 
     # Order by created_at descending (newest first)
     query = query.order_by(InstagramComment.created_at.desc())
@@ -266,10 +280,12 @@ async def list_comments(
         }
 
         if comment.classification:
-            item_data.update({
-                "classification": comment.classification.classification,
-                "confidence": comment.classification.confidence,
-            })
+            item_data.update(
+                {
+                    "classification": comment.classification.classification,
+                    "confidence": comment.classification.confidence,
+                }
+            )
 
         if comment.question_answer:
             item_data["reply_sent"] = comment.question_answer.reply_sent
@@ -291,6 +307,7 @@ async def list_comments(
 # Comment Action Endpoints
 # ============================================================================
 
+
 @router.post("/{comment_id}/hide", response_model=HideCommentResponse)
 async def hide_comment(
     comment_id: str,
@@ -302,9 +319,7 @@ async def hide_comment(
     Returns:
         HideCommentResponse with task ID or error
     """
-    result = await session.execute(
-        select(InstagramComment).where(InstagramComment.id == comment_id)
-    )
+    result = await session.execute(select(InstagramComment).where(InstagramComment.id == comment_id))
     comment = result.scalar_one_or_none()
 
     if not comment:
@@ -340,49 +355,35 @@ async def unhide_comment(
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     """
-    Unhide an Instagram comment (executes immediately).
+    Unhide an Instagram comment (executes immediately using use case).
 
     Returns:
         UnhideCommentResponse with success/error status
     """
-    result = await session.execute(
-        select(InstagramComment).where(InstagramComment.id == comment_id)
-    )
-    comment = result.scalar_one_or_none()
+    # Use Clean Architecture - use case handles all business logic
+    use_case = HideCommentUseCase(session)
+    result = await use_case.execute(comment_id, hide=False)
 
-    if not comment:
-        raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
+    if result["status"] == "error":
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to unhide comment: {result.get('reason', 'Unknown error')}",
+        )
 
-    if not comment.is_hidden:
+    if result["status"] == "not_hidden":
         return UnhideCommentResponse(
             status="not_hidden",
             message=f"Comment {comment_id} is not hidden",
             comment_id=comment_id,
         )
 
-    # Call Instagram API to unhide
-    instagram_service = InstagramGraphAPIService()
-    api_result = await instagram_service.hide_comment(comment_id, hide=False)
+    logger.info(f"Successfully unhid comment {comment_id}")
 
-    if api_result["success"]:
-        # Update database
-        comment.is_hidden = False
-        comment.hidden_at = None
-        await session.commit()
-
-        logger.info(f"Successfully unhid comment {comment_id}")
-
-        return UnhideCommentResponse(
-            status="success",
-            message=f"Comment {comment_id} unhidden successfully",
-            comment_id=comment_id,
-        )
-    else:
-        logger.error(f"Failed to unhide comment {comment_id}: {api_result}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to unhide comment: {api_result.get('error', 'Unknown error')}",
-        )
+    return UnhideCommentResponse(
+        status="success",
+        message=f"Comment {comment_id} unhidden successfully",
+        comment_id=comment_id,
+    )
 
 
 @router.post("/{comment_id}/reply", response_model=SendReplyResponse)
@@ -401,9 +402,7 @@ async def send_manual_reply(
     Returns:
         SendReplyResponse with task ID or error
     """
-    result = await session.execute(
-        select(InstagramComment).where(InstagramComment.id == comment_id)
-    )
+    result = await session.execute(select(InstagramComment).where(InstagramComment.id == comment_id))
     comment = result.scalar_one_or_none()
 
     if not comment:
