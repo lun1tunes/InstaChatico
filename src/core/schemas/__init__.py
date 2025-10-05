@@ -14,14 +14,65 @@ from .webhook import (
     WebhookProcessingResponse,
     TestCommentResponse,
 )
+from .comment import (
+    # Base schemas
+    CommentBase,
+    HidingInfoBase,
+    ClassificationInfoBase,
+    AnswerInfoBase,
+    ReplyInfoBase,
+    TokenUsageBase,
+    # Response schemas
+    CommentDetailResponse,
+    CommentWithClassificationResponse,
+    CommentWithAnswerResponse,
+    CommentFullResponse,
+    # Request schemas
+    HideCommentRequest,
+    UnhideCommentRequest,
+    SendReplyRequest,
+    # Action response schemas
+    HideCommentResponse,
+    UnhideCommentResponse,
+    SendReplyResponse,
+    # List schemas
+    CommentListItem,
+    CommentListResponse,
+)
 
 __all__ = [
+    # Classification
     "ClassificationRequest",
     "ClassificationResponse",
     "ClassificationResultData",
+    # Answer
     "AnswerRequest",
     "AnswerResponse",
     "AnswerResultData",
+    # Webhook
     "WebhookProcessingResponse",
     "TestCommentResponse",
+    # Comment - Base
+    "CommentBase",
+    "HidingInfoBase",
+    "ClassificationInfoBase",
+    "AnswerInfoBase",
+    "ReplyInfoBase",
+    "TokenUsageBase",
+    # Comment - Response
+    "CommentDetailResponse",
+    "CommentWithClassificationResponse",
+    "CommentWithAnswerResponse",
+    "CommentFullResponse",
+    # Comment - Request
+    "HideCommentRequest",
+    "UnhideCommentRequest",
+    "SendReplyRequest",
+    # Comment - Action Response
+    "HideCommentResponse",
+    "UnhideCommentResponse",
+    "SendReplyResponse",
+    # Comment - List
+    "CommentListItem",
+    "CommentListResponse",
 ]

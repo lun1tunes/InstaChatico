@@ -184,6 +184,111 @@ async def send_instagram_reply_async(comment_id: str, answer_text: str, task_ins
 
 
 @celery_app.task(bind=True, max_retries=3)
+def hide_instagram_comment_task(self, comment_id: str):
+    """Synchronous wrapper for hiding Instagram comment"""
+    # Redis-based lock to prevent duplicate processing
+    redis_client = redis.Redis.from_url(settings.celery.broker_url)
+    lock_key = f"instagram_hide_lock:{comment_id}"
+
+    # Try to acquire lock with 30 second timeout
+    if not redis_client.set(lock_key, "processing", nx=True, ex=30):
+        logger.info(f"Hide task for comment {comment_id} is already being processed, skipping")
+        return {"status": "skipped", "reason": "already_processing"}
+
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(hide_instagram_comment_async(comment_id, self))
+            return result
+        finally:
+            loop.close()
+    finally:
+        # Release the lock
+        redis_client.delete(lock_key)
+
+
+async def hide_instagram_comment_async(comment_id: str, task_instance=None):
+    """Asynchronous task for hiding Instagram comment"""
+    engine = create_async_engine(settings.db.url, echo=settings.db.echo)
+    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+    async with session_factory() as session:
+        try:
+            # Get the comment
+            result = await session.execute(
+                select(InstagramComment)
+                .where(InstagramComment.id == comment_id)
+            )
+            comment = result.scalar_one_or_none()
+
+            if not comment:
+                logger.warning(f"Comment {comment_id} not found")
+                return {"status": "error", "reason": "comment_not_found"}
+
+            # Check if comment is already hidden
+            if comment.is_hidden:
+                logger.info(f"Comment {comment_id} is already hidden")
+                return {"status": "skipped", "reason": "already_hidden"}
+
+            # Check if we're in development mode - skip actual Instagram API call
+            development_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
+
+            if development_mode:
+                logger.info(f"DEVELOPMENT_MODE: Skipping Instagram API call to hide comment {comment_id}")
+                # Simulate successful hide without actually calling Instagram API
+                hide_result = {
+                    "success": True,
+                    "response": {"test_mode": True, "message": "Hide skipped in development mode"},
+                }
+            else:
+                # Initialize Instagram service
+                instagram_service = InstagramGraphAPIService()
+                # Hide the comment
+                hide_result = await instagram_service.hide_comment(comment_id, hide=True)
+
+            if hide_result["success"]:
+                # Mark comment as hidden in the database
+                comment.is_hidden = True
+                comment.hidden_at = now_db_utc()
+                await session.commit()
+
+                logger.info(f"Successfully hid Instagram comment {comment_id}")
+                return {"status": "success", "comment_id": comment_id, "hide_result": hide_result}
+            else:
+                # Log the error but don't mark as failed yet (might retry)
+                logger.error(f"Failed to hide Instagram comment {comment_id}: {hide_result}")
+
+                if task_instance and task_instance.request.retries < task_instance.max_retries:
+                    # Use shorter retry intervals for Instagram API rate limiting
+                    retry_countdown = min(2**task_instance.request.retries * 30, 300)  # Max 5 minutes
+                    logger.warning(
+                        f"Instagram API error for comment {comment_id}, retry {task_instance.request.retries + 1}/{task_instance.max_retries} in {retry_countdown}s"
+                    )
+                    raise task_instance.retry(
+                        countdown=retry_countdown, exc=Exception(hide_result.get("error", "Unknown error"))
+                    )
+
+                return {
+                    "status": "error",
+                    "comment_id": comment_id,
+                    "reason": hide_result.get("error", "Unknown error"),
+                }
+
+        except Exception as exc:
+            logger.exception(f"Error hiding Instagram comment {comment_id}")
+            await session.rollback()
+
+            if task_instance and task_instance.request.retries < task_instance.max_retries:
+                retry_countdown = 2**task_instance.request.retries * 60
+                raise task_instance.retry(countdown=retry_countdown, exc=exc)
+
+            return {"status": "error", "reason": str(exc)}
+        finally:
+            await engine.dispose()
+
+
+@celery_app.task(bind=True, max_retries=3)
 def process_pending_replies_task(self):
     """Periodic task for processing pending replies"""
     loop = asyncio.new_event_loop()

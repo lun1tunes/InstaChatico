@@ -149,9 +149,24 @@ async def classify_comment_async(comment_id: str, task_instance=None):
                 except Exception:
                     logger.exception(f"Failed to generate answer for comment {comment_id}")
 
+            # Hide comment if it's classified as toxic or urgent complaint
+            if classification_result.classification and classification_result.classification.lower() in [
+                "urgent issue / complaint",
+                "toxic / abusive",
+            ]:
+                classification_lower = classification_result.classification.lower()
+                logger.info(f"Triggering hide comment task for {classification_lower} comment {comment_id}")
+                try:
+                    result = celery_app.send_task(
+                        "core.tasks.instagram_reply_tasks.hide_instagram_comment_task", args=[comment_id]
+                    )
+                    logger.info(f"Hide comment task queued for comment {comment_id} (task_id={result.id})")
+                except Exception as e:
+                    logger.exception(f"Failed to queue hide comment task for comment {comment_id}")
+
             # Trigger Telegram notification if comment requires attention
-            # Note: "toxic / abusive" is NOT notified - we ignore such comments
-            elif classification_result.classification and classification_result.classification.lower() in [
+            # Note: "toxic / abusive" is NOT notified - we just hide them
+            if classification_result.classification and classification_result.classification.lower() in [
                 "urgent issue / complaint",
                 "critical feedback",
                 "partnership proposal",

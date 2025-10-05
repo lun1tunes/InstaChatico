@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, ForeignKey
+from sqlalchemy import String, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from .base import Base
 
@@ -22,6 +22,10 @@ class InstagramComment(Base):
     text: Mapped[str]
     created_at: Mapped[datetime]
     raw_data = mapped_column(JSONB)
+
+    # Comment hiding fields
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="Whether comment is hidden on Instagram")
+    hidden_at: Mapped[datetime | None] = mapped_column(nullable=True, comment="Timestamp when comment was hidden")
 
     # Parent comment ID for replies (nullable)
     parent_id: Mapped[str | None] = mapped_column(

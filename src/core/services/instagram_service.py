@@ -238,3 +238,48 @@ class InstagramGraphAPIService:
         except Exception as e:
             logger.exception("Exception while getting page info")
             return {"success": False, "error": str(e), "status_code": None}
+
+    async def hide_comment(self, comment_id: str, hide: bool = True) -> Dict[str, Any]:
+        """
+        Hide or unhide an Instagram comment via Graph API.
+
+        Note: Comments from media owners to their own media will always be shown.
+        Live video comments are not supported.
+
+        Args:
+            comment_id: The ID of the Instagram comment to hide/unhide
+            hide: True to hide the comment, False to unhide (default: True)
+
+        Returns:
+            Dict containing success status, response data, and status code
+        """
+        url = f"{self.base_url}/{comment_id}"
+        params = {"access_token": self.access_token, "hide": str(hide).lower()}
+
+        try:
+            logger.info(f"{'Hiding' if hide else 'Unhiding'} comment {comment_id}")
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, params=params) as response:
+                    response_data = await response.json()
+
+                    if response.status == 200:
+                        logger.info(f"Successfully {'hid' if hide else 'unhid'} comment {comment_id}")
+                        return {
+                            "success": True,
+                            "response": response_data,
+                            "status_code": response.status,
+                        }
+                    else:
+                        logger.error(
+                            f"Failed to {'hide' if hide else 'unhide'} comment {comment_id}: {response_data}"
+                        )
+                        return {
+                            "success": False,
+                            "error": response_data,
+                            "status_code": response.status,
+                        }
+
+        except Exception as e:
+            logger.exception(f"Exception while {'hiding' if hide else 'unhiding'} comment {comment_id}")
+            return {"success": False, "error": str(e), "status_code": None}

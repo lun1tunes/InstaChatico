@@ -52,6 +52,9 @@ celery_app.conf.update(
         "core.tasks.instagram_reply_tasks.send_instagram_reply_task": {
             "queue": "instagram_queue"
         },
+        "core.tasks.instagram_reply_tasks.hide_instagram_comment_task": {
+            "queue": "instagram_queue"
+        },
         "core.tasks.instagram_reply_tasks.process_pending_replies_task": {
             "queue": "instagram_queue"
         },

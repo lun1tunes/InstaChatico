@@ -3,12 +3,14 @@ import logging
 
 from .comment_webhooks.views import router as webhooks_router
 from .telegram.views import router as telegram_router
+from .comments.views import router as comments_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 router.include_router(router=webhooks_router, prefix="/webhook")
 router.include_router(router=telegram_router, prefix="/telegram")
+router.include_router(router=comments_router)
 
 # Try to load documents router (requires boto3, pdfplumber, python-docx)
 try:
