@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Boolean, DateTime
+from sqlalchemy import String, Integer, Boolean, DateTime, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from .base import Base
 
@@ -14,9 +14,9 @@ class Media(Base):
     __tablename__ = "media"
 
     id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="Instagram media ID")
-    permalink: Mapped[str] = mapped_column(String(500), nullable=False, comment="Instagram post permalink URL")
+    permalink: Mapped[str] = mapped_column(Text, nullable=False, comment="Instagram post permalink URL")
     caption: Mapped[str | None] = mapped_column(String, nullable=True, comment="Post caption text")
-    media_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="URL to the media file (first image for carousels)")
+    media_url: Mapped[str | None] = mapped_column(Text, nullable=True, comment="URL to the media file (first image for carousels)")
     media_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True, comment="Type of media (IMAGE, VIDEO, CAROUSEL_ALBUM)"
     )
