@@ -13,6 +13,7 @@ from core.models import db_helper
 from core.models.instagram_comment import InstagramComment
 from core.models.comment_classification import CommentClassification
 from core.models.question_answer import QuestionAnswer
+from core.repositories.comment import CommentRepository
 from core.schemas.comment import (
     CommentDetailResponse,
     CommentWithClassificationResponse,
@@ -48,8 +49,9 @@ async def get_comment(
     Returns:
         CommentDetailResponse with id, text, username, hiding status, etc.
     """
-    result = await session.execute(select(InstagramComment).where(InstagramComment.id == comment_id))
-    comment = result.scalar_one_or_none()
+    # Use repository for data access
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_by_id(comment_id)
 
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
@@ -68,12 +70,9 @@ async def get_comment_with_classification(
     Returns:
         CommentWithClassificationResponse including classification, confidence, reasoning, tokens
     """
-    result = await session.execute(
-        select(InstagramComment)
-        .options(selectinload(InstagramComment.classification))
-        .where(InstagramComment.id == comment_id)
-    )
-    comment = result.scalar_one_or_none()
+    # Use repository for data access
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_with_classification(comment_id)
 
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
@@ -113,12 +112,9 @@ async def get_comment_with_answer(
     Returns:
         CommentWithAnswerResponse including answer, confidence, quality score, tokens
     """
-    result = await session.execute(
-        select(InstagramComment)
-        .options(selectinload(InstagramComment.question_answer))
-        .where(InstagramComment.id == comment_id)
-    )
-    comment = result.scalar_one_or_none()
+    # Use repository for data access
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_with_answer(comment_id)
 
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
@@ -160,12 +156,9 @@ async def get_comment_full(
     Returns:
         CommentFullResponse with all available data about the comment
     """
-    result = await session.execute(
-        select(InstagramComment)
-        .options(selectinload(InstagramComment.classification), selectinload(InstagramComment.question_answer))
-        .where(InstagramComment.id == comment_id)
-    )
-    comment = result.scalar_one_or_none()
+    # Use repository for data access
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_full(comment_id)
 
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
@@ -319,8 +312,9 @@ async def hide_comment(
     Returns:
         HideCommentResponse with task ID or error
     """
-    result = await session.execute(select(InstagramComment).where(InstagramComment.id == comment_id))
-    comment = result.scalar_one_or_none()
+    # Use repository for data access
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_by_id(comment_id)
 
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
@@ -402,8 +396,9 @@ async def send_manual_reply(
     Returns:
         SendReplyResponse with task ID or error
     """
-    result = await session.execute(select(InstagramComment).where(InstagramComment.id == comment_id))
-    comment = result.scalar_one_or_none()
+    # Use repository for data access
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_by_id(comment_id)
 
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")

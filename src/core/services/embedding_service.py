@@ -3,11 +3,11 @@
 import logging
 from typing import List, Dict, Optional
 from openai import AsyncOpenAI
-from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..models import ProductEmbedding
+from ..repositories.product_embedding import ProductEmbeddingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -85,66 +85,15 @@ class EmbeddingService:
             # Generate embedding for the query
             query_embedding = await self.generate_embedding(query)
 
-            # Build the SQL query with pgvector's cosine distance operator (<=>)
-            # Cosine distance = 1 - cosine_similarity
-            # So similarity = 1 - distance
-            sql_query = """
-                SELECT
-                    id,
-                    title,
-                    description,
-                    category,
-                    price,
-                    tags,
-                    url,
-                    image_url,
-                    1 - (embedding <=> :query_embedding) as similarity
-                FROM product_embeddings
-                WHERE 1=1
-            """
-
-            # Add filters
-            params = {"query_embedding": str(query_embedding), "limit": limit}
-
-            if not include_inactive:
-                sql_query += " AND is_active = true"
-
-            if category_filter:
-                sql_query += " AND category = :category"
-                params["category"] = category_filter
-
-            # Order by similarity (highest first) and limit
-            sql_query += " ORDER BY embedding <=> :query_embedding LIMIT :limit"
-
-            # Execute the query
-            result = await session.execute(text(sql_query), params)
-            rows = result.fetchall()
-
-            # Process results and detect out-of-distribution
-            results = []
-            for row in rows:
-                similarity = float(row.similarity)
-                is_ood = similarity < self.SIMILARITY_THRESHOLD
-
-                result_dict = {
-                    "id": row.id,
-                    "title": row.title,
-                    "description": row.description,
-                    "category": row.category,
-                    "price": row.price,
-                    "tags": row.tags,
-                    "url": row.url,
-                    "image_url": row.image_url,
-                    "similarity": round(similarity, 4),
-                    "is_ood": is_ood,
-                }
-
-                results.append(result_dict)
-
-                logger.debug(
-                    f"Found: {row.title} (similarity: {similarity:.4f}, "
-                    f"OOD: {is_ood})"
-                )
+            # Use repository for vector search
+            product_repo = ProductEmbeddingRepository(session)
+            results = await product_repo.search_by_similarity(
+                query_embedding=query_embedding,
+                limit=limit,
+                category_filter=category_filter,
+                include_inactive=include_inactive,
+                similarity_threshold=self.SIMILARITY_THRESHOLD,
+            )
 
             logger.info(
                 f"Found {len(results)} results for query: {query}, "
@@ -190,7 +139,9 @@ class EmbeddingService:
                 is_active=is_active
             )
 
-            session.add(product)
+            # Use repository to create product
+            product_repo = ProductEmbeddingRepository(session)
+            product = await product_repo.create(product)
             await session.commit()
             await session.refresh(product)
 
@@ -212,11 +163,9 @@ class EmbeddingService:
         try:
             logger.info(f"Updating embedding for product ID: {product_id}")
 
-            # Get product
-            result = await session.execute(
-                select(ProductEmbedding).where(ProductEmbedding.id == product_id)
-            )
-            product = result.scalar_one_or_none()
+            # Use repository to get product
+            product_repo = ProductEmbeddingRepository(session)
+            product = await product_repo.get_by_id(product_id)
 
             if not product:
                 logger.warning(f"Product {product_id} not found")
@@ -226,8 +175,8 @@ class EmbeddingService:
             text_to_embed = f"{product.title}\n{product.description}"
             embedding = await self.generate_embedding(text_to_embed)
 
-            # Update product
-            product.embedding = embedding
+            # Update product using repository
+            await product_repo.update_embedding(product, embedding)
             await session.commit()
             await session.refresh(product)
 

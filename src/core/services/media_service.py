@@ -3,11 +3,11 @@ from typing import Optional
 from datetime import datetime
 from ..utils.time import now_db_utc
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .instagram_service import InstagramGraphAPIService
 from ..models import Media
+from ..repositories.media import MediaRepository
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,11 @@ class MediaService:
     async def get_or_create_media(self, media_id: str, session: AsyncSession) -> Optional[Media]:
         """Get media from DB or fetch from Instagram API."""
         try:
+            # Use repository for data access
+            media_repo = MediaRepository(session)
+
             # First, check if media already exists in database
-            existing_media = await session.execute(select(Media).where(Media.id == media_id))
-            media = existing_media.scalar_one_or_none()
+            media = await media_repo.get_by_id(media_id)
 
             if media:
                 logger.debug(f"Media {media_id} already exists in database")
@@ -78,8 +80,8 @@ class MediaService:
                 updated_at=now_db_utc(),
             )
 
-            # Add to session and commit
-            session.add(media)
+            # Use repository to create media
+            media = await media_repo.create(media)
             await session.commit()
             await session.refresh(media)
 
@@ -158,11 +160,11 @@ class MediaService:
     async def ensure_media_exists(self, media_id: str, session: AsyncSession) -> bool:
         """Ensure media exists in DB, queue task if not found."""
         try:
-            # Check if media already exists
-            existing_media = await session.execute(select(Media).where(Media.id == media_id))
-            media = existing_media.scalar_one_or_none()
+            # Use repository for data access
+            media_repo = MediaRepository(session)
 
-            if media:
+            # Check if media already exists
+            if await media_repo.exists_by_id(media_id):
                 logger.debug(f"Media {media_id} already exists in database")
                 return True
 

@@ -6,10 +6,9 @@ Retrieves and formats document content for AI agent context.
 
 import logging
 from typing import List, Optional
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.models.document import Document
+from core.repositories.document import DocumentRepository
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +27,11 @@ class DocumentContextService:
             Formatted markdown string with all document content
         """
         try:
-            # Fetch all completed documents
-            stmt = (
-                select(Document)
-                .where(Document.processing_status == "completed", Document.markdown_content.isnot(None))
-                .order_by(Document.created_at.desc())
-            )
+            # Use repository for data access
+            document_repo = DocumentRepository(session)
 
-            result = await session.execute(stmt)
-            documents = result.scalars().all()
+            # Fetch all completed documents
+            documents = await document_repo.get_completed_with_content()
 
             if not documents:
                 logger.info("No documents found")
@@ -72,23 +67,9 @@ class DocumentContextService:
             Dict with document statistics
         """
         try:
-            stmt = select(Document)
-
-            result = await session.execute(stmt)
-            documents = result.scalars().all()
-
-            total = len(documents)
-            completed = sum(1 for d in documents if d.processing_status == "completed")
-            failed = sum(1 for d in documents if d.processing_status == "failed")
-            pending = sum(1 for d in documents if d.processing_status == "pending")
-
-            return {
-                "total_documents": total,
-                "completed": completed,
-                "failed": failed,
-                "pending": pending,
-                "types": list(set(d.document_type for d in documents)),
-            }
+            # Use repository for data access
+            document_repo = DocumentRepository(session)
+            return await document_repo.get_summary_stats()
 
         except Exception as e:
             logger.error(f"Error getting document summary: {e}")
