@@ -163,9 +163,10 @@ class InstagramGraphAPIService:
         """
         url = f"{self.base_url}/{media_id}"
 
+        # Include children{media_url,media_type} to get all images from CAROUSEL_ALBUM
         params = {
             "access_token": self.access_token,
-            "fields": "permalink,comments_count,like_count,shortcode,timestamp,is_comment_enabled,media_type,media_url,username,owner,caption",
+            "fields": "permalink,comments_count,like_count,shortcode,timestamp,is_comment_enabled,media_type,media_url,username,owner,caption,children{media_url,media_type}",
         }
 
         try:

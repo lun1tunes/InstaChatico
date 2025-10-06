@@ -16,12 +16,15 @@ class Media(Base):
     id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="Instagram media ID")
     permalink: Mapped[str] = mapped_column(String(500), nullable=False, comment="Instagram post permalink URL")
     caption: Mapped[str | None] = mapped_column(String, nullable=True, comment="Post caption text")
-    media_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="URL to the media file")
+    media_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="URL to the media file (first image for carousels)")
     media_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True, comment="Type of media (IMAGE, VIDEO, CAROUSEL_ALBUM)"
     )
     media_context: Mapped[str | None] = mapped_column(
         String, nullable=True, comment="AI-generated detailed description and context of the media image"
+    )
+    children_media_urls = mapped_column(
+        JSONB, nullable=True, comment="Array of all media URLs for CAROUSEL_ALBUM (includes all children images/videos)"
     )
     comments_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Number of comments on the post")
     like_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Number of likes on the post")

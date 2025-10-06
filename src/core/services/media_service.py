@@ -49,13 +49,23 @@ class MediaService:
 
             media_info = api_response["media_info"]
 
+            # Extract and process children media URLs for carousels
+            children_media_urls = self._extract_carousel_children_urls(media_info)
+
+            # For carousels, use first child URL as media_url if not present
+            media_url = media_info.get("media_url")
+            if media_info.get("media_type") == "CAROUSEL_ALBUM" and children_media_urls and not media_url:
+                media_url = children_media_urls[0] if children_media_urls else None
+                logger.info(f"Using first child URL as media_url for carousel {media_id}")
+
             # Create new Media object
             media = Media(
                 id=media_id,
                 permalink=media_info.get("permalink"),
                 caption=media_info.get("caption"),
-                media_url=media_info.get("media_url"),
+                media_url=media_url,
                 media_type=media_info.get("media_type"),
+                children_media_urls=children_media_urls,  # Store all carousel URLs
                 comments_count=media_info.get("comments_count"),
                 like_count=media_info.get("like_count"),
                 shortcode=media_info.get("shortcode"),
@@ -90,6 +100,38 @@ class MediaService:
             logger.exception(f"Exception while getting/creating media {media_id}")
             await session.rollback()
             return None
+
+    def _extract_carousel_children_urls(self, media_info: dict) -> Optional[list]:
+        """
+        Extract media URLs from carousel children.
+
+        Args:
+            media_info: Raw media info from Instagram API
+
+        Returns:
+            List of media URLs or None if not a carousel or no children
+        """
+        if media_info.get("media_type") != "CAROUSEL_ALBUM":
+            return None
+
+        if "children" not in media_info:
+            return None
+
+        children_data = media_info.get("children", {}).get("data", [])
+        if not children_data:
+            return None
+
+        children_urls = [
+            child.get("media_url")
+            for child in children_data
+            if child.get("media_url")
+        ]
+
+        if children_urls:
+            logger.info(f"Extracted {len(children_urls)} children media URLs from carousel")
+            return children_urls
+
+        return None
 
     def _parse_timestamp(self, timestamp_str: Optional[str]) -> Optional[datetime]:
         """Parse ISO timestamp string to datetime."""

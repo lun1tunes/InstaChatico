@@ -82,8 +82,14 @@ class CommentClassificationService(BaseService):
         description_parts = []
 
         # Basic media info
-        if media_context.get("media_type"):
-            description_parts.append(f"Post Type: {media_context['media_type']}")
+        media_type = media_context.get("media_type")
+        if media_type:
+            # Add carousel info if present
+            if media_type == "CAROUSEL_ALBUM" and media_context.get("children_media_urls"):
+                num_images = len(media_context["children_media_urls"])
+                description_parts.append(f"Post Type: CAROUSEL_ALBUM ({num_images} изображений)")
+            else:
+                description_parts.append(f"Post Type: {media_type}")
 
         if media_context.get("username"):
             description_parts.append(f"Author: @{media_context['username']}")

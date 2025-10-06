@@ -39,6 +39,18 @@ from .comment import (
     CommentListItem,
     CommentListResponse,
 )
+from .media import (
+    # Base schemas
+    MediaBase,
+    MediaResponse,
+    MediaDetailResponse,
+    # API schemas
+    CarouselChild,
+    InstagramMediaAPIResponse,
+    # Result schemas
+    MediaAnalysisResult,
+    MediaCreateResult,
+)
 
 __all__ = [
     # Classification
@@ -75,4 +87,14 @@ __all__ = [
     # Comment - List
     "CommentListItem",
     "CommentListResponse",
+    # Media - Base
+    "MediaBase",
+    "MediaResponse",
+    "MediaDetailResponse",
+    # Media - API
+    "CarouselChild",
+    "InstagramMediaAPIResponse",
+    # Media - Result
+    "MediaAnalysisResult",
+    "MediaCreateResult",
 ]
