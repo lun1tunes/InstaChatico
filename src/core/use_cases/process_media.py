@@ -2,9 +2,8 @@
 
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from ..models import Media
+from ..repositories.media import MediaRepository
 from ..services.media_service import MediaService
 from ..services.media_analysis_service import MediaAnalysisService
 from ..utils.decorators import handle_task_errors
@@ -18,17 +17,15 @@ class ProcessMediaUseCase:
 
     def __init__(self, session: AsyncSession, media_service=None, analysis_service=None):
         self.session = session
+        self.media_repo = MediaRepository(session)
         self.media_service = media_service or MediaService()
         self.analysis_service = analysis_service or MediaAnalysisService()
 
     @handle_task_errors()
     async def execute(self, media_id: str) -> MediaCreateResult:
         """Execute media processing use case."""
-        # 1. Check if media exists
-        result = await self.session.execute(
-            select(Media).where(Media.id == media_id)
-        )
-        existing_media = result.scalar_one_or_none()
+        # 1. Check if media exists using repository
+        existing_media = await self.media_repo.get_by_id(media_id)
 
         if existing_media:
             return MediaCreateResult(
@@ -74,16 +71,14 @@ class AnalyzeMediaUseCase:
 
     def __init__(self, session: AsyncSession, analysis_service=None):
         self.session = session
+        self.media_repo = MediaRepository(session)
         self.analysis_service = analysis_service or MediaAnalysisService()
 
     @handle_task_errors()
     async def execute(self, media_id: str) -> MediaAnalysisResult:
         """Execute media analysis use case."""
-        # 1. Get media
-        result = await self.session.execute(
-            select(Media).where(Media.id == media_id)
-        )
-        media = result.scalar_one_or_none()
+        # 1. Get media using repository
+        media = await self.media_repo.get_by_id(media_id)
 
         if not media:
             return MediaAnalysisResult(

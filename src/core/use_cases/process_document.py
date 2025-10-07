@@ -1,14 +1,13 @@
 """Process document use case - handles document processing business logic."""
 
 from typing import Dict, Any
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from ..models.document import Document
+from ..repositories.document import DocumentRepository
 from ..services.s3_service import s3_service
 from ..services.document_processing_service import document_processing_service
 from ..utils.decorators import handle_task_errors
+from ..utils.time import now_db_utc
 
 
 class ProcessDocumentUseCase:
@@ -21,22 +20,21 @@ class ProcessDocumentUseCase:
         doc_processing_service=None
     ):
         self.session = session
+        self.document_repo = DocumentRepository(session)
         self.s3_service = s3_service_instance or s3_service
         self.doc_processing = doc_processing_service or document_processing_service
 
     @handle_task_errors()
     async def execute(self, document_id: str) -> Dict[str, Any]:
         """Execute document processing use case."""
-        # 1. Get document
-        stmt = select(Document).where(Document.id == document_id)
-        result = await self.session.execute(stmt)
-        document = result.scalar_one_or_none()
+        # 1. Get document using repository
+        document = await self.document_repo.get_by_id(document_id)
 
         if not document:
             return {"status": "error", "reason": f"Document {document_id} not found"}
 
-        # 2. Update status to processing
-        document.processing_status = "processing"
+        # 2. Update status to processing using repository method
+        await self.document_repo.mark_processing(document)
         await self.session.commit()
 
         try:
@@ -54,13 +52,9 @@ class ProcessDocumentUseCase:
             if not success:
                 raise Exception(f"Failed to process document: {error}")
 
-            # 5. Update document with results
-            document.markdown_content = markdown
+            # 5. Update document with results using repository method
+            await self.document_repo.mark_completed(document, markdown)
             document.content_hash = content_hash
-            document.processing_status = "completed"
-            document.processed_at = datetime.utcnow()
-            document.processing_error = None
-
             await self.session.commit()
 
             return {
@@ -70,8 +64,7 @@ class ProcessDocumentUseCase:
             }
 
         except Exception as exc:
-            # Update document with error
-            document.processing_status = "failed"
-            document.processing_error = str(exc)
+            # Update document with error using repository method
+            await self.document_repo.mark_failed(document, str(exc))
             await self.session.commit()
             raise exc

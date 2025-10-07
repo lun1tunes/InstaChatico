@@ -63,19 +63,11 @@ celery_app.conf.update(
     worker_cancel_long_running_tasks_on_connection_loss=True,
 )
 
-# Периодические задачи
+# Периодические задачи - ONLY tasks that actually exist!
 celery_app.conf.beat_schedule = {
     "retry-failed-classifications": {
         "task": "core.tasks.classification_tasks.retry_failed_classifications",
-        "schedule": crontab(minute="*/15"),
-    },
-    "retry-failed-answers": {
-        "task": "core.tasks.answer_tasks.retry_failed_answers",
-        "schedule": crontab(minute="*/20"),
-    },
-    "process-pending-questions": {
-        "task": "core.tasks.answer_tasks.process_pending_questions_task",
-        "schedule": crontab(minute="*"),  # Every minute
+        "schedule": crontab(minute="*/15"),  # Every 15 minutes
     },
     "check-system-health": {
         "task": "core.tasks.health_tasks.check_system_health_task",

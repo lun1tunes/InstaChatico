@@ -6,12 +6,12 @@ Handles file upload/download to SelectCloud S3-compatible storage.
 
 import logging
 from typing import BinaryIO, Optional
-from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
 from botocore.config import Config
 
 from core.config import settings
+from core.utils.time import now_db_utc
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ class S3Service:
         Returns:
             S3 key in format: documents/{client_id}/{timestamp}_{filename}
         """
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_db_utc().strftime("%Y%m%d_%H%M%S")
         # Sanitize filename
         safe_filename = filename.replace(" ", "_").replace("/", "_")
         return f"documents/{client_id}/{timestamp}_{safe_filename}"

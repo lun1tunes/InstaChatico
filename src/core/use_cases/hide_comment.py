@@ -1,12 +1,12 @@
 """Hide comment use case - handles comment hiding business logic."""
 
 from typing import Dict, Any
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
 from ..services.instagram_service import InstagramGraphAPIService
 from ..utils.decorators import handle_task_errors
+from ..utils.time import now_db_utc
 
 
 class HideCommentUseCase:
@@ -46,7 +46,7 @@ class HideCommentUseCase:
 
         # 4. Update database
         comment.is_hidden = hide
-        comment.hidden_at = datetime.utcnow() if hide else None
+        comment.hidden_at = now_db_utc() if hide else None
         await self.session.commit()
 
         return {

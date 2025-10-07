@@ -2,27 +2,20 @@
 
 import logging
 import os
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.logging_config import trace_id_ctx
 from core.models import db_helper
-from core.models.comment_classification import CommentClassification, ProcessingStatus
-from core.models.instagram_comment import InstagramComment
-from core.models.media import Media
 from core.schemas.webhook import WebhookProcessingResponse, TestCommentResponse
-from core.services.media_service import MediaService
-from core.use_cases.classify_comment import ClassifyCommentUseCase
-from core.use_cases.generate_answer import GenerateAnswerUseCase
+from core.use_cases.process_webhook_comment import ProcessWebhookCommentUseCase
+from core.use_cases.test_comment_processing import TestCommentProcessingUseCase
 from core.tasks.classification_tasks import classify_comment_task
 
-from .helpers import extract_comment_data, get_existing_comment, should_skip_comment
+from .helpers import should_skip_comment, extract_comment_data
 from .schemas import TestCommentPayload, WebhookPayload
 
 logger = logging.getLogger(__name__)
@@ -64,7 +57,7 @@ async def process_webhook(
     skipped_count = 0
 
     try:
-        # Use Pydantic helper to extract all comments
+        # Extract all comments from webhook
         comments = webhook_data.get_all_comments()
         logger.info(f"Webhook received {len(comments)} comment(s)")
 
@@ -79,49 +72,32 @@ async def process_webhook(
                     skipped_count += 1
                     continue
 
-                # Check if comment already exists
-                existing = await get_existing_comment(comment_id, session)
-                if existing:
-                    logger.debug(f"Comment {comment_id} already exists")
-
-                    # Re-queue classification if incomplete
-                    if (
-                        not existing.classification
-                        or existing.classification.processing_status != ProcessingStatus.COMPLETED
-                    ):
-                        classify_comment_task.delay(comment_id)
-                        logger.info(f"Re-queued classification for {comment_id}")
-
-                    skipped_count += 1
-                    continue
-
-                # Ensure media exists
-                media_service = MediaService()
-                media = await media_service.get_or_create_media(comment.media.id, session)
-                if not media:
-                    logger.error(f"Failed to create media {comment.media.id}")
-                    skipped_count += 1
-                    continue
-
-                # Create comment record
+                # Process comment using Use Case
+                use_case = ProcessWebhookCommentUseCase(session)
                 comment_data = extract_comment_data(comment, entry.time)
-                new_comment = InstagramComment(**comment_data)
-                new_comment.classification = CommentClassification(comment_id=comment_id)
 
-                session.add(new_comment)
-                await session.commit()
+                result = await use_case.execute(
+                    comment_id=comment_id,
+                    media_id=comment_data["media_id"],
+                    user_id=comment_data["user_id"],
+                    username=comment_data["username"],
+                    text=comment_data["text"],
+                    entry_timestamp=entry.time,
+                    parent_id=comment_data.get("parent_id"),
+                    raw_data=comment_data.get("raw_data"),
+                )
 
-                # Queue for classification
-                classify_comment_task.delay(comment_id)
-                logger.info(f"Comment {comment_id} saved and queued for classification")
-                processed_count += 1
+                # Queue classification if needed
+                if result.get("should_classify"):
+                    classify_comment_task.delay(comment_id)
+                    logger.info(f"Comment {comment_id} queued for classification")
 
-            except IntegrityError:
-                await session.rollback()
-                logger.warning(f"Comment {comment_id} inserted by another process")
-                skipped_count += 1
+                if result["status"] == "created":
+                    processed_count += 1
+                else:
+                    skipped_count += 1
+
             except Exception:
-                await session.rollback()
                 logger.exception(f"Error processing comment {comment_id}")
                 skipped_count += 1
 
@@ -133,7 +109,6 @@ async def process_webhook(
 
     except Exception:
         logger.exception("Unexpected error processing webhook")
-        await session.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -159,114 +134,39 @@ async def test_comment_processing(
     logger.info(f"Processing test comment: {test_data.comment_id}")
 
     try:
-        # Step 1: Create or get media
-        media_service = MediaService()
+        # Process test comment using Use Case
+        use_case = TestCommentProcessingUseCase(session)
 
-        # Check if media exists, if not create a test media record
-        media_result = await session.execute(select(Media).where(Media.id == test_data.media_id))
-        media = media_result.scalar_one_or_none()
-
-        if not media:
-            media = Media(
-                id=test_data.media_id,
-                permalink=f"https://instagram.com/p/test_{test_data.media_id}/",
-                caption=test_data.media_caption or "Test media caption",
-                media_url=test_data.media_url,
-                media_type="IMAGE",
-                username="test_user",
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            )
-            session.add(media)
-            await session.commit()
-            logger.info(f"Created test media: {test_data.media_id}")
-
-        # Step 2: Create or update comment
-        existing_comment = await get_existing_comment(test_data.comment_id, session)
-
-        if existing_comment:
-            logger.info(f"Test comment {test_data.comment_id} already exists, will process anyway")
-            comment = existing_comment
-            # Update comment text if changed
-            comment.text = test_data.text
-            comment.parent_id = test_data.parent_id
-        else:
-            comment = InstagramComment(
-                id=test_data.comment_id,
-                media_id=test_data.media_id,
-                user_id=test_data.user_id,
-                username=test_data.username,
-                text=test_data.text,
-                parent_id=test_data.parent_id,
-                created_at=datetime.utcnow(),
-                raw_data={"test": True},
-            )
-            session.add(comment)
-            logger.info(f"Created test comment: {test_data.comment_id}")
-
-        # Step 3: Create or get classification record
-        if not existing_comment or not existing_comment.classification:
-            classification = CommentClassification(
-                comment_id=test_data.comment_id,
-                processing_status=ProcessingStatus.PENDING,
-            )
-            session.add(classification)
-
-        await session.commit()
-
-        # Step 4: Run classification using use case (Clean Architecture!)
-        logger.info(f"Running classification for test comment {test_data.comment_id}")
-        use_case = ClassifyCommentUseCase(session)
-        classification_result = await use_case.execute(test_data.comment_id, retry_count=0)
-
-        if classification_result.get("status") == "error":
-            raise HTTPException(status_code=500, detail=f"Classification failed: {classification_result.get('reason')}")
-
-        # Step 5: Check if it's a question
-        classification_type = classification_result.get("classification", "").lower()
-        logger.info(f"Test comment classified as: {classification_type}")
-
-        # Get reasoning from database
-        comment_with_class = await session.execute(
-            select(InstagramComment).where(InstagramComment.id == test_data.comment_id)
+        result = await use_case.execute(
+            comment_id=test_data.comment_id,
+            media_id=test_data.media_id,
+            user_id=test_data.user_id,
+            username=test_data.username,
+            text=test_data.text,
+            parent_id=test_data.parent_id,
+            media_caption=test_data.media_caption,
+            media_url=test_data.media_url,
         )
-        comment_obj = comment_with_class.scalar_one_or_none()
-        reasoning = None
-        if comment_obj and hasattr(comment_obj, "classification") and comment_obj.classification:
-            reasoning = comment_obj.classification.reasoning
 
-        # Prepare processing details
-        processing_details = {"classification_result": classification_result}
-        answer_text = None
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result.get("reason"))
 
-        # Step 6: If it's a question, generate answer using use case
-        if classification_type == "question / inquiry":
-            logger.info(f"Generating answer for test question {test_data.comment_id}")
-            answer_use_case = GenerateAnswerUseCase(session)
-            answer_result = await answer_use_case.execute(test_data.comment_id, retry_count=0)
-
-            if answer_result.get("status") == "error":
-                processing_details["answer_error"] = answer_result.get("reason")
-            else:
-                answer_text = answer_result.get("answer")
-                processing_details["answer_result"] = answer_result
-
-            logger.info(f"Test comment processing complete. Answer generated: {bool(answer_result.get('answer'))}")
-        else:
-            logger.info(f"Test comment is not a question, skipping answer generation")
+        logger.info(
+            f"Test comment processing complete. Classification: {result.get('classification')}, "
+            f"Answer: {bool(result.get('answer'))}"
+        )
 
         return TestCommentResponse(
             status="success",
-            message=f"Test comment processed: {classification_type}",
+            message=f"Test comment processed: {result.get('classification')}",
             comment_id=test_data.comment_id,
-            classification=classification_result.get("classification"),
-            answer=answer_text,
-            processing_details=processing_details,
+            classification=result.get("classification"),
+            answer=result.get("answer"),
+            processing_details=result.get("processing_details"),
         )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Error processing test comment {test_data.comment_id}")
-        await session.rollback()
         raise HTTPException(status_code=500, detail=f"Error processing test comment: {str(e)}")

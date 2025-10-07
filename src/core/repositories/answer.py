@@ -21,6 +21,13 @@ class AnswerRepository(BaseRepository[QuestionAnswer]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_reply_id(self, reply_id: str) -> Optional[QuestionAnswer]:
+        """Get answer by Instagram reply ID (for bot loop detection)."""
+        result = await self.session.execute(
+            select(QuestionAnswer).where(QuestionAnswer.reply_id == reply_id)
+        )
+        return result.scalar_one_or_none()
+
     async def create_for_comment(self, comment_id: str) -> QuestionAnswer:
         """Create a new answer record for a comment."""
         answer = QuestionAnswer(

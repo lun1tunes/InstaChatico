@@ -1,10 +1,8 @@
 """Classification tasks - refactored using Clean Architecture."""
 
 import logging
-from sqlalchemy import select, and_
 
 from ..celery_app import celery_app
-from ..models import CommentClassification, InstagramComment, ProcessingStatus
 from ..use_cases.classify_comment import ClassifyCommentUseCase
 from ..utils.task_helpers import async_task, get_db_session
 
@@ -79,26 +77,19 @@ async def retry_failed_classifications():
 
 async def retry_failed_classifications_async():
     """Async retry failed classifications."""
+    from ..repositories.classification import ClassificationRepository
+
     async with get_db_session() as session:
         try:
-            # Находим комментарии для повторной обработки
-            result = await session.execute(
-                select(InstagramComment)
-                .join(CommentClassification)
-                .where(
-                    and_(
-                        CommentClassification.processing_status == ProcessingStatus.RETRY,
-                        CommentClassification.retry_count < CommentClassification.max_retries,
-                    )
-                )
-            )
-            retry_comments = result.scalars().all()
+            # Use repository instead of direct SQL
+            classification_repo = ClassificationRepository(session)
+            retry_classifications = await classification_repo.get_pending_retries()
 
-            for comment in retry_comments:
-                classify_comment_task.delay(comment.id)
+            for classification in retry_classifications:
+                classify_comment_task.delay(classification.comment_id)
 
-            logger.info(f"Queued {len(retry_comments)} comments for retry")
-            return {"retried_count": len(retry_comments)}
+            logger.info(f"Queued {len(retry_classifications)} comments for retry")
+            return {"retried_count": len(retry_classifications)}
         except Exception as e:
             logger.error(f"Error in retry task: {e}")
             return {"error": str(e)}

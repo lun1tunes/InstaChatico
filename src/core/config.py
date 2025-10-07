@@ -27,6 +27,7 @@ class OpenAISettings(BaseModel):
 
 class EmbeddingSettings(BaseModel):
     """Settings for vector embedding search"""
+
     # Понижен порог для русскоязычного контента (0.45 вместо 0.7)
     # text-embedding-3-small даёт более низкие similarity для русского языка
     similarity_threshold: float = float(os.getenv("EMBEDDING_SIMILARITY_THRESHOLD", "0.45"))
@@ -62,6 +63,7 @@ class DocsSettings(BaseModel):
 
 class S3Settings(BaseSettings):
     """S3 storage settings for SelectCloud."""
+
     aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
     aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
     bucket_name: str = os.getenv("BUCKET_NAME", "").strip()

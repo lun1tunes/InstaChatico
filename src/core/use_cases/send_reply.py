@@ -1,13 +1,13 @@
 """Send reply use case - handles Instagram reply business logic."""
 
 from typing import Dict, Any
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
 from ..repositories.answer import AnswerRepository
 from ..services.instagram_service import InstagramGraphAPIService
 from ..utils.decorators import handle_task_errors
+from ..utils.time import now_db_utc
 
 
 class SendReplyUseCase:
@@ -64,7 +64,7 @@ class SendReplyUseCase:
         # 6. Update tracking
         if result.get("success"):
             answer_record.reply_sent = True
-            answer_record.reply_sent_at = datetime.utcnow()
+            answer_record.reply_sent_at = now_db_utc()
             answer_record.reply_status = "sent"
             answer_record.reply_response = result.get("response", {})
             answer_record.reply_id = result.get("reply_id") or result.get("response", {}).get("id")

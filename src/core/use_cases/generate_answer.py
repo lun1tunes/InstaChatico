@@ -1,13 +1,13 @@
 """Generate answer use case - handles question answering business logic."""
 
 from typing import Dict, Any
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
 from ..repositories.answer import AnswerRepository
 from ..services.answer_service import QuestionAnswerService
 from ..utils.decorators import handle_task_errors
+from ..utils.time import now_db_utc
 from ..models.question_answer import AnswerStatus
 
 
@@ -35,7 +35,7 @@ class GenerateAnswerUseCase:
 
         # 3. Update processing status
         answer_record.processing_status = AnswerStatus.PROCESSING
-        answer_record.processing_started_at = datetime.utcnow()
+        answer_record.processing_started_at = now_db_utc()
         answer_record.retry_count = retry_count
         await self.session.commit()
 
@@ -65,7 +65,7 @@ class GenerateAnswerUseCase:
         answer_record.processing_time_ms = answer_result.processing_time_ms
         answer_record.meta_data = getattr(answer_result, 'meta_data', None)
         answer_record.processing_status = AnswerStatus.COMPLETED
-        answer_record.processing_completed_at = datetime.utcnow()
+        answer_record.processing_completed_at = now_db_utc()
 
         await self.session.commit()
 

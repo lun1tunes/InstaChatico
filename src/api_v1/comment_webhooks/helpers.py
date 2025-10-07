@@ -3,12 +3,13 @@
 import logging
 from typing import Optional
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.models.instagram_comment import InstagramComment
-from core.models.question_answer import QuestionAnswer
+from core.repositories.comment import CommentRepository
+from core.repositories.answer import AnswerRepository
 from core.config import settings
+from core.utils.time import now_db_utc
 
 from .schemas import CommentValue
 
@@ -35,18 +36,16 @@ async def should_skip_comment(
     if comment.is_reply():
         parent_id = comment.parent_id
 
-        # Check if parent is our bot's reply
-        result = await session.execute(
-            select(QuestionAnswer).where(QuestionAnswer.reply_id == parent_id)
-        )
-        if result.scalar_one_or_none():
+        # Use repository to check if parent is our bot's reply
+        answer_repo = AnswerRepository(session)
+        parent_answer = await answer_repo.get_by_reply_id(parent_id)
+        if parent_answer:
             return True, f"Reply to bot comment {parent_id}"
 
     # Check 3: Is this comment_id already our bot's reply?
-    result = await session.execute(
-        select(QuestionAnswer).where(QuestionAnswer.reply_id == comment_id)
-    )
-    if result.scalar_one_or_none():
+    answer_repo = AnswerRepository(session)
+    own_reply = await answer_repo.get_by_reply_id(comment_id)
+    if own_reply:
         return True, "Own reply detected via reply_id"
 
     return False, ""
@@ -56,7 +55,8 @@ async def get_existing_comment(
     comment_id: str, session: AsyncSession
 ) -> Optional[InstagramComment]:
     """Get existing comment from database if it exists."""
-    return await session.get(InstagramComment, comment_id)
+    comment_repo = CommentRepository(session)
+    return await comment_repo.get_by_id(comment_id)
 
 
 def extract_comment_data(comment: CommentValue, entry_timestamp: int) -> dict:
