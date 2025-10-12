@@ -16,6 +16,7 @@ celery_app = Celery(
         "core.tasks.telegram_tasks",
         "core.tasks.health_tasks",
         "core.tasks.media_tasks",
+        "core.tasks.document_tasks",
     ],
 )
 
@@ -23,14 +24,6 @@ celery_app = Celery(
 celery_app.conf.broker_connection_retry_on_startup = True
 celery_app.conf.broker_connection_retry = True
 celery_app.conf.broker_connection_max_retries = 30
-
-# Force import of all task modules to ensure they are registered
-import core.tasks.classification_tasks
-import core.tasks.answer_tasks
-import core.tasks.instagram_reply_tasks
-import core.tasks.telegram_tasks
-import core.tasks.health_tasks
-import core.tasks.media_tasks
 
 # Настройки Celery
 celery_app.conf.update(

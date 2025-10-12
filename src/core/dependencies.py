@@ -23,6 +23,34 @@ from .use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
 from .use_cases.process_document import ProcessDocumentUseCase
 from .use_cases.test_comment_processing import TestCommentProcessingUseCase
 
+# Import repositories
+from .repositories.comment import CommentRepository
+from .repositories.answer import AnswerRepository
+
+
+# ============================================================================
+# Repository Dependencies
+# ============================================================================
+
+
+def get_comment_repository(
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+) -> CommentRepository:
+    """Provide CommentRepository with session injected."""
+    return CommentRepository(session)
+
+
+def get_answer_repository(
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+) -> AnswerRepository:
+    """Provide AnswerRepository with session injected."""
+    return AnswerRepository(session)
+
+
+# ============================================================================
+# Use Case Dependencies
+# ============================================================================
+
 
 def get_classify_comment_use_case(
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),

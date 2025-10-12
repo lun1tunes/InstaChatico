@@ -115,7 +115,7 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "celery -A celery_worker inspect ping -d celery@$$HOSTNAME"]
+      test: ["CMD-SHELL", "cd /app/src && celery -A celery_worker inspect ping"]
       interval: 30s
       timeout: 10s
       retries: 3

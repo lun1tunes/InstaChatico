@@ -3,9 +3,10 @@ Telegram API endpoints for testing and management
 """
 
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from core.logging_config import trace_id_ctx
 from core.services.telegram_alert_service import TelegramAlertService
+from core.container import get_container, Container
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +14,12 @@ router = APIRouter(tags=["Telegram"])
 
 
 @router.get("/test-connection")
-async def test_telegram_bot_connection():
+async def test_telegram_bot_connection(
+    container: Container = Depends(get_container),
+):
     """Test Telegram bot connection and configuration"""
     try:
-        telegram_service = TelegramAlertService()
+        telegram_service = container.telegram_service()
         result = await telegram_service.test_connection()
 
         if result.get("success"):
@@ -37,7 +40,9 @@ async def test_telegram_bot_connection():
 
 
 @router.post("/test-notification")
-async def test_telegram_notification():
+async def test_telegram_notification(
+    container: Container = Depends(get_container),
+):
     """Send a test notification to Telegram"""
     try:
         # Create test comment data
@@ -54,7 +59,7 @@ async def test_telegram_notification():
             "timestamp": "2024-01-01T12:00:00Z",
         }
 
-        telegram_service = TelegramAlertService()
+        telegram_service = container.telegram_service()
         result = await telegram_service.send_urgent_issue_notification(
             test_comment_data
         )

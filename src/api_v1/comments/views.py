@@ -8,7 +8,6 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from core.celery_app import celery_app
 from core.models import db_helper
 from core.models.instagram_comment import InstagramComment
 from core.models.comment_classification import CommentClassification
@@ -25,9 +24,9 @@ from core.schemas.comment import (
     CommentListResponse,
     CommentListItem,
 )
-from core.services.instagram_service import InstagramGraphAPIService
 from core.use_cases.hide_comment import HideCommentUseCase
-from core.dependencies import get_hide_comment_use_case
+from core.dependencies import get_hide_comment_use_case, get_comment_repository
+from core.container import get_container, Container
 from core.utils.time import now_db_utc
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,7 @@ router = APIRouter(tags=["Comments"], prefix="/comments")
 @router.get("/{comment_id}", response_model=CommentDetailResponse)
 async def get_comment(
     comment_id: str,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    comment_repo: CommentRepository = Depends(get_comment_repository),
 ):
     """
     Get basic comment information with hiding status.
@@ -50,8 +49,6 @@ async def get_comment(
     Returns:
         CommentDetailResponse with id, text, username, hiding status, etc.
     """
-    # Use repository for data access
-    comment_repo = CommentRepository(session)
     comment = await comment_repo.get_by_id(comment_id)
 
     if not comment:
@@ -63,7 +60,7 @@ async def get_comment(
 @router.get("/{comment_id}/classification", response_model=CommentWithClassificationResponse)
 async def get_comment_with_classification(
     comment_id: str,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    comment_repo: CommentRepository = Depends(get_comment_repository),
 ):
     """
     Get comment with classification details.
@@ -71,8 +68,6 @@ async def get_comment_with_classification(
     Returns:
         CommentWithClassificationResponse including classification, confidence, reasoning, tokens
     """
-    # Use repository for data access
-    comment_repo = CommentRepository(session)
     comment = await comment_repo.get_with_classification(comment_id)
 
     if not comment:
@@ -105,7 +100,7 @@ async def get_comment_with_classification(
 @router.get("/{comment_id}/answer", response_model=CommentWithAnswerResponse)
 async def get_comment_with_answer(
     comment_id: str,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    comment_repo: CommentRepository = Depends(get_comment_repository),
 ):
     """
     Get comment with answer details.
@@ -113,8 +108,6 @@ async def get_comment_with_answer(
     Returns:
         CommentWithAnswerResponse including answer, confidence, quality score, tokens
     """
-    # Use repository for data access
-    comment_repo = CommentRepository(session)
     comment = await comment_repo.get_with_answer(comment_id)
 
     if not comment:
@@ -149,7 +142,7 @@ async def get_comment_with_answer(
 @router.get("/{comment_id}/full", response_model=CommentFullResponse)
 async def get_comment_full(
     comment_id: str,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    comment_repo: CommentRepository = Depends(get_comment_repository),
 ):
     """
     Get complete comment information with classification, answer, and reply status.
@@ -157,8 +150,6 @@ async def get_comment_full(
     Returns:
         CommentFullResponse with all available data about the comment
     """
-    # Use repository for data access
-    comment_repo = CommentRepository(session)
     comment = await comment_repo.get_full(comment_id)
 
     if not comment:
@@ -305,7 +296,8 @@ async def list_comments(
 @router.post("/{comment_id}/hide", response_model=HideCommentResponse)
 async def hide_comment(
     comment_id: str,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    comment_repo: CommentRepository = Depends(get_comment_repository),
+    container: Container = Depends(get_container),
 ):
     """
     Hide an Instagram comment (queues Celery task).
@@ -313,8 +305,6 @@ async def hide_comment(
     Returns:
         HideCommentResponse with task ID or error
     """
-    # Use repository for data access
-    comment_repo = CommentRepository(session)
     comment = await comment_repo.get_by_id(comment_id)
 
     if not comment:
@@ -328,19 +318,20 @@ async def hide_comment(
             hidden_at=comment.hidden_at,
         )
 
-    # Queue hide task
-    task = celery_app.send_task(
+    # Queue hide task using DI container
+    task_queue = container.task_queue()
+    task_id = task_queue.enqueue(
         "core.tasks.instagram_reply_tasks.hide_instagram_comment_task",
-        args=[comment_id],
+        comment_id,
     )
 
-    logger.info(f"Hide task queued for comment {comment_id} (task_id={task.id})")
+    logger.info(f"Hide task queued for comment {comment_id} (task_id={task_id})")
 
     return HideCommentResponse(
         status="queued",
         message=f"Hide task queued for comment {comment_id}",
         comment_id=comment_id,
-        task_id=task.id,
+        task_id=task_id,
     )
 
 
@@ -389,7 +380,8 @@ async def unhide_comment(
 async def send_manual_reply(
     comment_id: str,
     message: str = Query(..., min_length=1, max_length=500, description="Reply message"),
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    comment_repo: CommentRepository = Depends(get_comment_repository),
+    container: Container = Depends(get_container),
 ):
     """
     Send a manual reply to a comment (queues Celery task).
@@ -401,25 +393,25 @@ async def send_manual_reply(
     Returns:
         SendReplyResponse with task ID or error
     """
-    # Use repository for data access
-    comment_repo = CommentRepository(session)
     comment = await comment_repo.get_by_id(comment_id)
 
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
 
-    # Queue reply task
-    task = celery_app.send_task(
+    # Queue reply task using DI container
+    task_queue = container.task_queue()
+    task_id = task_queue.enqueue(
         "core.tasks.instagram_reply_tasks.send_instagram_reply_task",
-        args=[comment_id, message],
+        comment_id,
+        message,
     )
 
-    logger.info(f"Manual reply task queued for comment {comment_id} (task_id={task.id})")
+    logger.info(f"Manual reply task queued for comment {comment_id} (task_id={task_id})")
 
     return SendReplyResponse(
         status="queued",
         message=f"Reply task queued for comment {comment_id}",
         comment_id=comment_id,
-        task_id=task.id,
+        task_id=task_id,
         reply_text=message,
     )

@@ -18,6 +18,7 @@ from .services.embedding_service import EmbeddingService
 from .services.telegram_alert_service import TelegramAlertService
 from .services.s3_service import S3Service
 from .services.document_processing_service import DocumentProcessingService
+from .services.document_context_service import DocumentContextService
 
 # Infrastructure
 from .infrastructure.task_queue import CeleryTaskQueue
@@ -88,6 +89,10 @@ class Container(containers.DeclarativeContainer):
 
     document_processing_service = providers.Singleton(
         DocumentProcessingService,
+    )
+
+    document_context_service = providers.Singleton(
+        DocumentContextService,
     )
 
     # Use Cases - Factory (new instance per request)

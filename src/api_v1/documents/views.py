@@ -12,10 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.models.db_helper import db_helper
 from core.models.document import Document
 from core.config import settings
-from core.services.s3_service import s3_service
-from core.services.document_processing_service import document_processing_service
-from core.services.document_context_service import document_context_service
-from core.tasks.document_tasks import process_document_task
+from core.services.s3_service import S3Service
+from core.services.document_processing_service import DocumentProcessingService
+from core.services.document_context_service import DocumentContextService
+from core.infrastructure.task_queue import ITaskQueue
+from core.container import get_container, Container
 from .schemas import DocumentUploadResponse, DocumentResponse, DocumentListResponse, DocumentSummaryResponse
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ async def register_document(
     document_name: str = Form(...),
     description: Optional[str] = Form(None),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
 ):
     """
     Register a document that's already in S3 (uploaded by main app).
@@ -43,6 +45,11 @@ async def register_document(
     4. Markdown stored in DB and used by answer agent
     """
     try:
+        # Get services from DI container
+        s3_service = container.s3_service()
+        document_processing_service = container.document_processing_service()
+        task_queue = container.task_queue()
+
         # Extract S3 key from URL
         # Supported formats:
         # 1. S3 URI: s3://bucket/path/to/file.pdf
@@ -128,7 +135,10 @@ async def register_document(
         await session.refresh(document)
 
         # Queue processing task (download from S3, process to markdown)
-        process_document_task.delay(str(document.id))
+        task_queue.enqueue(
+            "core.tasks.document_tasks.process_document_task",
+            str(document.id),
+        )
 
         logger.info(f"Document registered from S3: {document.id} - {document_name} - {s3_url}")
 
@@ -146,6 +156,7 @@ async def upload_document(
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
 ):
     """
     Upload a document directly to this app (alternative to /register).
@@ -156,6 +167,11 @@ async def upload_document(
     Supports: PDF, Excel, CSV, Word, TXT files
     """
     try:
+        # Get services from DI container
+        s3_service = container.s3_service()
+        document_processing_service = container.document_processing_service()
+        task_queue = container.task_queue()
+
         # Validate file
         if not file.filename:
             raise HTTPException(status_code=400, detail="No filename provided")
@@ -202,7 +218,10 @@ async def upload_document(
         await session.refresh(document)
 
         # Queue processing task
-        process_document_task.delay(str(document.id))
+        task_queue.enqueue(
+            "core.tasks.document_tasks.process_document_task",
+            str(document.id),
+        )
 
         logger.info(f"Document uploaded: {document.id} - {file.filename}")
 
@@ -248,9 +267,13 @@ async def list_documents(
 
 
 @router.get("/summary", response_model=DocumentSummaryResponse)
-async def get_documents_summary(session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
+async def get_documents_summary(
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+):
     """Get summary statistics for documents."""
     try:
+        document_context_service = container.document_context_service()
         summary = await document_context_service.get_document_summary(session)
         return DocumentSummaryResponse(**summary)
     except Exception as e:
@@ -279,11 +302,18 @@ async def get_document(document_id: UUID, session: AsyncSession = Depends(db_hel
 
 
 @router.delete("/{document_id}")
-async def delete_document(document_id: UUID, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
+async def delete_document(
+    document_id: UUID,
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+):
     """Delete a document (from DB and S3)."""
     try:
+        # Get services from DI container
+        s3_service = container.s3_service()
+
         # Get document
-        stmt = select(ClientDocument).where(ClientDocument.id == document_id)
+        stmt = select(Document).where(Document.id == document_id)
         result = await session.execute(stmt)
         document = result.scalar_one_or_none()
 
@@ -310,11 +340,18 @@ async def delete_document(document_id: UUID, session: AsyncSession = Depends(db_
 
 
 @router.post("/{document_id}/reprocess")
-async def reprocess_document(document_id: UUID, session: AsyncSession = Depends(db_helper.scoped_session_dependency)):
+async def reprocess_document(
+    document_id: UUID,
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+):
     """Reprocess a failed document."""
     try:
+        # Get services from DI container
+        task_queue = container.task_queue()
+
         # Get document
-        stmt = select(ClientDocument).where(ClientDocument.id == document_id)
+        stmt = select(Document).where(Document.id == document_id)
         result = await session.execute(stmt)
         document = result.scalar_one_or_none()
 
@@ -327,7 +364,10 @@ async def reprocess_document(document_id: UUID, session: AsyncSession = Depends(
         await session.commit()
 
         # Queue for reprocessing
-        process_document_task.delay(str(document_id))
+        task_queue.enqueue(
+            "core.tasks.document_tasks.process_document_task",
+            str(document_id),
+        )
 
         return {"message": "Document queued for reprocessing"}
 

@@ -3,13 +3,10 @@
 import logging
 from typing import Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from core.models.instagram_comment import InstagramComment
 from core.repositories.comment import CommentRepository
 from core.repositories.answer import AnswerRepository
 from core.config import settings
-from core.utils.time import now_db_utc
 
 from .schemas import CommentValue
 
@@ -17,10 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 async def should_skip_comment(
-    comment: CommentValue, session: AsyncSession
+    comment: CommentValue,
+    answer_repo: AnswerRepository,
 ) -> tuple[bool, str]:
     """
     Determine if a comment should be skipped.
+
+    Args:
+        comment: The comment to check
+        answer_repo: Answer repository for checking bot replies
 
     Returns:
         (should_skip, reason) tuple
@@ -35,15 +37,11 @@ async def should_skip_comment(
     # Check 2: Is this a reply to our bot's comment?
     if comment.is_reply():
         parent_id = comment.parent_id
-
-        # Use repository to check if parent is our bot's reply
-        answer_repo = AnswerRepository(session)
         parent_answer = await answer_repo.get_by_reply_id(parent_id)
         if parent_answer:
             return True, f"Reply to bot comment {parent_id}"
 
     # Check 3: Is this comment_id already our bot's reply?
-    answer_repo = AnswerRepository(session)
     own_reply = await answer_repo.get_by_reply_id(comment_id)
     if own_reply:
         return True, "Own reply detected via reply_id"
@@ -52,10 +50,19 @@ async def should_skip_comment(
 
 
 async def get_existing_comment(
-    comment_id: str, session: AsyncSession
+    comment_id: str,
+    comment_repo: CommentRepository,
 ) -> Optional[InstagramComment]:
-    """Get existing comment from database if it exists."""
-    comment_repo = CommentRepository(session)
+    """
+    Get existing comment from database if it exists.
+
+    Args:
+        comment_id: ID of the comment to retrieve
+        comment_repo: Comment repository
+
+    Returns:
+        Comment if found, None otherwise
+    """
     return await comment_repo.get_by_id(comment_id)
 
 
