@@ -1,1 +1,3 @@
-Ensure clean architecture and SOLID principles are properly implemented. Basic pattern: API → Use Cases → Services → Repositories → Models. But you don't need to use rules for the sake of rules, sometimes they can be violated and that's okay, just make sure it's really necessary.
+Ensure clean architecture and SOLID principles and DI are properly implemented. Basic pattern: API → Use Cases → Services → Repositories → Models. But you don't need to use rules for the sake of rules, sometimes they can be violated and that's okay, just make sure it's really necessary.
+Keep agent instructions in src/core/agents/instructions and agent functions instructions (e.g. _embedding_search_implementation in /home/lun1z/instachatico-app/src/core/agents/tools) in Russian. 
+Do not creade .md files in my repo. Please write all summaries in chat.

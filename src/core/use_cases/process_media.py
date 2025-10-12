@@ -4,8 +4,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.media import MediaRepository
-from ..services.media_service import MediaService
-from ..services.media_analysis_service import MediaAnalysisService
+from ..interfaces.services import IMediaService, IMediaAnalysisService
 from ..utils.decorators import handle_task_errors
 from ..schemas.media import MediaCreateResult, MediaAnalysisResult
 
@@ -13,13 +12,30 @@ logger = logging.getLogger(__name__)
 
 
 class ProcessMediaUseCase:
-    """Use case for processing Instagram media (fetch + analyze)."""
+    """
+    Use case for processing Instagram media (fetch + analyze).
 
-    def __init__(self, session: AsyncSession, media_service=None, analysis_service=None):
+    Follows Dependency Inversion Principle - depends on service protocols.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        media_service: IMediaService,
+        analysis_service: IMediaAnalysisService,
+    ):
+        """
+        Initialize use case with dependencies.
+
+        Args:
+            session: Database session
+            media_service: Service implementing IMediaService protocol
+            analysis_service: Service implementing IMediaAnalysisService protocol
+        """
         self.session = session
         self.media_repo = MediaRepository(session)
-        self.media_service = media_service or MediaService()
-        self.analysis_service = analysis_service or MediaAnalysisService()
+        self.media_service = media_service
+        self.analysis_service = analysis_service
 
     @handle_task_errors()
     async def execute(self, media_id: str) -> MediaCreateResult:
@@ -67,12 +83,23 @@ class ProcessMediaUseCase:
 
 
 class AnalyzeMediaUseCase:
-    """Use case for analyzing media images with AI."""
+    """
+    Use case for analyzing media images with AI.
 
-    def __init__(self, session: AsyncSession, analysis_service=None):
+    Follows Dependency Inversion Principle - depends on IMediaAnalysisService protocol.
+    """
+
+    def __init__(self, session: AsyncSession, analysis_service: IMediaAnalysisService):
+        """
+        Initialize use case with dependencies.
+
+        Args:
+            session: Database session
+            analysis_service: Service implementing IMediaAnalysisService protocol
+        """
         self.session = session
         self.media_repo = MediaRepository(session)
-        self.analysis_service = analysis_service or MediaAnalysisService()
+        self.analysis_service = analysis_service
 
     @handle_task_errors()
     async def execute(self, media_id: str) -> MediaAnalysisResult:

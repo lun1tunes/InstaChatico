@@ -1,14 +1,13 @@
 """Use case for comment classification (Business Logic Layer)."""
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.comment_classification import CommentClassification, ProcessingStatus
 from ..repositories.comment import CommentRepository
 from ..repositories.classification import ClassificationRepository
-from ..services.classification_service import CommentClassificationService
-from ..services.media_service import MediaService
+from ..interfaces.services import IClassificationService, IMediaService
 from ..utils.decorators import handle_task_errors
 
 logger = logging.getLogger(__name__)
@@ -18,21 +17,29 @@ class ClassifyCommentUseCase:
     """
     Business logic for comment classification.
 
-    Follows Single Responsibility Principle (SRP).
-    All classification logic in one place (DRY).
+    Follows Single Responsibility Principle (SRP) and Dependency Inversion Principle (DIP).
+    Depends on abstractions (protocols) rather than concrete implementations.
     """
 
     def __init__(
         self,
         session: AsyncSession,
-        classification_service: Optional[CommentClassificationService] = None,
-        media_service: Optional[MediaService] = None
+        classification_service: IClassificationService,
+        media_service: IMediaService,
     ):
+        """
+        Initialize use case with dependencies.
+
+        Args:
+            session: Database session
+            classification_service: Service implementing IClassificationService protocol
+            media_service: Service implementing IMediaService protocol
+        """
         self.session = session
         self.comment_repo = CommentRepository(session)
         self.classification_repo = ClassificationRepository(session)
-        self.classification_service = classification_service or CommentClassificationService()
-        self.media_service = media_service or MediaService()
+        self.classification_service = classification_service
+        self.media_service = media_service
 
     @handle_task_errors()
     async def execute(self, comment_id: str, retry_count: int = 0) -> Dict[str, Any]:

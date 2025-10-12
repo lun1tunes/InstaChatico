@@ -4,18 +4,29 @@ from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
-from ..services.instagram_service import InstagramGraphAPIService
+from ..interfaces.services import IInstagramService
 from ..utils.decorators import handle_task_errors
 from ..utils.time import now_db_utc
 
 
 class HideCommentUseCase:
-    """Use case for hiding Instagram comments."""
+    """
+    Use case for hiding Instagram comments.
 
-    def __init__(self, session: AsyncSession, instagram_service=None):
+    Follows Dependency Inversion Principle - depends on IInstagramService protocol.
+    """
+
+    def __init__(self, session: AsyncSession, instagram_service: IInstagramService):
+        """
+        Initialize use case with dependencies.
+
+        Args:
+            session: Database session
+            instagram_service: Service implementing IInstagramService protocol
+        """
         self.session = session
         self.comment_repo = CommentRepository(session)
-        self.instagram_service = instagram_service or InstagramGraphAPIService()
+        self.instagram_service = instagram_service
 
     @handle_task_errors()
     async def execute(self, comment_id: str, hide: bool = True) -> Dict[str, Any]:

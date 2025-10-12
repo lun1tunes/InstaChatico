@@ -5,19 +5,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
 from ..repositories.answer import AnswerRepository
-from ..services.instagram_service import InstagramGraphAPIService
+from ..interfaces.services import IInstagramService
 from ..utils.decorators import handle_task_errors
 from ..utils.time import now_db_utc
 
 
 class SendReplyUseCase:
-    """Use case for sending replies to Instagram comments."""
+    """
+    Use case for sending replies to Instagram comments.
 
-    def __init__(self, session: AsyncSession, instagram_service=None):
+    Follows Dependency Inversion Principle - depends on IInstagramService protocol.
+    """
+
+    def __init__(self, session: AsyncSession, instagram_service: IInstagramService):
+        """
+        Initialize use case with dependencies.
+
+        Args:
+            session: Database session
+            instagram_service: Service implementing IInstagramService protocol
+        """
         self.session = session
         self.comment_repo = CommentRepository(session)
         self.answer_repo = AnswerRepository(session)
-        self.instagram_service = instagram_service or InstagramGraphAPIService()
+        self.instagram_service = instagram_service
 
     @handle_task_errors()
     async def execute(

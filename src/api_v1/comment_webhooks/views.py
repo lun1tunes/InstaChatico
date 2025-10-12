@@ -14,6 +14,7 @@ from core.schemas.webhook import WebhookProcessingResponse, TestCommentResponse
 from core.use_cases.process_webhook_comment import ProcessWebhookCommentUseCase
 from core.use_cases.test_comment_processing import TestCommentProcessingUseCase
 from core.tasks.classification_tasks import classify_comment_task
+from core.dependencies import get_process_webhook_comment_use_case, get_test_comment_processing_use_case
 
 from .helpers import should_skip_comment, extract_comment_data
 from .schemas import TestCommentPayload, WebhookPayload
@@ -45,6 +46,7 @@ async def process_webhook(
     webhook_data: WebhookPayload,
     request: Request,
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    process_use_case: ProcessWebhookCommentUseCase = Depends(get_process_webhook_comment_use_case),
 ):
     """Process Instagram webhook for new comments."""
     # Bind trace ID early if provided
@@ -73,10 +75,9 @@ async def process_webhook(
                     continue
 
                 # Process comment using Use Case
-                use_case = ProcessWebhookCommentUseCase(session)
                 comment_data = extract_comment_data(comment, entry.time)
 
-                result = await use_case.execute(
+                result = await process_use_case.execute(
                     comment_id=comment_id,
                     media_id=comment_data["media_id"],
                     user_id=comment_data["user_id"],
@@ -116,6 +117,7 @@ async def process_webhook(
 async def test_comment_processing(
     test_data: TestCommentPayload,
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    test_use_case: TestCommentProcessingUseCase = Depends(get_test_comment_processing_use_case),
 ):
     """
     Test endpoint for Instagram comment processing (DEVELOPMENT_MODE only).
@@ -135,9 +137,7 @@ async def test_comment_processing(
 
     try:
         # Process test comment using Use Case
-        use_case = TestCommentProcessingUseCase(session)
-
-        result = await use_case.execute(
+        result = await test_use_case.execute(
             comment_id=test_data.comment_id,
             media_id=test_data.media_id,
             user_id=test_data.user_id,

@@ -9,8 +9,7 @@ from ..models.instagram_comment import InstagramComment
 from ..models.comment_classification import CommentClassification, ProcessingStatus
 from ..repositories.comment import CommentRepository
 from ..repositories.media import MediaRepository
-from ..services.media_service import MediaService
-from ..services.instagram_service import InstagramGraphAPIService
+from ..interfaces.services import IMediaService, ITaskQueue
 from ..utils.time import now_db_utc
 
 logger = logging.getLogger(__name__)
@@ -20,22 +19,34 @@ class ProcessWebhookCommentUseCase:
     """
     Process incoming comment from Instagram webhook.
 
+    Follows Dependency Inversion Principle - depends on service protocols.
+
     Responsibilities:
     - Validate comment doesn't already exist
     - Ensure media exists (or create it)
     - Create comment and classification records
-    - Return status for task queuing
+    - Queue classification task via ITaskQueue
     """
 
     def __init__(
         self,
         session: AsyncSession,
-        media_service: Optional[MediaService] = None,
+        media_service: IMediaService,
+        task_queue: ITaskQueue,
     ):
+        """
+        Initialize use case with dependencies.
+
+        Args:
+            session: Database session
+            media_service: Service implementing IMediaService protocol
+            task_queue: Task queue implementing ITaskQueue protocol
+        """
         self.session = session
         self.comment_repo = CommentRepository(session)
         self.media_repo = MediaRepository(session)
-        self.media_service = media_service or MediaService()
+        self.media_service = media_service
+        self.task_queue = task_queue
 
     async def execute(
         self,

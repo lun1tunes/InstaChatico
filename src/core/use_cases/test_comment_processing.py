@@ -22,12 +22,30 @@ class TestCommentProcessingUseCase:
 
     This is used in development mode to test the comment processing workflow
     without posting to Instagram.
+
+    Note: This use case directly depends on other use cases rather than protocols,
+    which is acceptable for testing/development utilities.
     """
 
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        classify_use_case: Optional[ClassifyCommentUseCase] = None,
+        answer_use_case: Optional[GenerateAnswerUseCase] = None,
+    ):
+        """
+        Initialize test use case with dependencies.
+
+        Args:
+            session: Database session
+            classify_use_case: Optional ClassifyCommentUseCase (will use container if not provided)
+            answer_use_case: Optional GenerateAnswerUseCase (will use container if not provided)
+        """
         self.session = session
         self.media_repo = MediaRepository(session)
         self.comment_repo = CommentRepository(session)
+        self.classify_use_case = classify_use_case
+        self.answer_use_case = answer_use_case
 
     async def execute(
         self,
@@ -73,7 +91,13 @@ class TestCommentProcessingUseCase:
             await self.session.commit()
 
             # Step 4: Run classification
-            classification_use_case = ClassifyCommentUseCase(self.session)
+            if not self.classify_use_case:
+                # Use container if use case not provided
+                from ..container import container
+                classification_use_case = container.classify_comment_use_case(session=self.session)
+            else:
+                classification_use_case = self.classify_use_case
+
             classification_result = await classification_use_case.execute(comment_id, retry_count=0)
 
             if classification_result.get("status") == "error":
@@ -105,7 +129,13 @@ class TestCommentProcessingUseCase:
             # Step 5: If question, generate answer
             if classification_type == "question / inquiry":
                 logger.info(f"Generating answer for test question {comment_id}")
-                answer_use_case = GenerateAnswerUseCase(self.session)
+                if not self.answer_use_case:
+                    # Use container if use case not provided
+                    from ..container import container
+                    answer_use_case = container.generate_answer_use_case(session=self.session)
+                else:
+                    answer_use_case = self.answer_use_case
+
                 answer_result = await answer_use_case.execute(comment_id, retry_count=0)
 
                 if answer_result.get("status") == "error":

@@ -4,25 +4,36 @@ from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.document import DocumentRepository
-from ..services.s3_service import s3_service
-from ..services.document_processing_service import document_processing_service
+from ..interfaces.services import IS3Service, IDocumentProcessingService
 from ..utils.decorators import handle_task_errors
 from ..utils.time import now_db_utc
 
 
 class ProcessDocumentUseCase:
-    """Use case for processing uploaded documents."""
+    """
+    Use case for processing uploaded documents.
+
+    Follows Dependency Inversion Principle - depends on service protocols.
+    """
 
     def __init__(
         self,
         session: AsyncSession,
-        s3_service_instance=None,
-        doc_processing_service=None
+        s3_service: IS3Service,
+        doc_processing_service: IDocumentProcessingService,
     ):
+        """
+        Initialize use case with dependencies.
+
+        Args:
+            session: Database session
+            s3_service: Service implementing IS3Service protocol
+            doc_processing_service: Service implementing IDocumentProcessingService protocol
+        """
         self.session = session
         self.document_repo = DocumentRepository(session)
-        self.s3_service = s3_service_instance or s3_service
-        self.doc_processing = doc_processing_service or document_processing_service
+        self.s3_service = s3_service
+        self.doc_processing = doc_processing_service
 
     @handle_task_errors()
     async def execute(self, document_id: str) -> Dict[str, Any]:

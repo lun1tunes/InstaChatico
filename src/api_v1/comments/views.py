@@ -27,6 +27,7 @@ from core.schemas.comment import (
 )
 from core.services.instagram_service import InstagramGraphAPIService
 from core.use_cases.hide_comment import HideCommentUseCase
+from core.dependencies import get_hide_comment_use_case
 from core.utils.time import now_db_utc
 
 logger = logging.getLogger(__name__)
@@ -346,16 +347,20 @@ async def hide_comment(
 @router.post("/{comment_id}/unhide", response_model=UnhideCommentResponse)
 async def unhide_comment(
     comment_id: str,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    use_case: HideCommentUseCase = Depends(get_hide_comment_use_case),
 ):
     """
     Unhide an Instagram comment (executes immediately using use case).
 
+    This endpoint demonstrates the new DI pattern:
+    - Dependencies injected via FastAPI Depends
+    - Use case provided by DI container
+    - All services injected through protocols (IInstagramService)
+
     Returns:
         UnhideCommentResponse with success/error status
     """
-    # Use Clean Architecture - use case handles all business logic
-    use_case = HideCommentUseCase(session)
+    # Use Clean Architecture with Dependency Injection
     result = await use_case.execute(comment_id, hide=False)
 
     if result["status"] == "error":

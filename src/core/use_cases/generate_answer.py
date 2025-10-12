@@ -5,20 +5,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
 from ..repositories.answer import AnswerRepository
-from ..services.answer_service import QuestionAnswerService
+from ..interfaces.services import IAnswerService
 from ..utils.decorators import handle_task_errors
 from ..utils.time import now_db_utc
 from ..models.question_answer import AnswerStatus
 
 
 class GenerateAnswerUseCase:
-    """Use case for generating answers to question comments."""
+    """
+    Use case for generating answers to question comments.
 
-    def __init__(self, session: AsyncSession, qa_service=None):
+    Follows Dependency Inversion Principle - depends on IAnswerService protocol.
+    """
+
+    def __init__(self, session: AsyncSession, qa_service: IAnswerService):
+        """
+        Initialize use case with dependencies.
+
+        Args:
+            session: Database session
+            qa_service: Service implementing IAnswerService protocol
+        """
         self.session = session
         self.comment_repo = CommentRepository(session)
         self.answer_repo = AnswerRepository(session)
-        self.qa_service = qa_service or QuestionAnswerService()
+        self.qa_service = qa_service
 
     @handle_task_errors()
     async def execute(self, comment_id: str, retry_count: int = 0) -> Dict[str, Any]:

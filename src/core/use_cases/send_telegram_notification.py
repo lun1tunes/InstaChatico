@@ -4,17 +4,28 @@ from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
-from ..services.telegram_alert_service import TelegramAlertService
+from ..interfaces.services import ITelegramService
 from ..utils.decorators import handle_task_errors
 
 
 class SendTelegramNotificationUseCase:
-    """Use case for sending Telegram notifications for urgent/critical comments."""
+    """
+    Use case for sending Telegram notifications for urgent/critical comments.
 
-    def __init__(self, session: AsyncSession, telegram_service=None):
+    Follows Dependency Inversion Principle - depends on ITelegramService protocol.
+    """
+
+    def __init__(self, session: AsyncSession, telegram_service: ITelegramService):
+        """
+        Initialize use case with dependencies.
+
+        Args:
+            session: Database session
+            telegram_service: Service implementing ITelegramService protocol
+        """
         self.session = session
         self.comment_repo = CommentRepository(session)
-        self.telegram_service = telegram_service or TelegramAlertService()
+        self.telegram_service = telegram_service
 
     @handle_task_errors()
     async def execute(self, comment_id: str) -> Dict[str, Any]:

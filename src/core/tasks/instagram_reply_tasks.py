@@ -8,6 +8,7 @@ from ..use_cases.hide_comment import HideCommentUseCase
 from ..utils.task_helpers import async_task, get_db_session
 from ..utils.lock_manager import LockManager
 from ..config import settings
+from ..container import get_container
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,10 @@ async def send_instagram_reply_task(self, comment_id: str, answer_text: str = No
             return {"status": "skipped", "reason": "already_processing"}
 
         async with get_db_session() as session:
-            use_case = SendReplyUseCase(session)
+            container = get_container()
+            use_case = container.send_reply_use_case(session=session)
             result = await use_case.execute(
-                comment_id=comment_id,
-                reply_text=answer_text,
-                use_generated_answer=not answer_text
+                comment_id=comment_id, reply_text=answer_text, use_generated_answer=not answer_text
             )
 
             if result["status"] == "retry" and self.request.retries < self.max_retries:
@@ -48,7 +48,8 @@ async def hide_instagram_comment_task(self, comment_id: str):
             return {"status": "skipped", "reason": "already_processing"}
 
         async with get_db_session() as session:
-            use_case = HideCommentUseCase(session)
+            container = get_container()
+            use_case = container.hide_comment_use_case(session=session)
             result = await use_case.execute(comment_id, hide=True)
 
             if result["status"] == "retry" and self.request.retries < self.max_retries:

@@ -22,6 +22,7 @@ langchain-community = "^0.3.29"
 aiohttp = "^3.9.0"
 openai-agents = "^0.3.2"
 pgvector = "^0.3.6"
+dependency-injector = "^4.41.0"
 
 # Document intelligence
 boto3 = "^1.34.0"

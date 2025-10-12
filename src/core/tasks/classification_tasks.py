@@ -5,6 +5,7 @@ import logging
 from ..celery_app import celery_app
 from ..use_cases.classify_comment import ClassifyCommentUseCase
 from ..utils.task_helpers import async_task, get_db_session
+from ..container import get_container
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,8 @@ logger = logging.getLogger(__name__)
 async def classify_comment_task(self, comment_id: str):
     """Classify Instagram comment using AI - orchestration only."""
     async with get_db_session() as session:
-        use_case = ClassifyCommentUseCase(session)
+        container = get_container()
+        use_case = container.classify_comment_use_case(session=session)
         result = await use_case.execute(comment_id, retry_count=self.request.retries)
 
         # Handle retry logic
@@ -38,6 +40,7 @@ async def _trigger_post_classification_actions(classification_result: dict):
         logger.info(f"Triggering answer generation for question {comment_id}")
         try:
             from .answer_tasks import generate_answer_task
+
             result = generate_answer_task.delay(comment_id)
             logger.info(f"Answer task queued: {result.id}")
         except Exception:
@@ -48,8 +51,7 @@ async def _trigger_post_classification_actions(classification_result: dict):
         logger.info(f"Triggering hide for {classification} comment {comment_id}")
         try:
             result = celery_app.send_task(
-                "core.tasks.instagram_reply_tasks.hide_instagram_comment_task",
-                args=[comment_id]
+                "core.tasks.instagram_reply_tasks.hide_instagram_comment_task", args=[comment_id]
             )
             logger.info(f"Hide task queued: {result.id}")
         except Exception:
@@ -60,8 +62,7 @@ async def _trigger_post_classification_actions(classification_result: dict):
         logger.info(f"Triggering Telegram notification for {classification} comment {comment_id}")
         try:
             result = celery_app.send_task(
-                "core.tasks.telegram_tasks.send_telegram_notification_task",
-                args=[comment_id]
+                "core.tasks.telegram_tasks.send_telegram_notification_task", args=[comment_id]
             )
             logger.info(f"Telegram task queued: {result.id}")
         except Exception:

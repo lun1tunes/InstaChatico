@@ -5,6 +5,7 @@ import logging
 from ..celery_app import celery_app
 from ..use_cases.generate_answer import GenerateAnswerUseCase
 from ..utils.task_helpers import async_task, get_db_session
+from ..container import get_container
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,8 @@ logger = logging.getLogger(__name__)
 async def generate_answer_task(self, comment_id: str):
     """Generate answer for Instagram comment question - orchestration only."""
     async with get_db_session() as session:
-        use_case = GenerateAnswerUseCase(session)
+        container = get_container()
+        use_case = container.generate_answer_use_case(session=session)
         result = await use_case.execute(comment_id, retry_count=self.request.retries)
 
         # Handle retry logic
@@ -26,8 +28,7 @@ async def generate_answer_task(self, comment_id: str):
             logger.info(f"Triggering Instagram reply for comment {comment_id}")
             try:
                 reply_result = celery_app.send_task(
-                    "core.tasks.instagram_reply_tasks.send_instagram_reply_task",
-                    args=[comment_id, result["answer"]]
+                    "core.tasks.instagram_reply_tasks.send_instagram_reply_task", args=[comment_id, result["answer"]]
                 )
                 logger.info(f"Reply task queued: {reply_result.id}")
             except Exception:

@@ -5,6 +5,7 @@ import logging
 from ..celery_app import celery_app
 from ..use_cases.send_telegram_notification import SendTelegramNotificationUseCase
 from ..utils.task_helpers import async_task, get_db_session
+from ..container import get_container
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,8 @@ logger = logging.getLogger(__name__)
 async def send_telegram_notification_task(self, comment_id: str):
     """Send Telegram notification - orchestration only."""
     async with get_db_session() as session:
-        use_case = SendTelegramNotificationUseCase(session)
+        container = get_container()
+        use_case = container.send_telegram_notification_use_case(session=session)
         result = await use_case.execute(comment_id)
 
         if result["status"] == "retry" and self.request.retries < self.max_retries:
