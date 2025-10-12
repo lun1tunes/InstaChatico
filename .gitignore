@@ -218,4 +218,4 @@ docker/config/dozzle/users.yml
 src/core/agents/instructions/
 
 # Claude
-.claude/
+CLAUDE.md

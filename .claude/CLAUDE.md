@@ -1,0 +1,1 @@
+Ensure clean architecture and SOLID principles are properly implemented. Basic pattern: API → Use Cases → Services → Repositories → Models. But you don't need to use rules for the sake of rules, sometimes they can be violated and that's okay, just make sure it's really necessary.
