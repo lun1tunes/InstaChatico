@@ -31,18 +31,27 @@ async def classify_comment_task(self, comment_id: str):
 
 
 async def _trigger_post_classification_actions(classification_result: dict):
-    """Trigger follow-up actions based on classification."""
+    """
+    Trigger follow-up actions based on classification.
+
+    Uses DI container to get task queue - follows SOLID principles.
+    """
     comment_id = classification_result["comment_id"]
     classification = classification_result.get("classification", "").lower()
+
+    # Get task queue from container
+    container = get_container()
+    task_queue = container.task_queue()
 
     # Answer generation for questions
     if classification == "question / inquiry":
         logger.info(f"Triggering answer generation for question {comment_id}")
         try:
-            from .answer_tasks import generate_answer_task
-
-            result = generate_answer_task.delay(comment_id)
-            logger.info(f"Answer task queued: {result.id}")
+            task_id = task_queue.enqueue(
+                "core.tasks.answer_tasks.generate_answer_task",
+                comment_id,
+            )
+            logger.info(f"Answer task queued: {task_id}")
         except Exception:
             logger.exception(f"Failed to queue answer task for {comment_id}")
 
@@ -50,10 +59,11 @@ async def _trigger_post_classification_actions(classification_result: dict):
     if classification in ["urgent issue / complaint", "toxic / abusive"]:
         logger.info(f"Triggering hide for {classification} comment {comment_id}")
         try:
-            result = celery_app.send_task(
-                "core.tasks.instagram_reply_tasks.hide_instagram_comment_task", args=[comment_id]
+            task_id = task_queue.enqueue(
+                "core.tasks.instagram_reply_tasks.hide_instagram_comment_task",
+                comment_id,
             )
-            logger.info(f"Hide task queued: {result.id}")
+            logger.info(f"Hide task queued: {task_id}")
         except Exception:
             logger.exception(f"Failed to queue hide task for {comment_id}")
 
@@ -61,10 +71,11 @@ async def _trigger_post_classification_actions(classification_result: dict):
     if classification in ["urgent issue / complaint", "critical feedback", "partnership proposal"]:
         logger.info(f"Triggering Telegram notification for {classification} comment {comment_id}")
         try:
-            result = celery_app.send_task(
-                "core.tasks.telegram_tasks.send_telegram_notification_task", args=[comment_id]
+            task_id = task_queue.enqueue(
+                "core.tasks.telegram_tasks.send_telegram_notification_task",
+                comment_id,
             )
-            logger.info(f"Telegram task queued: {result.id}")
+            logger.info(f"Telegram task queued: {task_id}")
         except Exception:
             logger.exception(f"Failed to queue Telegram task for {comment_id}")
 
@@ -77,17 +88,28 @@ async def retry_failed_classifications():
 
 
 async def retry_failed_classifications_async():
-    """Async retry failed classifications."""
+    """
+    Async retry failed classifications.
+
+    Uses DI container to get task queue - follows SOLID principles.
+    """
     from ..repositories.classification import ClassificationRepository
 
     async with get_db_session() as session:
         try:
+            # Get task queue from container
+            container = get_container()
+            task_queue = container.task_queue()
+
             # Use repository instead of direct SQL
             classification_repo = ClassificationRepository(session)
             retry_classifications = await classification_repo.get_pending_retries()
 
             for classification in retry_classifications:
-                classify_comment_task.delay(classification.comment_id)
+                task_queue.enqueue(
+                    "core.tasks.classification_tasks.classify_comment_task",
+                    classification.comment_id,
+                )
 
             logger.info(f"Queued {len(retry_classifications)} comments for retry")
             return {"retried_count": len(retry_classifications)}

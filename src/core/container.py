@@ -69,6 +69,7 @@ class Container(containers.DeclarativeContainer):
     media_service = providers.Factory(
         MediaService,
         instagram_service=instagram_service,
+        task_queue=task_queue,
     )
 
     embedding_service = providers.Factory(

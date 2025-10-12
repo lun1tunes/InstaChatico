@@ -5,7 +5,7 @@ from ..utils.time import now_db_utc
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .instagram_service import InstagramGraphAPIService
+from ..interfaces.services import IInstagramService, ITaskQueue
 from ..models import Media
 from ..repositories.media import MediaRepository
 
@@ -13,10 +13,27 @@ logger = logging.getLogger(__name__)
 
 
 class MediaService:
-    """Manage Instagram media information."""
+    """
+    Manage Instagram media information.
 
-    def __init__(self, instagram_service: InstagramGraphAPIService = None):
-        self.instagram_service = instagram_service or InstagramGraphAPIService()
+    Follows SOLID principles - depends on abstractions (IInstagramService, ITaskQueue),
+    not concretions.
+    """
+
+    def __init__(
+        self,
+        instagram_service: IInstagramService,
+        task_queue: ITaskQueue,
+    ):
+        """
+        Initialize MediaService with dependencies.
+
+        Args:
+            instagram_service: Service implementing IInstagramService protocol
+            task_queue: Task queue implementing ITaskQueue protocol
+        """
+        self.instagram_service = instagram_service
+        self.task_queue = task_queue
 
     async def get_or_create_media(self, media_id: str, session: AsyncSession) -> Optional[Media]:
         """Get media from DB or fetch from Instagram API."""
@@ -33,8 +50,10 @@ class MediaService:
                 # Check if existing media needs analysis
                 if media.media_type in ["IMAGE", "CAROUSEL_ALBUM"] and media.media_url and not media.media_context:
                     try:
-                        from core.tasks.media_tasks import analyze_media_image_task
-                        analyze_media_image_task.delay(media_id)
+                        self.task_queue.enqueue(
+                            "core.tasks.media_tasks.analyze_media_image_task",
+                            media_id,
+                        )
                         logger.info(f"Queued image analysis task for existing media {media_id}")
                     except Exception as e:
                         logger.warning(f"Failed to queue image analysis for existing media {media_id}: {e}")
@@ -90,8 +109,10 @@ class MediaService:
             # Queue image analysis task if media is an image
             if media.media_type in ["IMAGE", "CAROUSEL_ALBUM"] and media.media_url:
                 try:
-                    from core.tasks.media_tasks import analyze_media_image_task
-                    analyze_media_image_task.delay(media_id)
+                    self.task_queue.enqueue(
+                        "core.tasks.media_tasks.analyze_media_image_task",
+                        media_id,
+                    )
                     logger.info(f"Queued image analysis task for media {media_id}")
                 except Exception as e:
                     logger.warning(f"Failed to queue image analysis for {media_id}: {e}")
@@ -170,9 +191,10 @@ class MediaService:
 
             # Media doesn't exist, queue task for background processing
             logger.info(f"Media {media_id} not found, queuing background task")
-            from core.tasks.media_tasks import process_media_task
-
-            process_media_task.delay(media_id)
+            self.task_queue.enqueue(
+                "core.tasks.media_tasks.process_media_task",
+                media_id,
+            )
 
             return True
 
