@@ -19,6 +19,11 @@ celery_app = Celery(
     ],
 )
 
+# Configure broker connection resilience
+celery_app.conf.broker_connection_retry_on_startup = True
+celery_app.conf.broker_connection_retry = True
+celery_app.conf.broker_connection_max_retries = 10
+
 # Force import of all task modules to ensure they are registered
 import core.tasks.classification_tasks
 import core.tasks.answer_tasks
