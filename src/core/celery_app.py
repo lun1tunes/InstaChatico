@@ -22,7 +22,7 @@ celery_app = Celery(
 # Configure broker connection resilience
 celery_app.conf.broker_connection_retry_on_startup = True
 celery_app.conf.broker_connection_retry = True
-celery_app.conf.broker_connection_max_retries = 10
+celery_app.conf.broker_connection_max_retries = 30
 
 # Force import of all task modules to ensure they are registered
 import core.tasks.classification_tasks
@@ -62,7 +62,7 @@ celery_app.conf.update(
     task_time_limit=600,
     worker_prefetch_multiplier=1,
     task_acks_late=True,
-    worker_max_tasks_per_child=100,
+    worker_max_tasks_per_child=50,
     # Suppress deprecation warning about task cancellation on connection loss
     # This will be the default behavior in Celery 6.0
     worker_cancel_long_running_tasks_on_connection_loss=True,
