@@ -216,3 +216,6 @@ docker/config/dozzle/users.yml
 
 # Agent instructions - keep prompts secure and separate from code
 src/core/agents/instructions/
+
+# Claude
+.claude/
