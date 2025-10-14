@@ -3,7 +3,6 @@
 import logging
 
 from ..celery_app import celery_app
-from ..use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
 from ..utils.task_helpers import async_task, get_db_session
 from ..container import get_container
 

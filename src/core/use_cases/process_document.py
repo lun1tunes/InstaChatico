@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..repositories.document import DocumentRepository
 from ..interfaces.services import IS3Service, IDocumentProcessingService
 from ..utils.decorators import handle_task_errors
-from ..utils.time import now_db_utc
 
 
 class ProcessDocumentUseCase:
@@ -56,9 +55,7 @@ class ProcessDocumentUseCase:
 
             # 4. Process document
             success, markdown, content_hash, error = self.doc_processing.process_document(
-                file_content=file_content,
-                filename=document.document_name,
-                document_type=document.document_type
+                file_content=file_content, filename=document.document_name, document_type=document.document_type
             )
             if not success:
                 raise Exception(f"Failed to process document: {error}")

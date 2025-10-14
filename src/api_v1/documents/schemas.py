@@ -2,7 +2,7 @@
 Pydantic schemas for document API endpoints.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
@@ -10,6 +10,7 @@ from uuid import UUID
 
 class DocumentUploadResponse(BaseModel):
     """Response after uploading a document."""
+
     id: UUID
     document_name: str
     document_type: str
@@ -23,6 +24,7 @@ class DocumentUploadResponse(BaseModel):
 
 class DocumentResponse(BaseModel):
     """Full document information."""
+
     id: UUID
     client_id: str
     client_name: Optional[str] = None
@@ -44,12 +46,14 @@ class DocumentResponse(BaseModel):
 
 class DocumentListResponse(BaseModel):
     """List of documents."""
+
     total: int
     documents: List[DocumentResponse]
 
 
 class DocumentSummaryResponse(BaseModel):
     """Document statistics summary."""
+
     total_documents: int
     completed: int
     failed: int

@@ -4,11 +4,6 @@ import contextvars
 from logging.config import dictConfig
 from core.services.telegram_alert_service import TelegramAlertService
 from datetime import datetime
-import json
-import urllib.request
-from core.config import settings
-import sys
-import urllib.error
 
 
 class ChannelAliasFilter(logging.Filter):

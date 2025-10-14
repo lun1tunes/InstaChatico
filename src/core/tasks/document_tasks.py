@@ -3,7 +3,6 @@
 import logging
 
 from core.celery_app import celery_app
-from core.use_cases.process_document import ProcessDocumentUseCase
 from core.utils.task_helpers import async_task, get_db_session
 from core.container import get_container
 

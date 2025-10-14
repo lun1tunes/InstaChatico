@@ -3,8 +3,6 @@
 import logging
 
 from ..celery_app import celery_app
-from ..use_cases.send_reply import SendReplyUseCase
-from ..use_cases.hide_comment import HideCommentUseCase
 from ..utils.task_helpers import async_task, get_db_session
 from ..utils.lock_manager import LockManager
 from ..config import settings

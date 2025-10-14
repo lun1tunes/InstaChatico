@@ -10,7 +10,6 @@ from ..models.comment_classification import CommentClassification, ProcessingSta
 from ..repositories.comment import CommentRepository
 from ..repositories.media import MediaRepository
 from ..interfaces.services import IMediaService, ITaskQueue
-from ..utils.time import now_db_utc
 
 logger = logging.getLogger(__name__)
 

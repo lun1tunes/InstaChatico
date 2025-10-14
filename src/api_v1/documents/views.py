@@ -12,10 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.models.db_helper import db_helper
 from core.models.document import Document
 from core.config import settings
-from core.services.s3_service import S3Service
-from core.services.document_processing_service import DocumentProcessingService
-from core.services.document_context_service import DocumentContextService
-from core.infrastructure.task_queue import ITaskQueue
 from core.container import get_container, Container
 from .schemas import DocumentUploadResponse, DocumentResponse, DocumentListResponse, DocumentSummaryResponse
 

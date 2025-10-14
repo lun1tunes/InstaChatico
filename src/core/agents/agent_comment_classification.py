@@ -6,10 +6,9 @@ into business-relevant categories. The agent is designed to provide accurate and
 consistent classification with multi-language support.
 """
 
-from typing import Literal, Optional
-import os
+from typing import Literal
 
-from agents import Agent, ModelSettings
+from agents import Agent
 from pydantic import BaseModel, Field
 
 from ..config import settings

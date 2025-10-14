@@ -16,6 +16,7 @@ def handle_task_errors(error_status: str = "error"):
     Args:
         error_status: Status to return on error
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> Dict[str, Any]:
@@ -24,7 +25,9 @@ def handle_task_errors(error_status: str = "error"):
             except Exception as exc:
                 logger.exception(f"Error in {func.__name__}: {exc}")
                 return {"status": error_status, "reason": str(exc)}
+
         return wrapper
+
     return decorator
 
 
@@ -35,6 +38,7 @@ def log_execution(log_args: bool = True):
     Args:
         log_args: Whether to log function arguments
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
@@ -47,7 +51,9 @@ def log_execution(log_args: bool = True):
             result = await func(*args, **kwargs)
             logger.debug(f"Completed {func_name}")
             return result
+
         return wrapper
+
     return decorator
 
 
@@ -62,11 +68,13 @@ def validate_not_none(*field_names: str):
         async def process(comment, classification):
             # No need for if not comment checks
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
             # Get function arguments
             import inspect
+
             sig = inspect.signature(func)
             bound = sig.bind(*args, **kwargs)
             bound.apply_defaults()
@@ -77,5 +85,7 @@ def validate_not_none(*field_names: str):
                     raise ValueError(f"{field_name} cannot be None")
 
             return await func(*args, **kwargs)
+
         return wrapper
+
     return decorator

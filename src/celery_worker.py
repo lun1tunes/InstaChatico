@@ -2,7 +2,6 @@
 Celery worker entry point that ensures all tasks are imported
 """
 
-import os
 import sys
 import logging
 

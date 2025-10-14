@@ -51,34 +51,20 @@ async def verify_webhook_signature(request: Request, call_next):
             if signature_256:
                 # Instagram uses SHA256
                 expected_signature = (
-                    "sha256="
-                    + hmac.new(
-                        settings.app_secret.encode(), body, hashlib.sha256
-                    ).hexdigest()
+                    "sha256=" + hmac.new(settings.app_secret.encode(), body, hashlib.sha256).hexdigest()
                 )
             else:
                 # Fallback to SHA1 for compatibility
-                expected_signature = (
-                    "sha1="
-                    + hmac.new(
-                        settings.app_secret.encode(), body, hashlib.sha1
-                    ).hexdigest()
-                )
+                expected_signature = "sha1=" + hmac.new(settings.app_secret.encode(), body, hashlib.sha1).hexdigest()
 
             if not hmac.compare_digest(signature, expected_signature):
                 logging.error("Signature verification failed!")
                 logging.error(f"Body length: {len(body)}")
+                logging.error(f"Signature header used: {'X-Hub-Signature-256' if signature_256 else 'X-Hub-Signature'}")
                 logging.error(
-                    f"Signature header used: {'X-Hub-Signature-256' if signature_256 else 'X-Hub-Signature'}"
+                    f"Signature prefix: {signature[:10]}..." if len(signature) > 10 else "Signature: [REDACTED]"
                 )
-                logging.error(
-                    f"Signature prefix: {signature[:10]}..."
-                    if len(signature) > 10
-                    else "Signature: [REDACTED]"
-                )
-                return JSONResponse(
-                    status_code=401, content={"detail": "Invalid signature"}
-                )
+                return JSONResponse(status_code=401, content={"detail": "Invalid signature"})
             else:
                 logging.info("Signature verification successful")
         else:
@@ -86,17 +72,13 @@ async def verify_webhook_signature(request: Request, call_next):
             development_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
 
             if development_mode:
-                logging.warning(
-                    "DEVELOPMENT MODE: Allowing webhook request without signature header"
-                )
+                logging.warning("DEVELOPMENT MODE: Allowing webhook request without signature header")
             else:
                 # Block requests without signature headers in production
                 logging.error(
                     "Webhook request received without X-Hub-Signature or X-Hub-Signature-256 header - blocking request"
                 )
-                return JSONResponse(
-                    status_code=401, content={"detail": "Missing signature header"}
-                )
+                return JSONResponse(status_code=401, content={"detail": "Missing signature header"})
 
         # Сохраняем тело запроса для дальнейшей обработки
         request.state.body = body

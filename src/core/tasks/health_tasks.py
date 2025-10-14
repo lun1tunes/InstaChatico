@@ -1,7 +1,5 @@
-import asyncio
 import logging
 import os
-from datetime import datetime
 from ..utils.time import iso_utc
 
 try:

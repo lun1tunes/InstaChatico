@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import ForeignKey, String, Integer, DateTime, Text, JSON, Enum as SQLEnum
+from sqlalchemy import ForeignKey, String, Integer, Text, JSON, Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 

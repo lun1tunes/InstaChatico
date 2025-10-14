@@ -5,7 +5,6 @@ Telegram API endpoints for testing and management
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 from core.logging_config import trace_id_ctx
-from core.services.telegram_alert_service import TelegramAlertService
 from core.container import get_container, Container
 
 logger = logging.getLogger(__name__)
@@ -60,9 +59,7 @@ async def test_telegram_notification(
         }
 
         telegram_service = container.telegram_service()
-        result = await telegram_service.send_urgent_issue_notification(
-            test_comment_data
-        )
+        result = await telegram_service.send_urgent_issue_notification(test_comment_data)
 
         if result.get("success"):
             return {
@@ -94,17 +91,11 @@ async def test_log_alert(level: str = "warning"):
     elif level == "info":
         logger.info("ℹ️ Test log alert: INFO level")
     elif level == "warning":
-        logger.warning(
-            "⚠️ Test log alert: WARNING level - should go to Telegram LOGS thread"
-        )
+        logger.warning("⚠️ Test log alert: WARNING level - should go to Telegram LOGS thread")
     elif level == "error":
-        logger.error(
-            "🔴 Test log alert: ERROR level - should go to Telegram LOGS thread"
-        )
+        logger.error("🔴 Test log alert: ERROR level - should go to Telegram LOGS thread")
     elif level == "critical":
-        logger.critical(
-            "🚨 Test log alert: CRITICAL level - should go to Telegram LOGS thread"
-        )
+        logger.critical("🚨 Test log alert: CRITICAL level - should go to Telegram LOGS thread")
     else:
         raise HTTPException(
             status_code=400,

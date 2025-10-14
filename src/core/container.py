@@ -6,7 +6,6 @@ This makes the application more testable and maintainable.
 """
 
 from dependency_injector import containers, providers
-from sqlalchemy.ext.asyncio import AsyncSession
 
 # Services
 from .services.classification_service import CommentClassificationService

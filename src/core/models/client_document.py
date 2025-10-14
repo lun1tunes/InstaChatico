@@ -9,7 +9,6 @@ Single-tenant: Each app instance serves one client, so no client_id needed.
 
 from __future__ import annotations
 from datetime import datetime
-from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Text, BigInteger, DateTime, Index
 from sqlalchemy.dialects.postgresql import JSONB, UUID

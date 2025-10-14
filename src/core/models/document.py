@@ -9,7 +9,6 @@ Single-tenant: Each app instance serves one client, so no client_id needed.
 
 from __future__ import annotations
 from datetime import datetime
-from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Text, BigInteger, DateTime, Index
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -24,7 +23,7 @@ class Document(Base):
 
     Stores documents uploaded to S3, processed with pdfplumber/python-docx,
     and converted to markdown for use in AI agent responses.
-    
+
     Single-tenant architecture: One app instance per client.
     """
 
