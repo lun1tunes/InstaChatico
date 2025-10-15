@@ -19,6 +19,13 @@ logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("openai._base_client").setLevel(logging.WARNING)
 logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
+# Configuration constants (DRY principle - single source of truth)
+IMAGE_DOWNLOAD_TIMEOUT = 30  # seconds
+IMAGE_ANALYSIS_MODEL = "gpt-4o"  # GPT-4o for image analysis
+IMAGE_ANALYSIS_MAX_TOKENS = 2000
+IMAGE_ANALYSIS_TEMPERATURE = 0.1  # Low temperature for precise analysis
+IMAGE_DETAIL_LEVEL = "high"  # High quality for detailed analysis
+
 
 async def _analyze_image_implementation(image_url: str, additional_context: Optional[str] = None) -> str:
     """
@@ -83,7 +90,10 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
 
         # Download the image first (Instagram URLs require this)
         async with aiohttp.ClientSession() as session:
-            async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+            async with session.get(
+                image_url,
+                timeout=aiohttp.ClientTimeout(total=IMAGE_DOWNLOAD_TIMEOUT)
+            ) as response:
                 if response.status != 200:
                     raise Exception(f"Failed to download image: HTTP {response.status}")
 
@@ -153,7 +163,7 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
         async with AsyncOpenAI(api_key=settings.openai.api_key) as client:
             # Вызываем OpenAI Vision API with base64 encoded image
             api_response = await client.chat.completions.create(
-                model="gpt-4o",  # Используем GPT-4o для анализа изображений
+                model=IMAGE_ANALYSIS_MODEL,
                 messages=[
                     {
                         "role": "user",
@@ -163,14 +173,14 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:image/{image_format};base64,{base64_image}",
-                                    "detail": "high",  # Высокое качество для детального анализа
+                                    "detail": IMAGE_DETAIL_LEVEL,
                                 },
                             },
                         ],
                     }
                 ],
-                max_tokens=2000,
-                temperature=0.1,  # Низкая температура для более точного анализа
+                max_tokens=IMAGE_ANALYSIS_MAX_TOKENS,
+                temperature=IMAGE_ANALYSIS_TEMPERATURE,
             )
 
             # Извлекаем результат

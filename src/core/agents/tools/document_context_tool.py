@@ -6,10 +6,9 @@ IMPORTANT: This tool does NOT provide prices - prices come from embedding_search
 
 import logging
 from agents import function_tool
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from ...config import settings
 from ...services.document_context_service import document_context_service
+from ...models.db_helper import db_helper
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +51,8 @@ async def _document_context_implementation() -> str:
     try:
         logger.info("Document context tool called")
 
-        # Create database session
-        engine = create_async_engine(settings.db.url, echo=settings.db.echo)
-        session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False)
-
-        async with session_factory() as session:
+        # Use existing db_helper for session management (DRY principle)
+        async with db_helper.session_factory() as session:
             # Get formatted context from service
             context = await document_context_service.get_client_context(session=session)
 
@@ -84,10 +80,6 @@ async def _document_context_implementation() -> str:
         error_msg = f"❌ Error retrieving business documents: {str(e)}"
         logger.error(error_msg)
         return error_msg
-    finally:
-        # Clean up database connection
-        if "engine" in locals():
-            await engine.dispose()
 
 
 # Create the tool using @function_tool decorator

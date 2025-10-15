@@ -6,10 +6,9 @@ Automatically filters out-of-distribution results below 70% similarity threshold
 import logging
 from typing import Optional
 from agents import function_tool
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from ...config import settings
 from ...services.embedding_service import EmbeddingService
+from ...models.db_helper import db_helper
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +79,8 @@ async def _embedding_search_implementation(
 
         logger.info(f"Embedding search tool called with query: '{query}', limit: {limit}")
 
-        # Create database session
-        engine = create_async_engine(settings.db.url, echo=settings.db.echo)
-        session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False)
-
-        async with session_factory() as session:
+        # Use existing db_helper for session management (DRY principle)
+        async with db_helper.session_factory() as session:
             # Initialize embedding service with proper cleanup
             async with EmbeddingService() as embedding_service:
                 # Perform semantic search (get more results to account for filtering)
@@ -171,10 +167,6 @@ async def _embedding_search_implementation(
         error_msg = f"❌ Error performing embedding search: {str(e)}"
         logger.error(error_msg)
         return error_msg
-    finally:
-        # Clean up database connection
-        if 'engine' in locals():
-            await engine.dispose()
 
 
 # Create the tool using @function_tool decorator
