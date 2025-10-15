@@ -25,6 +25,21 @@ celery_app.conf.broker_connection_retry_on_startup = True
 celery_app.conf.broker_connection_retry = True
 celery_app.conf.broker_connection_max_retries = 30
 
+# Redis-specific configuration for handling failover and read-only replicas
+celery_app.conf.broker_transport_options = {
+    'visibility_timeout': 3600,  # 1 hour
+    'fanout_prefix': True,
+    'fanout_patterns': True,
+    'retry_on_timeout': True,
+    'max_connections': 10,
+}
+
+# Result backend options for Redis resilience
+celery_app.conf.result_backend_transport_options = {
+    'retry_on_timeout': True,
+    'max_connections': 10,
+}
+
 # Настройки Celery
 celery_app.conf.update(
     task_serializer="json",
