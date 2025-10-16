@@ -24,15 +24,22 @@ class InstagramGraphAPIService:
         url = f"{self.base_url}/{comment_id}/replies"
         params = {"access_token": self.access_token, "message": message}
 
-        try:
+        logger.info(
+            f"Sending Instagram reply | comment_id={comment_id} | message_length={len(message)} | "
+            f"message_preview={message[:50]}"
+        )
 
+        try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, params=params) as response:
                     response_data = await response.json()
 
                     if response.status == 200:
-                        logger.info(f"Sent reply to comment {comment_id}")
                         reply_id = response_data.get("id") if isinstance(response_data, dict) else None
+                        logger.info(
+                            f"Instagram reply sent successfully | comment_id={comment_id} | "
+                            f"reply_id={reply_id} | status_code={response.status}"
+                        )
                         return {
                             "success": True,
                             "response": response_data,
@@ -47,11 +54,13 @@ class InstagramGraphAPIService:
                             and "retry" in error_data.get("message", "").lower()
                         ):
                             logger.warning(
-                                f"Instagram API rate limit for comment {comment_id}, will retry"
+                                f"Instagram API rate limit | comment_id={comment_id} | "
+                                f"status_code={response.status} | will_retry=true"
                             )
                         else:
                             logger.error(
-                                f"Failed to send reply to comment {comment_id}: {response_data}"
+                                f"Instagram reply failed | comment_id={comment_id} | "
+                                f"status_code={response.status} | error={response_data}"
                             )
                         return {
                             "success": False,
@@ -60,7 +69,10 @@ class InstagramGraphAPIService:
                         }
 
         except Exception as e:
-            logger.exception(f"Exception while sending reply to comment {comment_id}")
+            logger.error(
+                f"Instagram reply exception | comment_id={comment_id} | error={str(e)}",
+                exc_info=True
+            )
             return {"success": False, "error": str(e), "status_code": None}
 
     async def get_comment_info(self, comment_id: str) -> Dict[str, Any]:
@@ -80,12 +92,17 @@ class InstagramGraphAPIService:
             "fields": "id,text,from,created_time,parent_id",
         }
 
+        logger.debug(f"Getting comment info | comment_id={comment_id}")
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     response_data = await response.json()
 
                     if response.status == 200:
+                        logger.info(
+                            f"Comment info retrieved | comment_id={comment_id} | status_code={response.status}"
+                        )
                         return {
                             "success": True,
                             "comment_info": response_data,
@@ -93,7 +110,8 @@ class InstagramGraphAPIService:
                         }
                     else:
                         logger.error(
-                            f"Failed to get comment info for {comment_id}: {response_data}"
+                            f"Failed to get comment info | comment_id={comment_id} | "
+                            f"status_code={response.status} | error={response_data}"
                         )
                         return {
                             "success": False,
@@ -102,7 +120,10 @@ class InstagramGraphAPIService:
                         }
 
         except Exception as e:
-            logger.exception(f"Exception while getting comment info for {comment_id}")
+            logger.error(
+                f"Comment info exception | comment_id={comment_id} | error={str(e)}",
+                exc_info=True
+            )
             return {"success": False, "error": str(e), "status_code": None}
 
     async def validate_token(self) -> Dict[str, Any]:
@@ -169,18 +190,19 @@ class InstagramGraphAPIService:
             "fields": "permalink,comments_count,like_count,shortcode,timestamp,is_comment_enabled,media_type,media_url,username,owner,caption,children{media_url,media_type}",
         }
 
-        try:
-            logger.debug(f"Getting media info for {media_id} with URL: {url}")
+        logger.debug(f"Getting media info | media_id={media_id}")
 
+        try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     response_data = await response.json()
 
-                    logger.debug(f"Media info response status: {response.status}")
-                    logger.debug(f"Media info response: {response_data}")
-
                     if response.status == 200:
-                        logger.info(f"Successfully retrieved media info for {media_id}")
+                        media_type = response_data.get("media_type", "unknown")
+                        logger.info(
+                            f"Media info retrieved | media_id={media_id} | media_type={media_type} | "
+                            f"status_code={response.status}"
+                        )
                         return {
                             "success": True,
                             "media_info": response_data,
@@ -188,7 +210,8 @@ class InstagramGraphAPIService:
                         }
                     else:
                         logger.error(
-                            f"Failed to get media info for {media_id}: {response_data}"
+                            f"Failed to get media info | media_id={media_id} | "
+                            f"status_code={response.status} | error={response_data}"
                         )
                         return {
                             "success": False,
@@ -197,7 +220,10 @@ class InstagramGraphAPIService:
                         }
 
         except Exception as e:
-            logger.exception(f"Exception while getting media info for {media_id}")
+            logger.error(
+                f"Media info exception | media_id={media_id} | error={str(e)}",
+                exc_info=True
+            )
             return {"success": False, "error": str(e), "status_code": None}
 
     async def get_page_info(self) -> Dict[str, Any]:
@@ -257,15 +283,20 @@ class InstagramGraphAPIService:
         url = f"{self.base_url}/{comment_id}"
         params = {"access_token": self.access_token, "hide": str(hide).lower()}
 
-        try:
-            logger.info(f"{'Hiding' if hide else 'Unhiding'} comment {comment_id}")
+        action = "Hiding" if hide else "Unhiding"
+        logger.info(f"{action} comment | comment_id={comment_id} | hide={hide}")
 
+        try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, params=params) as response:
                     response_data = await response.json()
 
                     if response.status == 200:
-                        logger.info(f"Successfully {'hid' if hide else 'unhid'} comment {comment_id}")
+                        action_past = "hidden" if hide else "unhidden"
+                        logger.info(
+                            f"Comment {action_past} successfully | comment_id={comment_id} | "
+                            f"status_code={response.status}"
+                        )
                         return {
                             "success": True,
                             "response": response_data,
@@ -273,7 +304,8 @@ class InstagramGraphAPIService:
                         }
                     else:
                         logger.error(
-                            f"Failed to {'hide' if hide else 'unhide'} comment {comment_id}: {response_data}"
+                            f"Failed to {action.lower()} comment | comment_id={comment_id} | "
+                            f"status_code={response.status} | error={response_data}"
                         )
                         return {
                             "success": False,
@@ -282,5 +314,8 @@ class InstagramGraphAPIService:
                         }
 
         except Exception as e:
-            logger.exception(f"Exception while {'hiding' if hide else 'unhiding'} comment {comment_id}")
+            logger.error(
+                f"Exception while {action.lower()} comment | comment_id={comment_id} | error={str(e)}",
+                exc_info=True
+            )
             return {"success": False, "error": str(e), "status_code": None}

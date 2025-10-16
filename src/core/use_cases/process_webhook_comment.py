@@ -69,16 +69,25 @@ class ProcessWebhookCommentUseCase:
                 "reason": str (optional),
             }
         """
+        logger.info(
+            f"Processing webhook comment | comment_id={comment_id} | media_id={media_id} | "
+            f"username={username} | has_parent={bool(parent_id)} | text_length={len(text)}"
+        )
+
         try:
             # Check if comment already exists
             existing = await self.comment_repo.get_by_id(comment_id)
             if existing:
-                logger.debug(f"Comment {comment_id} already exists")
-
                 # Check if needs re-classification
                 should_classify = (
                     not existing.classification
                     or existing.classification.processing_status != ProcessingStatus.COMPLETED
+                )
+
+                logger.info(
+                    f"Comment already exists | comment_id={comment_id} | should_classify={should_classify} | "
+                    f"has_classification={bool(existing.classification)} | "
+                    f"classification_status={existing.classification.processing_status if existing.classification else 'N/A'}"
                 )
 
                 return {
@@ -91,7 +100,7 @@ class ProcessWebhookCommentUseCase:
             # Ensure media exists
             media = await self.media_service.get_or_create_media(media_id, self.session)
             if not media:
-                logger.error(f"Failed to create media {media_id}")
+                logger.error(f"Failed to create media | comment_id={comment_id} | media_id={media_id}")
                 return {
                     "status": "error",
                     "comment_id": comment_id,
@@ -100,6 +109,11 @@ class ProcessWebhookCommentUseCase:
                 }
 
             # Create comment record
+            logger.info(
+                f"Creating new comment record | comment_id={comment_id} | media_id={media_id} | "
+                f"username={username} | text_length={len(text)} | has_parent={bool(parent_id)}"
+            )
+
             from datetime import datetime
 
             new_comment = InstagramComment(
@@ -119,7 +133,7 @@ class ProcessWebhookCommentUseCase:
             self.session.add(new_comment)
             await self.session.commit()
 
-            logger.info(f"Comment {comment_id} created successfully")
+            logger.info(f"Comment created successfully | comment_id={comment_id} | should_classify=True")
             return {
                 "status": "created",
                 "comment_id": comment_id,

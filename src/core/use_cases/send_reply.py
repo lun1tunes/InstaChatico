@@ -1,5 +1,6 @@
 """Send reply use case - handles Instagram reply business logic."""
 
+import logging
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +9,8 @@ from ..repositories.answer import AnswerRepository
 from ..interfaces.services import IInstagramService
 from ..utils.decorators import handle_task_errors
 from ..utils.time import now_db_utc
+
+logger = logging.getLogger(__name__)
 
 
 class SendReplyUseCase:
@@ -38,19 +41,30 @@ class SendReplyUseCase:
         use_generated_answer: bool = True
     ) -> Dict[str, Any]:
         """Execute send reply use case."""
+        logger.info(
+            f"Starting reply send | comment_id={comment_id} | "
+            f"use_generated_answer={use_generated_answer} | has_custom_text={bool(reply_text)}"
+        )
+
         # 1. Get comment
         comment = await self.comment_repo.get_by_id(comment_id)
         if not comment:
+            logger.error(f"Comment not found | comment_id={comment_id} | operation=send_reply")
             return {"status": "error", "reason": f"Comment {comment_id} not found"}
 
         # 2. Determine reply text
         if use_generated_answer and not reply_text:
             answer_record = await self.answer_repo.get_by_comment_id(comment_id)
             if not answer_record or not answer_record.answer:
+                logger.error(f"No generated answer available | comment_id={comment_id}")
                 return {"status": "error", "reason": "No generated answer available"}
             reply_text = answer_record.answer
+            logger.info(f"Using generated answer | comment_id={comment_id} | answer_length={len(reply_text)}")
         elif not reply_text:
+            logger.error(f"No reply text provided | comment_id={comment_id}")
             return {"status": "error", "reason": "No reply text provided"}
+        else:
+            logger.info(f"Using custom reply text | comment_id={comment_id} | text_length={len(reply_text)}")
 
         # 3. Get answer record for tracking
         answer_record = await self.answer_repo.get_by_comment_id(comment_id)
@@ -59,6 +73,10 @@ class SendReplyUseCase:
 
         # 4. Check if already sent
         if answer_record.reply_sent:
+            logger.info(
+                f"Reply already sent | comment_id={comment_id} | reply_id={answer_record.reply_id} | "
+                f"sent_at={answer_record.reply_sent_at.isoformat() if answer_record.reply_sent_at else None}"
+            )
             return {
                 "status": "skipped",
                 "reason": "Reply already sent",
@@ -67,6 +85,7 @@ class SendReplyUseCase:
             }
 
         # 5. Send reply via Instagram API
+        logger.info(f"Sending reply to Instagram | comment_id={comment_id} | reply_length={len(reply_text)}")
         result = await self.instagram_service.send_reply_to_comment(
             comment_id=comment_id,
             message=reply_text
@@ -74,12 +93,20 @@ class SendReplyUseCase:
 
         # 6. Update tracking
         if result.get("success"):
+            logger.info(
+                f"Reply sent successfully | comment_id={comment_id} | "
+                f"reply_id={result.get('reply_id') or result.get('response', {}).get('id')}"
+            )
             answer_record.reply_sent = True
             answer_record.reply_sent_at = now_db_utc()
             answer_record.reply_status = "sent"
             answer_record.reply_response = result.get("response", {})
             answer_record.reply_id = result.get("reply_id") or result.get("response", {}).get("id")
         else:
+            logger.error(
+                f"Reply send failed | comment_id={comment_id} | "
+                f"error={result.get('error', 'Unknown error')}"
+            )
             answer_record.reply_status = "failed"
             # Convert error to string if it's a dict
             error = result.get("error", "Unknown error")

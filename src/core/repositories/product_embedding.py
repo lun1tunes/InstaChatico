@@ -1,5 +1,6 @@
 """Product embedding repository for semantic search data access."""
 
+import asyncio
 import logging
 from typing import Optional, List, Dict
 from sqlalchemy import select, text
@@ -69,9 +70,26 @@ class ProductEmbeddingRepository(BaseRepository[ProductEmbedding]):
         # Order by similarity (highest first) and limit
         sql_query += " ORDER BY embedding <=> :query_embedding LIMIT :limit"
 
-        # Execute the query
-        result = await self.session.execute(text(sql_query), params)
-        rows = result.fetchall()
+        # Execute the query with retry logic for concurrency issues
+        max_retries = 3
+        retry_delay = 0.1  # 100ms
+
+        for attempt in range(max_retries):
+            try:
+                result = await self.session.execute(text(sql_query), params)
+                rows = result.fetchall()
+                break  # Success, exit retry loop
+            except Exception as e:
+                if "another operation is in progress" in str(e) and attempt < max_retries - 1:
+                    logger.warning(
+                        f"Database concurrency issue, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    # Re-raise if it's not a concurrency issue or we've exhausted retries
+                    raise
 
         # Process results
         results = []

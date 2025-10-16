@@ -13,12 +13,34 @@ logger = logging.getLogger(__name__)
 @async_task
 async def process_document_task(self, document_id: str):
     """Process document - orchestration only."""
-    async with get_db_session() as session:
-        container = get_container()
-        use_case = container.process_document_use_case(session=session)
-        result = await use_case.execute(document_id)
+    task_id = self.request.id
+    logger.info(
+        f"Task started: process_document_task | task_id={task_id} | "
+        f"document_id={document_id} | retry={self.request.retries}/{self.max_retries} | queue=llm_queue"
+    )
 
-        if result["status"] == "retry" and self.request.retries < self.max_retries:
-            raise self.retry(countdown=10)
+    try:
+        async with get_db_session() as session:
+            container = get_container()
+            use_case = container.process_document_use_case(session=session)
+            result = await use_case.execute(document_id)
 
-        return result
+            if result["status"] == "retry" and self.request.retries < self.max_retries:
+                logger.warning(
+                    f"Task retry scheduled: process_document_task | task_id={task_id} | "
+                    f"document_id={document_id} | retry={self.request.retries + 1}/{self.max_retries} | countdown=10s"
+                )
+                raise self.retry(countdown=10)
+
+            logger.info(
+                f"Task completed: process_document_task | task_id={task_id} | "
+                f"document_id={document_id} | status={result['status']}"
+            )
+            return result
+    except Exception as exc:
+        logger.error(
+            f"Task failed: process_document_task | task_id={task_id} | "
+            f"document_id={document_id} | retry={self.request.retries}/{self.max_retries} | error={str(exc)}",
+            exc_info=True
+        )
+        raise

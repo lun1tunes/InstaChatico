@@ -185,6 +185,16 @@ def configure_logging() -> None:
                 "level": "WARNING",  # Suppress verbose DEBUG worker startup logs
                 "propagate": False,
             },
+            "celery.utils.functional": {
+                "handlers": ["console"],
+                "level": "WARNING",  # Suppress very verbose task introspection logs
+                "propagate": False,
+            },
+            "celery.worker": {
+                "handlers": ["console"],
+                "level": "INFO",  # Worker state changes are useful
+                "propagate": False,
+            },
             # SQLAlchemy warnings/errors (DB constraint violations, etc.)
             "sqlalchemy": {
                 "handlers": ["console", "telegram_alerts"],

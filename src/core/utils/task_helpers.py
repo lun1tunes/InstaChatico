@@ -29,8 +29,16 @@ def async_task(celery_task_func):
 
 @asynccontextmanager
 async def get_db_session():
-    """Context manager for database session with automatic cleanup."""
-    engine = create_async_engine(settings.db.url, echo=settings.db.echo)
+    """Context manager for database session with automatic cleanup and connection pooling."""
+    # Create engine with connection pooling settings to handle concurrency better
+    engine = create_async_engine(
+        settings.db.url,
+        echo=settings.db.echo,
+        pool_size=10,  # Increase pool size for better concurrency
+        max_overflow=20,  # Allow more connections when needed
+        pool_pre_ping=True,  # Verify connections before use
+        pool_recycle=3600,  # Recycle connections every hour
+    )
     session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
     async with session_factory() as session:

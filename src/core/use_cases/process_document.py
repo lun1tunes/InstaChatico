@@ -1,11 +1,14 @@
 """Process document use case - handles document processing business logic."""
 
+import logging
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.document import DocumentRepository
 from ..interfaces.services import IS3Service, IDocumentProcessingService
 from ..utils.decorators import handle_task_errors
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessDocumentUseCase:
@@ -37,33 +40,57 @@ class ProcessDocumentUseCase:
     @handle_task_errors()
     async def execute(self, document_id: str) -> Dict[str, Any]:
         """Execute document processing use case."""
+        logger.info(f"Starting document processing | document_id={document_id}")
+
         # 1. Get document using repository
         document = await self.document_repo.get_by_id(document_id)
 
         if not document:
+            logger.error(f"Document not found | document_id={document_id} | operation=process_document")
             return {"status": "error", "reason": f"Document {document_id} not found"}
 
         # 2. Update status to processing using repository method
+        logger.info(
+            f"Marking document as processing | document_id={document_id} | "
+            f"document_name={document.document_name} | document_type={document.document_type}"
+        )
         await self.document_repo.mark_processing(document)
         await self.session.commit()
 
         try:
             # 3. Download from S3
+            logger.info(f"Downloading document from S3 | document_id={document_id} | s3_key={document.s3_key}")
             success, file_content, error = self.s3_service.download_file(document.s3_key)
             if not success:
+                logger.error(
+                    f"S3 download failed | document_id={document_id} | s3_key={document.s3_key} | error={error}"
+                )
                 raise Exception(f"Failed to download from S3: {error}")
 
             # 4. Process document
+            logger.info(
+                f"Processing document | document_id={document_id} | filename={document.document_name} | "
+                f"type={document.document_type} | file_size={len(file_content)} bytes"
+            )
             success, markdown, content_hash, error = self.doc_processing.process_document(
                 file_content=file_content, filename=document.document_name, document_type=document.document_type
             )
             if not success:
+                logger.error(
+                    f"Document processing failed | document_id={document_id} | filename={document.document_name} | "
+                    f"error={error}"
+                )
                 raise Exception(f"Failed to process document: {error}")
 
             # 5. Update document with results using repository method
             await self.document_repo.mark_completed(document, markdown)
             document.content_hash = content_hash
             await self.session.commit()
+
+            logger.info(
+                f"Document processing completed | document_id={document_id} | "
+                f"markdown_length={len(markdown)} | content_hash={content_hash}"
+            )
 
             return {
                 "status": "success",
@@ -72,6 +99,10 @@ class ProcessDocumentUseCase:
             }
 
         except Exception as exc:
+            logger.error(
+                f"Document processing failed with exception | document_id={document_id} | "
+                f"document_name={document.document_name} | error={str(exc)}"
+            )
             # Update document with error using repository method
             await self.document_repo.mark_failed(document, str(exc))
             await self.session.commit()

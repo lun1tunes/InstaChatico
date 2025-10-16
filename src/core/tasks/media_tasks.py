@@ -22,7 +22,8 @@ async def process_media_task(self, media_id: str):
         if result.status == "retry" and self.request.retries < self.max_retries:
             raise self.retry(countdown=10)
 
-        return result
+        # Convert Pydantic model to dict for Celery serialization
+        return result.model_dump()
 
 
 @celery_app.task(bind=True, max_retries=3, queue="llm_queue")
@@ -38,4 +39,5 @@ async def analyze_media_image_task(self, media_id: str):
         if result.status == "retry" and self.request.retries < self.max_retries:
             raise self.retry(countdown=10)
 
-        return result
+        # Convert Pydantic model to dict for Celery serialization
+        return result.model_dump()

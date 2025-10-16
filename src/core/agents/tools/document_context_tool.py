@@ -51,8 +51,11 @@ async def _document_context_implementation() -> str:
     try:
         logger.info("Document context tool called")
 
-        # Use existing db_helper for session management (DRY principle)
-        async with db_helper.session_factory() as session:
+        # Create a new database session within the current event loop context
+        # This prevents the "attached to a different loop" error
+        from core.utils.task_helpers import get_db_session
+
+        async with get_db_session() as session:
             # Get formatted context from service
             context = await document_context_service.get_client_context(session=session)
 

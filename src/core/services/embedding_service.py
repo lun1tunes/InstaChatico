@@ -1,9 +1,10 @@
 """Service for generating embeddings and semantic search with OOD detection"""
 
+import asyncio
 import logging
 from typing import List, Dict, Optional
-from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
+from openai import AsyncOpenAI
 
 from ..config import settings
 from ..models import ProductEmbedding
@@ -16,9 +17,7 @@ class EmbeddingService:
     """Handles vector embeddings and similarity search with OOD detection"""
 
     def __init__(self):
-        """Initialize with OpenAI client and load threshold settings"""
-        self.client = AsyncOpenAI(api_key=settings.openai.api_key)
-
+        """Initialize with threshold settings"""
         # Load settings from config (can be overridden via environment variables)
         self.EMBEDDING_MODEL = settings.embedding.model
         self.EMBEDDING_DIMENSIONS = settings.embedding.dimensions
@@ -35,33 +34,24 @@ class EmbeddingService:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit - cleanup client"""
-        await self.close()
+        """Async context manager exit - no cleanup needed (singleton manages client)"""
         return False
-
-    async def close(self):
-        """Close the OpenAI client to prevent event loop errors"""
-        try:
-            await self.client.close()
-            logger.debug("EmbeddingService client closed successfully")
-        except Exception as e:
-            logger.warning(f"Error closing EmbeddingService client: {e}")
 
     async def generate_embedding(self, text: str) -> List[float]:
         """Generate normalized embedding vector using OpenAI API (1536 dims)"""
         try:
             logger.debug(f"Generating embedding for text: {text[:100]}...")
 
-            response = await self.client.embeddings.create(
-                model=self.EMBEDDING_MODEL,
-                input=text,
-                encoding_format="float"
-            )
+            # Create new client each time to avoid event loop issues in Celery
+            async with AsyncOpenAI(api_key=settings.openai.api_key) as client:
+                response = await client.embeddings.create(
+                    model=self.EMBEDDING_MODEL, input=text, encoding_format="float"
+                )
 
-            embedding = response.data[0].embedding
-            logger.debug(f"Generated embedding with {len(embedding)} dimensions")
+                embedding = response.data[0].embedding
+                logger.debug(f"Generated embedding with {len(embedding)} dimensions")
 
-            return embedding
+                return embedding
 
         except Exception as e:
             logger.error(f"Failed to generate embedding: {e}")
@@ -73,7 +63,7 @@ class EmbeddingService:
         session: AsyncSession,
         limit: int = 5,
         category_filter: Optional[str] = None,
-        include_inactive: bool = False
+        include_inactive: bool = False,
     ) -> List[Dict]:
         """
         Search products using cosine similarity, marks OOD results (< threshold).
@@ -85,19 +75,37 @@ class EmbeddingService:
             # Generate embedding for the query
             query_embedding = await self.generate_embedding(query)
 
-            # Use repository for vector search
+            # Use repository for vector search with retry logic
             product_repo = ProductEmbeddingRepository(session)
-            results = await product_repo.search_by_similarity(
-                query_embedding=query_embedding,
-                limit=limit,
-                category_filter=category_filter,
-                include_inactive=include_inactive,
-                similarity_threshold=self.SIMILARITY_THRESHOLD,
-            )
+
+            # Add retry logic for database concurrency issues
+            max_retries = 3
+            retry_delay = 0.1
+
+            for attempt in range(max_retries):
+                try:
+                    results = await product_repo.search_by_similarity(
+                        query_embedding=query_embedding,
+                        limit=limit,
+                        category_filter=category_filter,
+                        include_inactive=include_inactive,
+                        similarity_threshold=self.SIMILARITY_THRESHOLD,
+                    )
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    if "another operation is in progress" in str(e) and attempt < max_retries - 1:
+                        logger.warning(
+                            f"Database concurrency issue in search, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})"
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                        continue
+                    else:
+                        # Re-raise if it's not a concurrency issue or we've exhausted retries
+                        raise
 
             logger.info(
-                f"Found {len(results)} results for query: {query}, "
-                f"{sum(1 for r in results if r['is_ood'])} are OOD"
+                f"Found {len(results)} results for query: {query}, " f"{sum(1 for r in results if r['is_ood'])} are OOD"
             )
 
             return results
@@ -116,7 +124,7 @@ class EmbeddingService:
         tags: Optional[str] = None,
         url: Optional[str] = None,
         image_url: Optional[str] = None,
-        is_active: bool = True
+        is_active: bool = True,
     ) -> ProductEmbedding:
         """Add product with auto-generated embedding to database"""
         try:
@@ -136,7 +144,7 @@ class EmbeddingService:
                 url=url,
                 image_url=image_url,
                 embedding=embedding,
-                is_active=is_active
+                is_active=is_active,
             )
 
             # Use repository to create product
@@ -154,11 +162,7 @@ class EmbeddingService:
             logger.error(f"Failed to add product: {e}")
             raise
 
-    async def update_product_embedding(
-        self,
-        product_id: int,
-        session: AsyncSession
-    ) -> Optional[ProductEmbedding]:
+    async def update_product_embedding(self, product_id: int, session: AsyncSession) -> Optional[ProductEmbedding]:
         """Regenerate and update embedding for existing product"""
         try:
             logger.info(f"Updating embedding for product ID: {product_id}")

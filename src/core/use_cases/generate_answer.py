@@ -1,5 +1,6 @@
 """Generate answer use case - handles question answering business logic."""
 
+import logging
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,8 @@ from ..interfaces.services import IAnswerService
 from ..utils.decorators import handle_task_errors
 from ..utils.time import now_db_utc
 from ..models.question_answer import AnswerStatus
+
+logger = logging.getLogger(__name__)
 
 
 class GenerateAnswerUseCase:
@@ -34,17 +37,22 @@ class GenerateAnswerUseCase:
     @handle_task_errors()
     async def execute(self, comment_id: str, retry_count: int = 0) -> Dict[str, Any]:
         """Execute answer generation use case."""
+        logger.info(f"Starting answer generation | comment_id={comment_id} | retry_count={retry_count}")
+
         # 1. Get comment with classification
         comment = await self.comment_repo.get_with_classification(comment_id)
         if not comment:
+            logger.error(f"Comment not found | comment_id={comment_id} | operation=generate_answer")
             return {"status": "error", "reason": f"Comment {comment_id} not found"}
 
         # 2. Get or create answer record
         answer_record = await self.answer_repo.get_by_comment_id(comment_id)
         if not answer_record:
+            logger.info(f"Creating new answer record | comment_id={comment_id}")
             answer_record = await self.answer_repo.create_for_comment(comment_id)
 
         # 3. Update processing status
+        logger.debug(f"Marking answer as processing | comment_id={comment_id} | retry_count={retry_count}")
         answer_record.processing_status = AnswerStatus.PROCESSING
         answer_record.processing_started_at = now_db_utc()
         answer_record.retry_count = retry_count
@@ -58,12 +66,23 @@ class GenerateAnswerUseCase:
                 username=comment.username,
             )
         except Exception as exc:
+            logger.error(
+                f"Answer generation failed | comment_id={comment_id} | error={str(exc)} | "
+                f"retry_count={retry_count}"
+            )
             answer_record.processing_status = AnswerStatus.FAILED
             answer_record.last_error = str(exc)
             await self.session.commit()
 
             if retry_count < answer_record.max_retries:
+                logger.info(
+                    f"Scheduling retry | comment_id={comment_id} | retry_count={retry_count} | "
+                    f"max_retries={answer_record.max_retries}"
+                )
                 return {"status": "retry", "reason": str(exc)}
+            logger.warning(
+                f"Max retries exceeded | comment_id={comment_id} | retry_count={retry_count}"
+            )
             return {"status": "error", "reason": str(exc)}
 
         # 5. Update answer record with results
@@ -79,6 +98,15 @@ class GenerateAnswerUseCase:
         answer_record.processing_completed_at = now_db_utc()
 
         await self.session.commit()
+
+        logger.info(
+            f"Answer generation completed | comment_id={comment_id} | "
+            f"confidence={answer_result.answer_confidence} | "
+            f"quality_score={answer_result.answer_quality_score} | "
+            f"input_tokens={answer_result.input_tokens} | "
+            f"output_tokens={answer_result.output_tokens} | "
+            f"processing_time_ms={answer_result.processing_time_ms}"
+        )
 
         return {
             "status": "success",

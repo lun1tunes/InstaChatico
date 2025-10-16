@@ -71,10 +71,16 @@ class TestCommentProcessingUseCase:
                 "processing_details": dict,
             }
         """
+        logger.info(
+            f"Starting test comment processing | comment_id={comment_id} | media_id={media_id} | "
+            f"username={username} | has_parent={bool(parent_id)}"
+        )
+
         try:
             # Step 1: Ensure media exists
             media = await self._ensure_test_media(media_id, media_caption, media_url)
             if not media:
+                logger.error(f"Failed to create test media | media_id={media_id}")
                 return {
                     "status": "error",
                     "comment_id": comment_id,
@@ -91,6 +97,7 @@ class TestCommentProcessingUseCase:
             await self.session.commit()
 
             # Step 4: Run classification
+            logger.info(f"Executing classification for test comment | comment_id={comment_id}")
             if not self.classify_use_case:
                 # Use container if use case not provided
                 from ..container import container
@@ -101,6 +108,10 @@ class TestCommentProcessingUseCase:
             classification_result = await classification_use_case.execute(comment_id, retry_count=0)
 
             if classification_result.get("status") == "error":
+                logger.error(
+                    f"Test comment classification failed | comment_id={comment_id} | "
+                    f"reason={classification_result.get('reason')}"
+                )
                 return {
                     "status": "error",
                     "comment_id": comment_id,
@@ -116,6 +127,10 @@ class TestCommentProcessingUseCase:
             if comment.classification:
                 reasoning = comment.classification.reasoning
 
+            logger.info(
+                f"Test comment classified | comment_id={comment_id} | classification={classification_type}"
+            )
+
             # Prepare result
             result = {
                 "status": "success",
@@ -128,7 +143,10 @@ class TestCommentProcessingUseCase:
 
             # Step 5: If question, generate answer
             if classification_type == "question / inquiry":
-                logger.info(f"Generating answer for test question {comment_id}")
+                logger.info(
+                    f"Classification is question, generating answer | comment_id={comment_id} | "
+                    f"classification={classification_type}"
+                )
                 if not self.answer_use_case:
                     # Use container if use case not provided
                     from ..container import container
@@ -136,14 +154,27 @@ class TestCommentProcessingUseCase:
                 else:
                     answer_use_case = self.answer_use_case
 
+                logger.info(f"Executing answer generation for test question | comment_id={comment_id}")
                 answer_result = await answer_use_case.execute(comment_id, retry_count=0)
 
                 if answer_result.get("status") == "error":
+                    logger.warning(
+                        f"Test answer generation failed | comment_id={comment_id} | "
+                        f"reason={answer_result.get('reason')}"
+                    )
                     result["processing_details"]["answer_error"] = answer_result.get("reason")
                 else:
+                    logger.info(
+                        f"Test answer generated successfully | comment_id={comment_id} | "
+                        f"confidence={answer_result.get('confidence')}"
+                    )
                     result["answer"] = answer_result.get("answer")
                     result["processing_details"]["answer_result"] = answer_result
 
+            logger.info(
+                f"Test comment processing completed | comment_id={comment_id} | "
+                f"classification={result.get('classification')} | has_answer={bool(result.get('answer'))}"
+            )
             return result
 
         except Exception as e:

@@ -48,21 +48,29 @@ class ClassifyCommentUseCase:
 
         Simplified logic - no infrastructure concerns.
         """
+        logger.info(f"Starting classification | comment_id={comment_id} | retry_count={retry_count}")
+
         # 1. Get comment with classification
         comment = await self.comment_repo.get_with_classification(comment_id)
         if not comment:
-            logger.warning(f"Comment {comment_id} not found")
+            logger.warning(f"Comment not found | comment_id={comment_id} | operation=classify_comment")
             return {"status": "error", "reason": "comment_not_found"}
 
         # 2. Ensure media exists
         media = await self.media_service.get_or_create_media(comment.media_id, self.session)
         if not media:
-            logger.error(f"Failed to get media {comment.media_id}")
+            logger.error(
+                f"Media unavailable | comment_id={comment_id} | media_id={comment.media_id} | "
+                f"operation=get_or_create_media"
+            )
             return {"status": "error", "reason": "media_unavailable"}
 
         # 3. Wait for media context if needed
         if await self._should_wait_for_media_context(media):
-            logger.info(f"Media {media.id} context not ready")
+            logger.info(
+                f"Waiting for media context | comment_id={comment_id} | media_id={media.id} | "
+                f"media_type={media.media_type} | has_url={bool(media.media_url)}"
+            )
             return {"status": "retry", "reason": "waiting_for_media_context"}
 
         # 4. Get or create classification record
@@ -73,18 +81,14 @@ class ClassifyCommentUseCase:
         await self.session.commit()
 
         # 6. Generate conversation ID
-        conversation_id = self.classification_service._generate_conversation_id(
-            comment.id, comment.parent_id
-        )
+        conversation_id = self.classification_service._generate_conversation_id(comment.id, comment.parent_id)
         comment.conversation_id = conversation_id
 
         # 7. Build media context
         media_context = self._build_media_context(media)
 
         # 8. Classify comment
-        result = await self.classification_service.classify_comment(
-            comment.text, conversation_id, media_context
-        )
+        result = await self.classification_service.classify_comment(comment.text, conversation_id, media_context)
 
         # 9. Save results
         classification.classification = result.classification
@@ -94,13 +98,19 @@ class ClassifyCommentUseCase:
         classification.output_tokens = result.output_tokens
 
         if result.error:
+            logger.error(f"Classification failed | comment_id={comment_id} | error={result.error}")
             await self.classification_repo.mark_failed(classification, result.error)
         else:
             await self.classification_repo.mark_completed(classification)
 
         await self.session.commit()
 
-        logger.info(f"Comment {comment_id} classified: {result.classification}")
+        logger.info(
+            f"Classification completed | comment_id={comment_id} | "
+            f"classification={result.classification} | confidence={result.confidence} | "
+            f"input_tokens={result.input_tokens} | output_tokens={result.output_tokens} | "
+            f"has_error={bool(result.error)}"
+        )
 
         return {
             "status": "success",
@@ -114,18 +124,37 @@ class ClassifyCommentUseCase:
         classification = await self.classification_repo.get_by_comment_id(comment_id)
 
         if not classification:
+            logger.debug(f"Creating new classification record | comment_id={comment_id}")
             classification = CommentClassification(comment_id=comment_id)
             await self.classification_repo.create(classification)
 
         return classification
 
     async def _should_wait_for_media_context(self, media) -> bool:
-        """Check if we need to wait for media context analysis."""
+        """
+        Check if we need to wait for media context analysis.
+
+        We should wait if:
+        1. Media has images (IMAGE or CAROUSEL_ALBUM)
+        2. Media has URL for analysis
+        3. Media context is not yet available
+        4. Analysis task hasn't failed (we don't wait indefinitely for failed tasks)
+        """
         has_image = media.media_type in ["IMAGE", "CAROUSEL_ALBUM"]
         has_url = bool(media.media_url)
         no_context = not media.media_context
 
-        return has_image and has_url and no_context
+        # If we have images but no context, we should wait
+        # The analysis task will either succeed (add context) or fail (we'll proceed without context)
+        should_wait = has_image and has_url and no_context
+
+        if should_wait:
+            logger.debug(
+                f"Media context check | media_id={media.id} | media_type={media.media_type} | "
+                f"has_url={has_url} | has_context={bool(media.media_context)} | should_wait={should_wait}"
+            )
+
+        return should_wait
 
     def _build_media_context(self, media) -> Dict[str, Any]:
         """Build media context dictionary."""
