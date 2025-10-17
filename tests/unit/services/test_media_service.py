@@ -1,0 +1,382 @@
+"""
+Unit tests for MediaService.
+"""
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime
+
+from core.services.media_service import MediaService
+from core.models import Media
+
+
+@pytest.mark.unit
+@pytest.mark.service
+class TestMediaService:
+    """Test MediaService methods."""
+
+    @pytest.fixture
+    def mock_instagram_service(self):
+        """Create mock Instagram service."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def mock_task_queue(self):
+        """Create mock task queue."""
+        return MagicMock()
+
+    @pytest.fixture
+    def media_service(self, mock_instagram_service, mock_task_queue):
+        """Create MediaService instance with mocked dependencies."""
+        return MediaService(
+            instagram_service=mock_instagram_service,
+            task_queue=mock_task_queue
+        )
+
+    async def test_get_or_create_media_exists_in_db(
+        self, media_service, mock_task_queue, db_session
+    ):
+        """Test get_or_create_media when media already exists in database."""
+        # Arrange
+        existing_media = Media(
+            id="media_123",
+            media_type="VIDEO",
+            media_url="https://example.com/video.mp4",
+            caption="Test video"
+        )
+        db_session.add(existing_media)
+        await db_session.commit()
+
+        # Act
+        media = await media_service.get_or_create_media("media_123", db_session)
+
+        # Assert
+        assert media is not None
+        assert media.id == "media_123"
+        assert media.media_type == "VIDEO"
+        # Should not queue analysis for VIDEO type
+        mock_task_queue.enqueue.assert_not_called()
+
+    async def test_get_or_create_media_exists_queues_analysis(
+        self, media_service, mock_task_queue, db_session
+    ):
+        """Test that existing media without context queues analysis task."""
+        # Arrange
+        existing_media = Media(
+            id="media_456",
+            media_type="IMAGE",
+            media_url="https://example.com/image.jpg",
+            caption="Test image",
+            media_context=None  # No context yet
+        )
+        db_session.add(existing_media)
+        await db_session.commit()
+
+        # Act
+        media = await media_service.get_or_create_media("media_456", db_session)
+
+        # Assert
+        assert media is not None
+        assert media.id == "media_456"
+        mock_task_queue.enqueue.assert_called_once_with(
+            "core.tasks.media_tasks.analyze_media_image_task",
+            "media_456"
+        )
+
+    async def test_get_or_create_media_exists_with_context_no_queue(
+        self, media_service, mock_task_queue, db_session
+    ):
+        """Test that existing media with context doesn't queue analysis."""
+        # Arrange
+        existing_media = Media(
+            id="media_789",
+            media_type="IMAGE",
+            media_url="https://example.com/image.jpg",
+            caption="Test image",
+            media_context="Existing context"
+        )
+        db_session.add(existing_media)
+        await db_session.commit()
+
+        # Act
+        media = await media_service.get_or_create_media("media_789", db_session)
+
+        # Assert
+        assert media is not None
+        assert media.media_context == "Existing context"
+        mock_task_queue.enqueue.assert_not_called()
+
+    async def test_get_or_create_media_fetches_from_api(
+        self, media_service, mock_instagram_service, mock_task_queue, db_session
+    ):
+        """Test get_or_create_media fetches from Instagram API when not in DB."""
+        # Arrange
+        mock_instagram_service.get_media_info = AsyncMock(return_value={
+            "success": True,
+            "media_info": {
+                "id": "new_media_123",
+                "media_type": "IMAGE",
+                "media_url": "https://example.com/new_image.jpg",
+                "caption": "New image caption",
+                "permalink": "https://instagram.com/p/ABC123",
+                "comments_count": 10,
+                "like_count": 100,
+                "timestamp": "2025-01-15T10:00:00Z"
+            }
+        })
+
+        # Act
+        media = await media_service.get_or_create_media("new_media_123", db_session)
+
+        # Assert
+        assert media is not None
+        assert media.id == "new_media_123"
+        assert media.media_type == "IMAGE"
+        assert media.caption == "New image caption"
+        mock_instagram_service.get_media_info.assert_called_once_with("new_media_123")
+        mock_task_queue.enqueue.assert_called_once()
+
+    async def test_get_or_create_media_api_failure(
+        self, media_service, mock_instagram_service, db_session
+    ):
+        """Test get_or_create_media handles API failure."""
+        # Arrange
+        mock_instagram_service.get_media_info = AsyncMock(return_value={
+            "success": False,
+            "error": "Media not found"
+        })
+
+        # Act
+        media = await media_service.get_or_create_media("invalid_media", db_session)
+
+        # Assert
+        assert media is None
+        mock_instagram_service.get_media_info.assert_called_once_with("invalid_media")
+
+    async def test_get_or_create_media_carousel(
+        self, media_service, mock_instagram_service, mock_task_queue, db_session
+    ):
+        """Test get_or_create_media with carousel album."""
+        # Arrange
+        mock_instagram_service.get_media_info = AsyncMock(return_value={
+            "success": True,
+            "media_info": {
+                "id": "carousel_123",
+                "media_type": "CAROUSEL_ALBUM",
+                "caption": "Carousel post",
+                "permalink": "https://instagram.com/p/CAR123",
+                "children": {
+                    "data": [
+                        {"media_url": "https://example.com/img1.jpg"},
+                        {"media_url": "https://example.com/img2.jpg"},
+                        {"media_url": "https://example.com/img3.jpg"}
+                    ]
+                }
+            }
+        })
+
+        # Act
+        media = await media_service.get_or_create_media("carousel_123", db_session)
+
+        # Assert
+        assert media is not None
+        assert media.media_type == "CAROUSEL_ALBUM"
+        assert media.children_media_urls is not None
+        assert len(media.children_media_urls) == 3
+        assert media.media_url == "https://example.com/img1.jpg"  # First child used
+        mock_task_queue.enqueue.assert_called_once()
+
+    async def test_get_or_create_media_exception_rollback(
+        self, media_service, mock_instagram_service, db_session
+    ):
+        """Test that get_or_create_media rolls back on exception."""
+        # Arrange
+        mock_instagram_service.get_media_info = AsyncMock(
+            side_effect=Exception("Unexpected error")
+        )
+
+        db_session.rollback = AsyncMock()
+
+        # Act
+        media = await media_service.get_or_create_media("error_media", db_session)
+
+        # Assert
+        assert media is None
+        db_session.rollback.assert_called_once()
+
+    async def test_ensure_media_exists_already_exists(
+        self, media_service, mock_task_queue, db_session
+    ):
+        """Test ensure_media_exists when media already in DB."""
+        # Arrange
+        existing_media = Media(
+            id="existing_media",
+            media_type="IMAGE",
+            caption="Existing"
+        )
+        db_session.add(existing_media)
+        await db_session.commit()
+
+        # Act
+        result = await media_service.ensure_media_exists("existing_media", db_session)
+
+        # Assert
+        assert result is True
+        mock_task_queue.enqueue.assert_not_called()
+
+    async def test_ensure_media_exists_queues_task(
+        self, media_service, mock_task_queue, db_session
+    ):
+        """Test ensure_media_exists queues task when media not found."""
+        # Arrange
+        # No media in DB
+
+        # Act
+        result = await media_service.ensure_media_exists("new_media", db_session)
+
+        # Assert
+        assert result is True
+        mock_task_queue.enqueue.assert_called_once_with(
+            "core.tasks.media_tasks.process_media_task",
+            "new_media"
+        )
+
+    async def test_ensure_media_exists_handles_exception(
+        self, media_service, db_session
+    ):
+        """Test ensure_media_exists handles exceptions gracefully."""
+        # Arrange
+        # Force an exception by passing invalid session
+        db_session.execute = AsyncMock(side_effect=Exception("Database error"))
+
+        # Act
+        result = await media_service.ensure_media_exists("error_media", db_session)
+
+        # Assert
+        assert result is False
+
+    def test_extract_carousel_children_urls_success(self, media_service):
+        """Test extracting children URLs from carousel."""
+        # Arrange
+        media_info = {
+            "media_type": "CAROUSEL_ALBUM",
+            "children": {
+                "data": [
+                    {"media_url": "https://example.com/img1.jpg"},
+                    {"media_url": "https://example.com/img2.jpg"},
+                    {"media_url": None},  # Missing URL
+                    {"media_url": "https://example.com/img3.jpg"}
+                ]
+            }
+        }
+
+        # Act
+        urls = media_service._extract_carousel_children_urls(media_info)
+
+        # Assert
+        assert urls is not None
+        assert len(urls) == 3  # None is filtered out
+        assert "https://example.com/img1.jpg" in urls
+
+    def test_extract_carousel_children_urls_not_carousel(self, media_service):
+        """Test extracting URLs from non-carousel returns None."""
+        # Arrange
+        media_info = {
+            "media_type": "IMAGE",
+            "media_url": "https://example.com/image.jpg"
+        }
+
+        # Act
+        urls = media_service._extract_carousel_children_urls(media_info)
+
+        # Assert
+        assert urls is None
+
+    def test_extract_carousel_children_urls_no_children(self, media_service):
+        """Test extracting URLs from carousel without children."""
+        # Arrange
+        media_info = {
+            "media_type": "CAROUSEL_ALBUM"
+        }
+
+        # Act
+        urls = media_service._extract_carousel_children_urls(media_info)
+
+        # Assert
+        assert urls is None
+
+    def test_parse_timestamp_success(self, media_service):
+        """Test parsing valid timestamp."""
+        # Arrange
+        timestamp_str = "2025-01-15T10:30:00Z"
+
+        # Act
+        dt = media_service._parse_timestamp(timestamp_str)
+
+        # Assert
+        assert dt is not None
+        assert isinstance(dt, datetime)
+        assert dt.year == 2025
+        assert dt.month == 1
+        assert dt.day == 15
+        assert dt.tzinfo is None  # Should be timezone-naive
+
+    def test_parse_timestamp_none(self, media_service):
+        """Test parsing None timestamp."""
+        # Act
+        dt = media_service._parse_timestamp(None)
+
+        # Assert
+        assert dt is None
+
+    def test_parse_timestamp_invalid(self, media_service):
+        """Test parsing invalid timestamp."""
+        # Arrange
+        invalid_timestamp = "not a timestamp"
+
+        # Act
+        dt = media_service._parse_timestamp(invalid_timestamp)
+
+        # Assert
+        assert dt is None
+
+    def test_parse_owner_dict(self, media_service):
+        """Test parsing owner from dictionary."""
+        # Arrange
+        owner_data = {"id": "owner_123", "username": "testuser"}
+
+        # Act
+        owner_id = media_service._parse_owner(owner_data)
+
+        # Assert
+        assert owner_id == "owner_123"
+
+    def test_parse_owner_string(self, media_service):
+        """Test parsing owner from string."""
+        # Arrange
+        owner_data = "owner_456"
+
+        # Act
+        owner_id = media_service._parse_owner(owner_data)
+
+        # Assert
+        assert owner_id == "owner_456"
+
+    def test_parse_owner_none(self, media_service):
+        """Test parsing None owner."""
+        # Act
+        owner_id = media_service._parse_owner(None)
+
+        # Assert
+        assert owner_id is None
+
+    def test_parse_owner_invalid_type(self, media_service):
+        """Test parsing owner with invalid type."""
+        # Arrange
+        owner_data = 12345  # Invalid type
+
+        # Act
+        owner_id = media_service._parse_owner(owner_data)
+
+        # Assert
+        assert owner_id is None

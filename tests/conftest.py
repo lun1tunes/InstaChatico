@@ -1,301 +1,426 @@
 """
-Shared pytest fixtures for InstaChatico tests.
+Pytest configuration and shared fixtures for all tests.
 
-This module provides reusable fixtures for testing the application,
-including database setup, API clients, mock data, and test utilities.
+This file provides:
+- Database fixtures (in-memory SQLite for fast tests)
+- Mock services and external APIs
+- Test data factories
+- FastAPI test client
+- Celery test setup
 """
 
-import pytest
 import asyncio
+import os
+import pytest
+import sys
 from datetime import datetime
 from typing import AsyncGenerator, Generator
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi.testclient import TestClient
+# Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import StaticPool
+from fastapi.testclient import TestClient
+from httpx import AsyncClient, ASGITransport
+from faker import Faker
 
-# Import app and models
+# Import your app modules
 from core.models.base import Base
-from core.models.instagram_comment import InstagramComment
-from core.models.comment_classification import CommentClassification, ProcessingStatus
-from core.models.question_answer import QuestionAnswer, AnswerStatus
-from core.models.media import Media
+from core.models import (
+    InstagramComment,
+    CommentClassification,
+    QuestionAnswer,
+    Media,
+    Document,
+    ProductEmbedding,
+)
 from core.config import settings
+from core.container import Container, get_container, reset_container
+from main import app
+
+fake = Faker()
 
 
 # ============================================================================
 # DATABASE FIXTURES
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests."""
+def event_loop() -> Generator:
+    """Create an event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 
-@pytest.fixture(scope="function")
-async def test_db_engine():
-    """
-    Create test database engine with SQLite.
-
-    Automatically converts JSONB (PostgreSQL) to JSON (SQLite-compatible).
-    """
-    from sqlalchemy import JSON
-    from sqlalchemy.dialects.postgresql import JSONB
-
-    # Import all models to ensure they're loaded
-    from core.models import media, instagram_comment
-
-    # Store original types for restoration
-    original_types = {}
-
-    # Replace JSONB columns with JSON for SQLite compatibility
-    # This needs to be done before metadata.create_all()
-    for table_name, table in Base.metadata.tables.items():
-        for column in table.columns:
-            if isinstance(column.type, JSONB):
-                # Store original type
-                original_types[(table_name, column.name)] = column.type
-                # Replace JSONB with JSON
-                column.type = JSON()
-
+@pytest.fixture
+async def test_engine():
+    """Create an in-memory SQLite database engine for testing."""
+    # Use in-memory SQLite with asyncio support
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
-        poolclass=NullPool,
-        echo=False
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        echo=False,
     )
 
-    try:
-        # Create all tables
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    # Create all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-        yield engine
+    yield engine
 
-    finally:
-        # Cleanup
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-        await engine.dispose()
+    # Cleanup
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
 
-        # Restore original JSONB types
-        for (table_name, column_name), original_type in original_types.items():
-            if table_name in Base.metadata.tables:
-                table = Base.metadata.tables[table_name]
-                for column in table.columns:
-                    if column.name == column_name:
-                        column.type = original_type
+    await engine.dispose()
 
 
-@pytest.fixture(scope="function")
-async def test_db_session(test_db_engine) -> AsyncGenerator[AsyncSession, None]:
-    """Create test database session."""
-    session_factory = async_sessionmaker(
-        bind=test_db_engine,
-        autoflush=False,
-        autocommit=False,
-        expire_on_commit=False
+@pytest.fixture
+async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
+    """Create a database session for testing."""
+    async_session = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
     )
 
-    async with session_factory() as session:
+    async with async_session() as session:
         yield session
         await session.rollback()
+
+
+# ============================================================================
+# TEST DATA FACTORIES
+# ============================================================================
+
+
+@pytest.fixture
+def instagram_comment_factory(db_session):
+    """Factory for creating test Instagram comments."""
+    async def _create_comment(
+        comment_id: str = None,
+        media_id: str = None,
+        user_id: str = None,
+        username: str = None,
+        text: str = None,
+        parent_id: str = None,
+        conversation_id: str = None,
+        **kwargs
+    ) -> InstagramComment:
+        comment = InstagramComment(
+            id=comment_id or fake.uuid4(),
+            media_id=media_id or fake.uuid4(),
+            user_id=user_id or fake.uuid4(),
+            username=username or fake.user_name(),
+            text=text or fake.sentence(),
+            created_at=kwargs.get("created_at", datetime.utcnow()),
+            raw_data=kwargs.get("raw_data", {}),
+            parent_id=parent_id,
+            conversation_id=conversation_id,
+            is_hidden=kwargs.get("is_hidden", False),
+        )
+        db_session.add(comment)
+        await db_session.commit()
+        await db_session.refresh(comment)
+        return comment
+
+    return _create_comment
+
+
+@pytest.fixture
+def media_factory(db_session):
+    """Factory for creating test Media objects."""
+    async def _create_media(
+        media_id: str = None,
+        media_type: str = "IMAGE",
+        url: str = None,
+        caption: str = None,
+        **kwargs
+    ) -> Media:
+        media = Media(
+            id=media_id or fake.uuid4(),
+            media_type=media_type,
+            url=url or fake.image_url(),
+            caption=caption or fake.text(),
+            permalink=kwargs.get("permalink", fake.url()),
+            media_context=kwargs.get("media_context"),
+            children_media_urls=kwargs.get("children_media_urls"),
+            created_at=kwargs.get("created_at", datetime.utcnow()),
+        )
+        db_session.add(media)
+        await db_session.commit()
+        await db_session.refresh(media)
+        return media
+
+    return _create_media
+
+
+@pytest.fixture
+def classification_factory(db_session):
+    """Factory for creating test comment classifications."""
+    async def _create_classification(
+        comment_id: str,
+        classification: str = "question / inquiry",
+        confidence: float = 0.95,
+        **kwargs
+    ) -> CommentClassification:
+        clf = CommentClassification(
+            comment_id=comment_id,
+            classification=classification,
+            confidence=confidence,
+            reasoning=kwargs.get("reasoning", "Test reasoning"),
+            retry_count=kwargs.get("retry_count", 0),
+            input_tokens=kwargs.get("input_tokens", 100),
+            output_tokens=kwargs.get("output_tokens", 50),
+            created_at=kwargs.get("created_at", datetime.utcnow()),
+        )
+        db_session.add(clf)
+        await db_session.commit()
+        await db_session.refresh(clf)
+        return clf
+
+    return _create_classification
+
+
+@pytest.fixture
+def answer_factory(db_session):
+    """Factory for creating test answers."""
+    async def _create_answer(
+        comment_id: str,
+        question_text: str = None,
+        answer_text: str = None,
+        **kwargs
+    ) -> QuestionAnswer:
+        answer = QuestionAnswer(
+            comment_id=comment_id,
+            question_text=question_text or fake.sentence(nb_words=10),
+            answer_text=answer_text or fake.text(),
+            confidence=kwargs.get("confidence", 0.9),
+            quality_score=kwargs.get("quality_score", 0.85),
+            processing_time_ms=kwargs.get("processing_time_ms", 1500),
+            input_tokens=kwargs.get("input_tokens", 200),
+            output_tokens=kwargs.get("output_tokens", 150),
+            created_at=kwargs.get("created_at", datetime.utcnow()),
+        )
+        db_session.add(answer)
+        await db_session.commit()
+        await db_session.refresh(answer)
+        return answer
+
+    return _create_answer
 
 
 # ============================================================================
 # API CLIENT FIXTURES
 # ============================================================================
 
-@pytest.fixture(scope="function")
-def api_client() -> Generator[TestClient, None, None]:
-    """
-    FastAPI test client using TestClient.
 
-    Automatically handles app lifespan events and provides
-    synchronous interface for testing async endpoints.
-    """
-    import sys
-    import os
-    # Add src directory to path for imports
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
+@pytest.fixture
+def test_client() -> TestClient:
+    """Sync FastAPI test client for testing endpoints."""
+    return TestClient(app)
 
-    # Reload settings to pick up environment changes
-    import importlib
-    from core import config
-    importlib.reload(config)
 
-    from main import app
-
-    # TestClient handles lifespan automatically
-    with TestClient(app, base_url="http://testserver") as client:
+@pytest.fixture
+async def async_client() -> AsyncGenerator[AsyncClient, None]:
+    """Async FastAPI test client for testing async endpoints."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
 
 # ============================================================================
-# MOCK DATA FIXTURES
+# DEPENDENCY INJECTION FIXTURES
 # ============================================================================
 
+
 @pytest.fixture
-def sample_media_data() -> dict:
-    """Sample media data from Instagram API."""
-    return {
-        "id": "test_media_123",
-        "permalink": "https://www.instagram.com/p/test123/",
-        "caption": "Продажа квартиры в центре города",
-        "media_url": "https://example.com/image.jpg",
-        "media_type": "IMAGE",
-        "comments_count": 5,
-        "like_count": 100,
-        "shortcode": "test123",
-        "timestamp": "2025-10-03T10:00:00Z",
-        "is_comment_enabled": True,
-        "username": "test_business",
-        "owner": {"id": "owner_123"}
-    }
+def test_container():
+    """Create a test DI container with mocked dependencies."""
+    reset_container()
+    container = Container()
+
+    # Override with test configuration if needed
+    # container.config.from_dict({"test_mode": True})
+
+    yield container
+
+    reset_container()
 
 
 @pytest.fixture
-def sample_comment_data() -> dict:
-    """Sample Instagram comment data."""
-    return {
-        "id": "comment_123",
-        "text": "Какая цена на квартиру?",
-        "username": "test_user",
-        "timestamp": "2025-10-03T12:00:00Z"
-    }
+def override_get_container(test_container):
+    """Override the get_container dependency."""
+    def _get_test_container():
+        return test_container
 
-
-@pytest.fixture
-def sample_webhook_payload() -> dict:
-    """Sample Instagram webhook payload."""
-    return {
-        "object": "instagram",
-        "entry": [
-            {
-                "id": "business_account_id",
-                "time": 1728000000,
-                "changes": [
-                    {
-                        "value": {
-                            "from": {
-                                "id": "user_123",
-                                "username": "test_user"
-                            },
-                            "media": {
-                                "id": "media_123",
-                                "media_product_type": "FEED"
-                            },
-                            "id": "comment_123",
-                            "text": "Какая цена?"
-                        },
-                        "field": "comments"
-                    }
-                ]
-            }
-        ]
-    }
-
-
-@pytest.fixture
-async def sample_media(test_db_session: AsyncSession, sample_media_data: dict) -> Media:
-    """Create sample media in database."""
-    media = Media(
-        id=sample_media_data["id"],
-        permalink=sample_media_data["permalink"],
-        caption=sample_media_data["caption"],
-        media_url=sample_media_data["media_url"],
-        media_type=sample_media_data["media_type"],
-        comments_count=sample_media_data["comments_count"],
-        like_count=sample_media_data["like_count"],
-        username=sample_media_data["username"],
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
-    )
-    test_db_session.add(media)
-    await test_db_session.commit()
-    await test_db_session.refresh(media)
-    return media
-
-
-@pytest.fixture
-async def sample_comment(
-    test_db_session: AsyncSession,
-    sample_media: Media,
-    sample_comment_data: dict
-) -> InstagramComment:
-    """Create sample Instagram comment in database."""
-    comment = InstagramComment(
-        id=sample_comment_data["id"],
-        media_id=sample_media.id,
-        user_id="user_123",
-        username=sample_comment_data["username"],
-        text=sample_comment_data["text"],
-        created_at=datetime.utcnow(),
-        raw_data=sample_comment_data
-    )
-    test_db_session.add(comment)
-    await test_db_session.commit()
-    await test_db_session.refresh(comment)
-    return comment
+    app.dependency_overrides[get_container] = _get_test_container
+    yield
+    app.dependency_overrides.clear()
 
 
 # ============================================================================
 # MOCK SERVICE FIXTURES
 # ============================================================================
 
+
 @pytest.fixture
 def mock_openai_response():
     """Mock OpenAI API response."""
-    mock_response = Mock()
-    mock_response.choices = [Mock(message=Mock(content="Mock AI response"))]
-    mock_response.usage = Mock(prompt_tokens=10, completion_tokens=20)
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "Test AI response"
+    mock_response.usage.prompt_tokens = 100
+    mock_response.usage.completion_tokens = 50
+    mock_response.usage.total_tokens = 150
     return mock_response
 
 
 @pytest.fixture
 def mock_instagram_api():
-    """Mock Instagram Graph API client."""
-    with patch('core.services.instagram_service.InstagramGraphAPIService') as mock:
+    """Mock Instagram Graph API responses."""
+    with patch("core.services.instagram_service.InstagramGraphAPIService") as mock:
         instance = mock.return_value
-        instance.get_media_info = AsyncMock(return_value={
-            "success": True,
-            "media_info": {
-                "id": "media_123",
-                "permalink": "https://instagram.com/p/test/",
-                "caption": "Test post",
-                "media_type": "IMAGE",
-                "media_url": "https://example.com/image.jpg"
-            }
-        })
-        instance.send_reply_to_comment = AsyncMock(return_value={
-            "success": True,
-            "reply_id": "reply_123"
+        instance.post_reply = AsyncMock(return_value={"id": "reply_123"})
+        instance.hide_comment = AsyncMock(return_value={"success": True})
+        instance.get_media = AsyncMock(return_value={
+            "id": "media_123",
+            "media_type": "IMAGE",
+            "media_url": "https://example.com/image.jpg",
+            "caption": "Test caption"
         })
         yield instance
 
 
 @pytest.fixture
-def mock_celery_task():
-    """Mock Celery task."""
-    with patch('celery.app.task.Task.delay') as mock:
-        mock.return_value = Mock(id="task_123")
+def mock_telegram_api():
+    """Mock Telegram API responses."""
+    with patch("core.services.telegram_alert_service.TelegramAlertService") as mock:
+        instance = mock.return_value
+        instance.send_alert = AsyncMock(return_value={"ok": True, "result": {"message_id": 123}})
+        yield instance
+
+
+@pytest.fixture
+def mock_embedding_service():
+    """Mock embedding service for vector search."""
+    with patch("core.services.embedding_service.EmbeddingService") as mock:
+        instance = mock.return_value
+        instance.search_similar_products = AsyncMock(return_value=[
+            {
+                "title": "Test Product",
+                "description": "Test description",
+                "similarity": 0.95,
+                "price": "100 @C1",
+                "is_ood": False,
+            }
+        ])
+        instance.create_embedding = AsyncMock(return_value=[0.1] * 1536)
+        yield instance
+
+
+@pytest.fixture
+def mock_s3_service():
+    """Mock S3 service for file storage."""
+    with patch("core.services.s3_service.S3Service") as mock:
+        instance = mock.return_value
+        instance.upload_file = AsyncMock(return_value="s3://bucket/file.pdf")
+        instance.download_file = AsyncMock(return_value=b"file content")
+        instance.delete_file = AsyncMock(return_value=True)
+        yield instance
+
+
+@pytest.fixture
+def mock_celery_task_queue():
+    """Mock Celery task queue."""
+    with patch("core.infrastructure.task_queue.CeleryTaskQueue") as mock:
+        instance = mock.return_value
+        instance.enqueue = MagicMock(return_value="task_123")
+        yield instance
+
+
+# ============================================================================
+# AGENT TOOL FIXTURES
+# ============================================================================
+
+
+@pytest.fixture
+def mock_agent_runner():
+    """Mock OpenAI Agents SDK Runner."""
+    with patch("agents.Runner") as mock:
+        mock_result = MagicMock()
+        mock_result.final_output = "Test agent response"
+        mock_result.raw_responses = [MagicMock()]
+        mock_result.raw_responses[0].usage.input_tokens = 100
+        mock_result.raw_responses[0].usage.output_tokens = 50
+
+        mock.run = AsyncMock(return_value=mock_result)
         yield mock
 
 
 # ============================================================================
-# TEST UTILITIES
+# ENVIRONMENT FIXTURES
 # ============================================================================
 
+
 @pytest.fixture
-def assert_validation_error():
-    """Helper to assert Pydantic validation errors."""
-    def _assert(func, expected_field: str):
-        from pydantic import ValidationError
-        with pytest.raises(ValidationError) as exc_info:
-            func()
-        errors = exc_info.value.errors()
-        assert any(err['loc'][0] == expected_field for err in errors)
-    return _assert
+def test_env_vars():
+    """Set test environment variables."""
+    original_env = os.environ.copy()
+
+    test_vars = {
+        "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+        "CELERY_BROKER_URL": "redis://localhost:6379/0",
+        "OPENAI_API_KEY": "test_key",
+        "INSTA_TOKEN": "test_token",
+        "APP_SECRET": "test_secret",
+        "DEVELOPMENT_MODE": "true",
+    }
+
+    os.environ.update(test_vars)
+    yield test_vars
+
+    # Restore original environment
+    os.environ.clear()
+    os.environ.update(original_env)
+
+
+# ============================================================================
+# UTILITY FIXTURES
+# ============================================================================
+
+
+@pytest.fixture
+def sample_webhook_payload():
+    """Sample Instagram webhook payload."""
+    return {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "instagram_business_account_id",
+                "time": 1234567890,
+                "changes": [
+                    {
+                        "field": "comments",
+                        "value": {
+                            "id": "comment_123",
+                            "media": {
+                                "id": "media_123",
+                                "media_product_type": "FEED"
+                            },
+                            "text": "!:>;L:> AB>8B 4>AB02:0?",
+                            "from": {
+                                "id": "user_123",
+                                "username": "test_user"
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
