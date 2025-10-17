@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 @async_task
 async def generate_answer_task(self, comment_id: str):
     """Generate answer for Instagram comment question - orchestration only."""
+    logger.info(f"Task started | comment_id={comment_id} | retry={self.request.retries}/{self.max_retries}")
+
     async with get_db_session() as session:
         container = get_container()
         use_case = container.generate_answer_use_case(session=session)
@@ -20,17 +22,32 @@ async def generate_answer_task(self, comment_id: str):
 
         # Handle retry logic
         if result["status"] == "retry" and self.request.retries < self.max_retries:
+            logger.warning(
+                f"Retrying task | comment_id={comment_id} | retry={self.request.retries} | "
+                f"reason={result.get('reason', 'unknown')}"
+            )
             raise self.retry(countdown=10)
 
         # Trigger reply if answer generated successfully
         if result["status"] == "success" and result.get("answer"):
-            logger.info(f"Triggering Instagram reply for comment {comment_id}")
+            logger.info(
+                f"Answer generated | comment_id={comment_id} | confidence={result.get('confidence')} | "
+                f"quality_score={result.get('quality_score')} | triggering_reply=True"
+            )
             try:
                 reply_result = celery_app.send_task(
                     "core.tasks.instagram_reply_tasks.send_instagram_reply_task", args=[comment_id, result["answer"]]
                 )
-                logger.info(f"Reply task queued: {reply_result.id}")
-            except Exception:
-                logger.exception(f"Failed to queue reply task for {comment_id}")
+                logger.debug(f"Reply task queued | task_id={reply_result.id} | comment_id={comment_id}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to queue reply | comment_id={comment_id} | error={str(e)}",
+                    exc_info=True
+                )
+        elif result["status"] == "error":
+            logger.error(
+                f"Task failed | comment_id={comment_id} | reason={result.get('reason', 'unknown')}"
+            )
 
+        logger.info(f"Task completed | comment_id={comment_id} | status={result['status']}")
         return result

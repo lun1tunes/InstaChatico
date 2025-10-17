@@ -60,6 +60,7 @@ async def _document_context_implementation() -> str:
             context = await document_context_service.get_client_context(session=session)
 
             if not context or context.strip() == "# Business Information" or context.strip() == "":
+                logger.warning("No business documents available")
                 return (
                     f"⚠️ NO BUSINESS DOCUMENTS AVAILABLE\n\n"
                     f"No business documents have been uploaded.\n"
@@ -76,12 +77,12 @@ async def _document_context_implementation() -> str:
                 f"always use embedding_search for price information."
             )
 
-            logger.info(f"Document context retrieved: {len(context)} characters")
+            logger.info(f"Document context retrieved | context_length={len(context)}")
             return formatted_output
 
     except Exception as e:
         error_msg = f"❌ Error retrieving business documents: {str(e)}"
-        logger.error(error_msg)
+        logger.error(f"Document context retrieval failed | error={str(e)}", exc_info=True)
         return error_msg
 
 

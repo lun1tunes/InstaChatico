@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 @async_task
 async def classify_comment_task(self, comment_id: str):
     """Classify Instagram comment using AI - orchestration only."""
+    logger.info(f"Task started | comment_id={comment_id} | retry={self.request.retries}/{self.max_retries}")
+
     async with get_db_session() as session:
         container = get_container()
         use_case = container.classify_comment_use_case(session=session)
@@ -20,12 +22,23 @@ async def classify_comment_task(self, comment_id: str):
 
         # Handle retry logic
         if result["status"] == "retry" and self.request.retries < self.max_retries:
+            logger.warning(
+                f"Retrying task | comment_id={comment_id} | retry={self.request.retries} | "
+                f"reason={result.get('reason', 'unknown')}"
+            )
             raise self.retry(countdown=10)
 
         # Trigger post-classification actions
         if result["status"] == "success":
+            logger.info(
+                f"Comment classified | comment_id={comment_id} | "
+                f"classification={result.get('classification')} | confidence={result.get('confidence')}"
+            )
             await _trigger_post_classification_actions(result)
+        elif result["status"] == "error":
+            logger.error(f"Task failed | comment_id={comment_id} | reason={result.get('reason', 'unknown')}")
 
+        logger.info(f"Task completed | comment_id={comment_id} | status={result['status']}")
         return result
 
 
@@ -44,39 +57,39 @@ async def _trigger_post_classification_actions(classification_result: dict):
 
     # Answer generation for questions
     if classification == "question / inquiry":
-        logger.info(f"Triggering answer generation for question {comment_id}")
+        logger.info(f"Queuing answer task | comment_id={comment_id} | classification={classification}")
         try:
             task_id = task_queue.enqueue(
                 "core.tasks.answer_tasks.generate_answer_task",
                 comment_id,
             )
-            logger.info(f"Answer task queued: {task_id}")
-        except Exception:
-            logger.exception(f"Failed to queue answer task for {comment_id}")
+            logger.debug(f"Answer task queued | task_id={task_id} | comment_id={comment_id}")
+        except Exception as e:
+            logger.error(f"Failed to queue answer task | comment_id={comment_id} | error={str(e)}", exc_info=True)
 
     # Hide toxic/complaint comments
     if classification in ["urgent issue / complaint", "toxic / abusive"]:
-        logger.info(f"Triggering hide for {classification} comment {comment_id}")
+        logger.info(f"Queuing hide task | comment_id={comment_id} | classification={classification}")
         try:
             task_id = task_queue.enqueue(
                 "core.tasks.instagram_reply_tasks.hide_instagram_comment_task",
                 comment_id,
             )
-            logger.info(f"Hide task queued: {task_id}")
-        except Exception:
-            logger.exception(f"Failed to queue hide task for {comment_id}")
+            logger.debug(f"Hide task queued | task_id={task_id} | comment_id={comment_id}")
+        except Exception as e:
+            logger.error(f"Failed to queue hide task | comment_id={comment_id} | error={str(e)}", exc_info=True)
 
     # Telegram notifications (excluding toxic)
     if classification in ["urgent issue / complaint", "critical feedback", "partnership proposal"]:
-        logger.info(f"Triggering Telegram notification for {classification} comment {comment_id}")
+        logger.info(f"Queuing Telegram task | comment_id={comment_id} | classification={classification}")
         try:
             task_id = task_queue.enqueue(
                 "core.tasks.telegram_tasks.send_telegram_notification_task",
                 comment_id,
             )
-            logger.info(f"Telegram task queued: {task_id}")
-        except Exception:
-            logger.exception(f"Failed to queue Telegram task for {comment_id}")
+            logger.debug(f"Telegram task queued | task_id={task_id} | comment_id={comment_id}")
+        except Exception as e:
+            logger.error(f"Failed to queue Telegram task | comment_id={comment_id} | error={str(e)}", exc_info=True)
 
 
 @celery_app.task
@@ -104,14 +117,17 @@ async def retry_failed_classifications_async():
             classification_repo = ClassificationRepository(session)
             retry_classifications = await classification_repo.get_pending_retries()
 
+            logger.info(f"Starting classification retry | count={len(retry_classifications)}")
+
             for classification in retry_classifications:
                 task_queue.enqueue(
                     "core.tasks.classification_tasks.classify_comment_task",
                     classification.comment_id,
                 )
+                logger.debug(f"Retry queued | comment_id={classification.comment_id}")
 
-            logger.info(f"Queued {len(retry_classifications)} comments for retry")
+            logger.info(f"Classification retry completed | queued_count={len(retry_classifications)}")
             return {"retried_count": len(retry_classifications)}
         except Exception as e:
-            logger.error(f"Error in retry task: {e}")
+            logger.error(f"Classification retry failed | error={str(e)}", exc_info=True)
             return {"error": str(e)}

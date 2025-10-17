@@ -73,7 +73,10 @@ async def _embedding_search_implementation(query: str, limit: int = 5, category:
         # Limit validation
         limit = min(max(1, limit), 10)
 
-        logger.info(f"Embedding search tool called with query: '{query}', limit: {limit}")
+        logger.info(
+            f"Embedding search started | query='{query}' | limit={limit} | "
+            f"category={'all' if not category else category}"
+        )
 
         # Create a new database session within the current event loop context
         # This prevents the "attached to a different loop" error
@@ -94,6 +97,7 @@ async def _embedding_search_implementation(query: str, limit: int = 5, category:
 
                     # Handle empty database
                     if not all_results:
+                        logger.warning("Embedding search: database empty")
                         return (
                             f"⚠️ DATABASE EMPTY\n\n"
                             f"No products/services are currently in the database.\n"
@@ -108,6 +112,10 @@ async def _embedding_search_implementation(query: str, limit: int = 5, category:
                     if not high_confidence_results:
                         best_similarity = all_results[0]["similarity"] if all_results else 0
                         threshold_pct = int(embedding_service.SIMILARITY_THRESHOLD * 100)
+                        logger.warning(
+                            f"No relevant products found | query='{query}' | best_similarity={best_similarity*100:.1f}% | "
+                            f"threshold={threshold_pct}%"
+                        )
                         return (
                             f"⚠️ NO RELEVANT PRODUCTS FOUND\n\n"
                             f"Your query '{query}' did not match any products/services in our catalog.\n"
@@ -156,16 +164,17 @@ async def _embedding_search_implementation(query: str, limit: int = 5, category:
                         f"You can safely use this information to answer the customer's question.\n"
                     )
 
+                    avg_similarity = sum(r["similarity"] for r in results) / len(results) if results else 0
                     logger.info(
-                        f"Embedding search completed: {len(results)} high-confidence results, "
-                        f"{len(low_confidence_results)} OOD filtered out"
+                        f"Embedding search completed | query='{query}' | results={len(results)} | "
+                        f"avg_similarity={avg_similarity*100:.1f}% | ood_filtered={len(low_confidence_results)}"
                     )
 
                     return formatted_output
 
             except Exception as db_error:
                 # Log the specific database error for debugging
-                logger.error(f"Database error in embedding search: {db_error}")
+                logger.error(f"Database error in embedding search | error={str(db_error)}", exc_info=True)
                 # Return a user-friendly error message
                 return (
                     f"⚠️ SEARCH TEMPORARILY UNAVAILABLE\n\n"
@@ -176,7 +185,7 @@ async def _embedding_search_implementation(query: str, limit: int = 5, category:
 
     except Exception as e:
         error_msg = f"❌ Error performing embedding search: {str(e)}"
-        logger.error(error_msg)
+        logger.error(f"Embedding search failed | error={str(e)}", exc_info=True)
         return error_msg
 
 

@@ -86,7 +86,7 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
         - Если анализ не удался, вернет описательную ошибку для устранения неполадок
     """
     try:
-        logger.info(f"Starting image analysis for URL: {image_url}")
+        logger.info(f"Image analysis started | url_length={len(image_url)} | has_context={bool(additional_context)}")
 
         # Download the image first (Instagram URLs require this)
         async with aiohttp.ClientSession() as session:
@@ -95,6 +95,8 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
                 timeout=aiohttp.ClientTimeout(total=IMAGE_DOWNLOAD_TIMEOUT)
             ) as response:
                 if response.status != 200:
+                    error_msg = f"Image download failed | status={response.status}"
+                    logger.error(error_msg)
                     raise Exception(f"Failed to download image: HTTP {response.status}")
 
                 # Determine image format from content-type or default to jpeg
@@ -112,8 +114,7 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
         else:
             image_format = "jpeg"
 
-        # Log only at debug level to avoid verbose output
-        logger.debug(f"Downloaded image ({len(image_data)} bytes, format: {image_format})")
+        logger.debug(f"Image downloaded | size_bytes={len(image_data)} | format={image_format}")
 
         # Базовый промт с подробными инструкциями
         base_prompt = """
@@ -186,12 +187,19 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
             # Извлекаем результат
             analysis_result = api_response.choices[0].message.content
 
-            logger.info(f"Image analysis completed successfully ({len(analysis_result)} chars)")
+            # Get token usage from response
+            input_tokens = getattr(api_response.usage, 'prompt_tokens', 0) if api_response.usage else 0
+            output_tokens = getattr(api_response.usage, 'completion_tokens', 0) if api_response.usage else 0
+
+            logger.info(
+                f"Image analysis completed | result_length={len(analysis_result)} | "
+                f"input_tokens={input_tokens} | output_tokens={output_tokens}"
+            )
 
             return analysis_result
 
     except Exception as e:
-        logger.error(f"Error in image analysis for {image_url}: {e}")
+        logger.error(f"Image analysis failed | error={str(e)}", exc_info=True)
         return f"Ошибка при анализе изображения: {str(e)}"
 
 

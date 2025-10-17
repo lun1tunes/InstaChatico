@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 @async_task
 async def process_media_task(self, media_id: str):
     """Process media - orchestration only."""
+    logger.info(f"Task started | media_id={media_id} | retry={self.request.retries}/{self.max_retries}")
+
     async with get_db_session() as session:
         container = get_container()
         use_case = container.process_media_use_case(session=session)
@@ -20,7 +22,21 @@ async def process_media_task(self, media_id: str):
 
         # Handle retry logic - MediaCreateResult is a Pydantic model, not a dict
         if result.status == "retry" and self.request.retries < self.max_retries:
+            logger.warning(
+                f"Retrying task | media_id={media_id} | retry={self.request.retries} | "
+                f"reason={result.reason or 'unknown'}"
+            )
             raise self.retry(countdown=10)
+
+        if result.status == "success":
+            logger.info(
+                f"Media processed | media_id={media_id} | action={result.action} | "
+                f"media_type={result.media.get('media_type') if result.media else 'unknown'}"
+            )
+        elif result.status == "error":
+            logger.error(f"Task failed | media_id={media_id} | reason={result.reason or 'unknown'}")
+
+        logger.info(f"Task completed | media_id={media_id} | status={result.status}")
 
         # Convert Pydantic model to dict for Celery serialization
         return result.model_dump()
@@ -30,6 +46,8 @@ async def process_media_task(self, media_id: str):
 @async_task
 async def analyze_media_image_task(self, media_id: str):
     """Analyze media image - orchestration only."""
+    logger.info(f"Task started | media_id={media_id} | retry={self.request.retries}/{self.max_retries}")
+
     async with get_db_session() as session:
         container = get_container()
         use_case = container.analyze_media_use_case(session=session)
@@ -37,7 +55,23 @@ async def analyze_media_image_task(self, media_id: str):
 
         # Handle retry logic - MediaAnalysisResult is a Pydantic model, not a dict
         if result.status == "retry" and self.request.retries < self.max_retries:
+            logger.warning(
+                f"Retrying task | media_id={media_id} | retry={self.request.retries} | "
+                f"reason={result.reason or 'unknown'}"
+            )
             raise self.retry(countdown=10)
+
+        if result.status == "success":
+            logger.info(
+                f"Media analyzed | media_id={media_id} | images_count={result.images_analyzed} | "
+                f"context_length={len(result.media_context) if result.media_context else 0}"
+            )
+        elif result.status == "skipped":
+            logger.info(f"Analysis skipped | media_id={media_id} | reason={result.reason or 'unknown'}")
+        elif result.status == "error":
+            logger.error(f"Task failed | media_id={media_id} | reason={result.reason or 'unknown'}")
+
+        logger.info(f"Task completed | media_id={media_id} | status={result.status}")
 
         # Convert Pydantic model to dict for Celery serialization
         return result.model_dump()
