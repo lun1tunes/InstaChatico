@@ -2,22 +2,22 @@ services:
   postgres:
     image: pgvector/pgvector:pg15
     container_name: instagram_postgres
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: instagram_db
-      POSTGRES_USER: lun1z
-      POSTGRES_PASSWORD: 3b3e3tzp8e
-      POSTGRES_HOST_AUTH_METHOD: trust
-      POSTGRES_INITDB_ARGS: "--auth-host=trust --auth-local=trust"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       LOGS_LEVEL_POSTGRES: ${LOGS_LEVEL_POSTGRES:-INFO}
     ports:
-      - "59731:5432"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - instagram_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lun1z -d instagram_db && psql -U lun1z -d instagram_db -tAc \"SELECT 1 FROM pg_extension WHERE extname='vector'\" | grep -q 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} && psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -tAc \"SELECT 1 FROM pg_extension WHERE extname='vector'\" | grep -q 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -110,7 +110,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "cd /app/database && alembic upgrade head && cd /app/src && python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} --concurrency=4 --without-gossip --without-mingle --without-heartbeat -Q llm_queue,instagram_queue"
+    command: sh -c "cd /app/src && python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} --concurrency=4 --without-gossip --without-mingle --without-heartbeat -Q llm_queue,instagram_queue"
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -144,7 +144,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "cd /app/database && alembic upgrade head && mkdir -p /app/celerybeat && cd /app/src && celery -A celery_worker beat --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} -s /app/celerybeat/celerybeat-schedule"
+    command: sh -c "mkdir -p /app/celerybeat && cd /app/src && celery -A celery_worker beat --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} -s /app/celerybeat/celerybeat-schedule"
     security_opt:
       - no-new-privileges:true
 

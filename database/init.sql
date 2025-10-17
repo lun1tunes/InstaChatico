@@ -5,21 +5,6 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Enable pgvector extension for vector similarity search
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Create the lun1z user if it doesn't exist
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'lun1z') THEN
-        CREATE ROLE lun1z WITH LOGIN PASSWORD 'lun1z' SUPERUSER CREATEDB CREATEROLE;
-    END IF;
-END
-$$;
-
--- Grant all privileges on the database to lun1z
-GRANT ALL PRIVILEGES ON DATABASE instagram_db TO lun1z;
-GRANT ALL PRIVILEGES ON SCHEMA public TO lun1z;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO lun1z;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO lun1z;
-
 -- Create additional roles if they don't exist
 DO $$
 BEGIN
