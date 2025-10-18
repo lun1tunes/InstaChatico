@@ -67,10 +67,13 @@ Now your code is like a **professional kitchen** with specialized roles:
 # NEW: Clean separation (40 lines)
 
 # Task - Just organizes
+from core.container import get_container
+
 @celery_app.task
 async def classify_comment_task(self, comment_id):
     async with get_db_session() as session:
-        use_case = ClassifyCommentUseCase(session)
+        container = get_container()
+        use_case = container.classify_comment_use_case(session=session)
         result = await use_case.execute(comment_id)
 
         if result["status"] == "retry":
@@ -187,7 +190,7 @@ result = await classify_comment(comment_id)
 **After**: Test with fake data
 ```python
 # Easy to test - use mocks!
-use_case = ClassifyCommentUseCase(
+use_case = container.classify_comment_use_case(
     session=FakeDatabase(),
     service=FakeClassifier()
 )
@@ -250,47 +253,60 @@ class ClassifyCommentUseCase:
 
         # ❌ BAD: Use case calling another use case
         if result == "question":
-            answer_use_case = GenerateAnswerUseCase()
+            container = get_container()
+            answer_use_case = container.generate_answer_use_case(session=self.session)
             await answer_use_case.execute(comment_id)  # Creates tight coupling!
 ```
 
 ### Right Way ✅ - Task Orchestrates Use Cases:
 ```python
+from core.container import get_container
+from core.utils.task_helpers import get_db_session
+
 # Task Layer - The Orchestrator
 @celery_app.task
 async def classify_comment_task(self, comment_id):
-    # Step 1: Execute classification use case
-    use_case = ClassifyCommentUseCase(session)
-    result = await use_case.execute(comment_id)
+    container = get_container()
 
-    # Step 2: Based on result, trigger next use case
-    if result["classification"] == "question":
-        # Queue the NEXT task (not use case directly!)
-        generate_answer_task.delay(comment_id)
+    async with get_db_session() as session:
+        # Step 1: Execute classification use case
+        use_case = container.classify_comment_use_case(session=session)
+        result = await use_case.execute(comment_id)
 
-    if result["classification"] == "toxic":
-        hide_comment_task.delay(comment_id)
+        # Step 2: Based on result, trigger next use case
+        if result["classification"] == "question":
+            # Queue the NEXT task (not use case directly!)
+            generate_answer_task.delay(comment_id)
 
-    return result
+        if result["classification"] == "toxic":
+            hide_comment_task.delay(comment_id)
+
+        return result
 
 @celery_app.task
 async def generate_answer_task(self, comment_id):
-    # Step 3: Execute answer generation
-    use_case = GenerateAnswerUseCase(session)
-    result = await use_case.execute(comment_id)
+    container = get_container()
 
-    # Step 4: If answer generated, send reply
-    if result["status"] == "success":
-        send_reply_task.delay(comment_id, result["answer"])
+    async with get_db_session() as session:
+        # Step 3: Execute answer generation
+        use_case = container.generate_answer_use_case(session=session)
+        result = await use_case.execute(comment_id)
 
-    return result
+        # Step 4: If answer generated, send reply
+        if result["status"] == "success":
+            send_reply_task.delay(comment_id, result["answer"])
+
+        return result
 
 @celery_app.task
 async def send_reply_task(self, comment_id, reply_text):
-    # Step 5: Final step - send reply
-    use_case = SendReplyUseCase(session)
-    result = await use_case.execute(comment_id, reply_text)
-    return result
+    container = get_container()
+
+    async with get_db_session() as session:
+        # Step 5: Final step - send reply
+        use_case = container.send_reply_use_case(session=session)
+        result = await use_case.execute(comment_id, reply_text)
+        return result
 ```
 
 ### Real Pipeline Example - Comment Processing:
@@ -393,11 +409,14 @@ async def classify_comment_async(comment_id: str):
 
 **File 1: Task (15 lines)**
 ```python
+from core.container import get_container
+
 @celery_app.task(bind=True, max_retries=3)
 @async_task  # Handles event loop automatically
 async def classify_comment_task(self, comment_id):
     async with get_db_session() as session:  # Auto connection
-        use_case = ClassifyCommentUseCase(session)
+        container = get_container()
+        use_case = container.classify_comment_use_case(session=session)
         result = await use_case.execute(comment_id)
 
         if result["status"] == "retry":
@@ -476,7 +495,8 @@ async def manual_reply(
     """Manually reply to a comment via API."""
 
     # API doesn't contain logic - it calls the use case!
-    use_case = SendReplyUseCase(session)
+    container = get_container()
+    use_case = container.send_reply_use_case(session=session)
     result = await use_case.execute(
         comment_id=comment_id,
         reply_text=request.reply_text,
