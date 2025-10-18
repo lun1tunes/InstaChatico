@@ -20,13 +20,12 @@ from datetime import datetime
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import select, delete
 
-from core.config import settings
 from core.models.product_embedding import ProductEmbedding
 from core.models.media import Media
 from core.services.embedding_service import EmbeddingService
+from core.container import get_container
 
 # Import test data
 from test_data.personal_care_products import PERSONAL_CARE_PRODUCTS, MEDIA_TEST_DATA
@@ -194,26 +193,8 @@ async def main():
     print_header("Test Data Loader - Personal Care Products")
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # Create database connection - connect to Docker database
-    # Use Docker port mapping (59731) instead of container port (5432)
-    db_url = settings.db.url
-    if "postgres:5432" in db_url:
-        # Running outside Docker - use host port mapping
-        db_url = db_url.replace("postgres:5432", "127.0.0.1:59731")
-        print_info(f"Running outside Docker - using database URL: {db_url}")
-    elif "localhost" in db_url or "127.0.0.1" in db_url:
-        # Replace with Docker host and port mapping
-        db_url = db_url.replace("localhost", "127.0.0.1")
-        db_url = db_url.replace("127.0.0.1", "127.0.0.1")
-        # Replace port 5432 with Docker mapped port 59731
-        db_url = db_url.replace(":5432", ":59731")
-        print_info(f"Using database URL: {db_url}")
-    else:
-        # If running inside Docker, use the original URL
-        print_info(f"Using database URL: {db_url}")
-
-    engine = create_async_engine(db_url, echo=False)
-    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    container = get_container()
+    session_factory = container.db_session_factory()
 
     async with session_factory() as session:
         try:

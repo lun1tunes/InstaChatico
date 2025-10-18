@@ -22,6 +22,27 @@ class DummySessionService:
     def get_session(self, conversation_id: str):
         return self.session
 
+
+def make_service(executor=None, session_service=None):
+    if session_service is None:
+        session_service = DummySessionService()
+
+    if executor is None:
+        class NoOpExecutor:
+            async def run(self, *args, **kwargs):
+                mock = MagicMock()
+                mock.final_output = MagicMock(classification="", confidence=0, reasoning="")
+                mock.raw_responses = []
+                return mock
+
+        executor = NoOpExecutor()
+
+    return CommentClassificationService(
+        api_key="test_key",
+        agent_executor=executor,
+        session_service=session_service,
+    )
+
     async def has_messages(self, conversation_id: str) -> bool:
         return self.messages
 
@@ -50,11 +71,7 @@ class TestCommentClassificationService:
         executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
         session_service = DummySessionService()
 
-        service = CommentClassificationService(
-            api_key="test_key",
-            agent_executor=executor,
-            session_service=session_service,
-        )
+        service = make_service(executor=executor, session_service=session_service)
 
         # Act
         result = await service.classify_comment(
@@ -81,11 +98,7 @@ class TestCommentClassificationService:
         executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
         session_service = DummySessionService()
 
-        service = CommentClassificationService(
-            api_key="test_key",
-            agent_executor=executor,
-            session_service=session_service,
-        )
+        service = make_service(executor=executor, session_service=session_service)
         media_context = {
             "caption": "New product launch!",
             "media_type": "IMAGE",
@@ -108,11 +121,7 @@ class TestCommentClassificationService:
         # Arrange
         executor = SimpleNamespace(run=AsyncMock(side_effect=Exception("API Error")))
         session_service = DummySessionService()
-        service = CommentClassificationService(
-            api_key="test_key",
-            agent_executor=executor,
-            session_service=session_service,
-        )
+        service = make_service(executor=executor, session_service=session_service)
 
         # Act
         result = await service.classify_comment(comment_text="Test comment")
@@ -125,7 +134,7 @@ class TestCommentClassificationService:
     def test_generate_conversation_id_top_level(self):
         """Test conversation ID generation for top-level comment."""
         # Arrange
-        service = CommentClassificationService(api_key="test_key")
+        service = make_service()
 
         # Act
         conv_id = service.generate_conversation_id("comment_123")
@@ -136,7 +145,7 @@ class TestCommentClassificationService:
     def test_generate_conversation_id_reply(self):
         """Test conversation ID generation for reply comment."""
         # Arrange
-        service = CommentClassificationService(api_key="test_key")
+        service = make_service()
 
         # Act
         conv_id = service.generate_conversation_id("comment_456", parent_id="comment_123")
@@ -147,7 +156,7 @@ class TestCommentClassificationService:
     def test_create_media_description_simple(self):
         """Test media description formatting."""
         # Arrange
-        service = CommentClassificationService(api_key="test_key")
+        service = make_service()
         media_context = {
             "media_type": "IMAGE",
             "username": "test_user",
@@ -165,7 +174,7 @@ class TestCommentClassificationService:
     def test_create_media_description_carousel(self):
         """Test media description for carousel posts."""
         # Arrange
-        service = CommentClassificationService(api_key="test_key")
+        service = make_service()
         media_context = {
             "media_type": "CAROUSEL_ALBUM",
             "children_media_urls": ["url1", "url2", "url3"],
