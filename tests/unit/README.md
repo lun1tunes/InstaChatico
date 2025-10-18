@@ -7,7 +7,7 @@ Fast, isolated tests with mocked dependencies.
 ```
 unit/
 ├── repositories/          # Repository layer tests
-│   └── test_repositories.py
+...
 ├── services/              # Service layer tests (one file per service)
 │   ├── test_classification_service.py
 │   ├── test_answer_service.py

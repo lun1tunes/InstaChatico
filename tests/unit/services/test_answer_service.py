@@ -202,3 +202,14 @@ class TestQuestionAnswerService:
         assert result.answer is None
         assert result.answer_confidence == 0.0
         assert result.comment_id == "unknown"
+
+    @patch("core.services.agent_executor.AgentExecutor")
+    async def test_default_executor_initialization(self, mock_agent_executor):
+        """Ensure service falls back to AgentExecutor when not provided."""
+        dummy_executor = SimpleNamespace(run=AsyncMock())
+        mock_agent_executor.return_value = dummy_executor
+
+        service = QuestionAnswerService(api_key="key", session_service=DummySessionService())
+
+        assert service.agent_executor is dummy_executor
+        mock_agent_executor.assert_called_once()

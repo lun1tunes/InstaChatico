@@ -39,6 +39,32 @@ class TestBaseService:
         assert session is stub.session
         assert stub.requested == "conv42"
 
+    def test_default_session_service_initialization(self, tmp_path, monkeypatch):
+        created = {}
+
+        class FakeAgentSessionService:
+            def __init__(self, db_path):
+                created["db_path"] = db_path
+
+            def get_session(self, conv_id):
+                return conv_id
+
+            async def has_messages(self, conv_id):
+                return True
+
+        from core.services import agent_session_service
+
+        monkeypatch.setattr(
+            agent_session_service,
+            "AgentSessionService",
+            FakeAgentSessionService,
+        )
+
+        service = BaseService(db_path=str(tmp_path / "conversations" / "db.sqlite"))
+
+        assert isinstance(service.session_service, FakeAgentSessionService)
+        assert created["db_path"].endswith("conversations/db.sqlite")
+
     @pytest.mark.asyncio
     async def test_session_has_messages_handles_exception(self, tmp_path):
         stub = StubSessionService()

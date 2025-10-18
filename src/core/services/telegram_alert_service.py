@@ -390,10 +390,10 @@ class TelegramAlertService:
             # Truncate if too long
             if len(text) > 3900:
                 safe_msg = safe_msg[:2000] + "..."
-                safe_exception = (safe_exception[:1500] + "...") if safe_exception else ""
                 text_parts[7] = f"<pre>{safe_msg}</pre>"
                 if safe_exception:
-                    text_parts[9] = f"<pre>{safe_exception}</pre>"
+                    safe_exception = safe_exception[:1500] + "..."
+                    text_parts[-1] = f"<pre>{safe_exception}</pre>"
                 text = "\n".join(text_parts)
 
             return await self._send_message(text, parse_mode="HTML")

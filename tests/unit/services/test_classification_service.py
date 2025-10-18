@@ -205,6 +205,67 @@ class TestCommentClassificationService:
         assert "Engagement" not in description
         assert "Post URL" not in description
 
+    def test_create_media_description_truncates_caption_and_metrics(self):
+        service = make_service()
+        long_caption = "a" * 600
+        description = service._create_media_description(
+            {
+                "media_type": "IMAGE",
+                "caption": long_caption,
+                "media_url": "http://example.com",
+                "comments_count": 7,
+                "like_count": 15,
+                "is_comment_enabled": True,
+                "permalink": "http://permalink",
+            }
+        )
+
+        assert "Post Type: IMAGE" in description
+        assert long_caption[:500] in description
+        assert long_caption[:500] + "..." in description
+        assert "Media URL: http://example.com" in description
+        assert "7 comments" in description
+        assert "15 likes" in description
+        assert "Comments: enabled" in description
+        assert "Post URL: http://permalink" in description
+
+    def test_format_input_with_context_includes_media_analysis(self):
+        service = make_service()
+        formatted = service._format_input_with_context(
+            "Nice!",
+            conversation_id="conv123",
+            media_context={
+                "caption": "short",
+                "media_type": "IMAGE",
+                "media_context": "analysis text",
+                "username": "user",
+                "comments_count": 4,
+                "like_count": 9,
+            },
+        )
+
+        assert "Media context:" in formatted
+        assert "Image analysis: analysis text" in formatted
+        assert "Post has 4 comments" in formatted
+        assert "Post has 9 likes" in formatted
+        assert "Conversation ID: conv123" in formatted
+
+    @pytest.mark.asyncio
+    async def test_classify_comment_no_usage_data(self):
+        mock_result = MagicMock()
+        mock_result.final_output.classification = "neutral"
+        mock_result.final_output.confidence = 42
+        mock_result.final_output.reasoning = ""
+        mock_result.raw_responses = [SimpleNamespace(usage=None)]
+
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
+        service = make_service(executor=executor, session_service=session_service)
+
+        result = await service.classify_comment("Test", conversation_id="conv")
+
+        assert result.status == "success"
+
     async def test_classify_comment_error_handling(self):
         """Test error handling when API fails."""
         # Arrange
