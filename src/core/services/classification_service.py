@@ -129,7 +129,7 @@ class CommentClassificationService(BaseService):
 
         return "\n".join(description_parts)
 
-    def _generate_conversation_id(self, comment_id: str, parent_id: Optional[str] = None) -> str:
+    def generate_conversation_id(self, comment_id: str, parent_id: Optional[str] = None) -> str:
         """Generate conversation ID: first_question_comment_{parent_id or comment_id}."""
         if parent_id:
             # If this is a reply, use the parent's conversation ID

@@ -22,6 +22,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy import event, JSON
+from sqlalchemy.dialects import postgresql
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport
 from faker import Faker
@@ -67,9 +69,32 @@ async def test_engine():
         echo=False,
     )
 
-    # Create all tables
+    # Register event listener to convert JSONB to JSON for SQLite compatibility
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_jsonb_compat(dbapi_conn, connection_record):
+        """Convert PostgreSQL JSONB columns to JSON for SQLite."""
+        # This runs on connect - SQLite will use JSON type instead of JSONB
+        pass
+
+    # Create all tables with JSONB→JSON conversion
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        # Replace JSONB with JSON for SQLite before creating tables
+        def _create_tables_with_json(connection):
+            # Temporarily replace JSONB type with JSON for SQLite
+            from sqlalchemy.dialects import sqlite
+
+            # Save original JSONB type
+            original_type_map = postgresql.JSONB
+
+            # Override JSONB to use JSON in SQLite
+            for table in Base.metadata.tables.values():
+                for column in table.columns:
+                    if hasattr(column.type, '__class__') and column.type.__class__.__name__ == 'JSONB':
+                        column.type = JSON()
+
+            Base.metadata.create_all(connection)
+
+        await conn.run_sync(_create_tables_with_json)
 
     yield engine
 

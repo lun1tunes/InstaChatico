@@ -3,7 +3,7 @@ Unit tests for TelegramAlertService.
 """
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
 from core.services.telegram_alert_service import TelegramAlertService
 
@@ -13,28 +13,18 @@ from core.services.telegram_alert_service import TelegramAlertService
 class TestTelegramAlertService:
     """Test TelegramAlertService methods."""
 
-    @patch("aiohttp.ClientSession")
-    async def test_send_urgent_issue_notification_success(self, mock_session_class):
+    async def test_send_urgent_issue_notification_success(self):
         """Test sending urgent issue notification."""
         # Arrange
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
+        service = TelegramAlertService(bot_token="test_token", chat_id="test_chat")
+        service._send_message = AsyncMock(return_value={
             "ok": True,
             "result": {"message_id": 123}
         })
 
-        mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock()
-        mock_session_class.return_value = mock_session
-
-        service = TelegramAlertService(bot_token="test_token", chat_id="test_chat")
-
         comment_data = {
             "comment_id": "comment_123",
-            "comment_text": "Urgentproblem!",
+            "comment_text": "Urgent problem!",
             "classification": "urgent issue / complaint",
             "confidence": 95,
             "reasoning": "Contains urgent complaint",
@@ -49,26 +39,16 @@ class TestTelegramAlertService:
         # Assert
         assert result["success"] is True
         assert result["message_id"] == 123
-        mock_session.post.assert_called_once()
+        service._send_message.assert_called_once()
 
-    @patch("aiohttp.ClientSession")
-    async def test_send_critical_feedback_notification(self, mock_session_class):
+    async def test_send_critical_feedback_notification(self):
         """Test sending critical feedback notification."""
         # Arrange
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
+        service = TelegramAlertService(bot_token="test_token", chat_id="test_chat")
+        service._send_message = AsyncMock(return_value={
             "ok": True,
             "result": {"message_id": 456}
         })
-
-        mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock()
-        mock_session_class.return_value = mock_session
-
-        service = TelegramAlertService(bot_token="test_token", chat_id="test_chat")
 
         comment_data = {
             "comment_id": "comment_456",
@@ -88,9 +68,13 @@ class TestTelegramAlertService:
         assert result["success"] is True
         assert result["message_id"] == 456
 
-    async def test_send_notification_missing_config(self):
+    @patch("core.services.telegram_alert_service.settings")
+    async def test_send_notification_missing_config(self, mock_settings):
         """Test notification fails with missing configuration."""
         # Arrange
+        mock_settings.telegram.bot_token = None
+        mock_settings.telegram.chat_id = None
+
         service = TelegramAlertService(bot_token=None, chat_id=None)
         comment_data = {"comment_id": "test"}
 
@@ -101,24 +85,15 @@ class TestTelegramAlertService:
         assert result["success"] is False
         assert "configuration missing" in result["error"].lower()
 
-    @patch("aiohttp.ClientSession")
-    async def test_send_notification_api_error(self, mock_session_class):
+    async def test_send_notification_api_error(self):
         """Test notification handles API error."""
         # Arrange
-        mock_response = AsyncMock()
-        mock_response.status = 400
-        mock_response.json = AsyncMock(return_value={
+        service = TelegramAlertService(bot_token="test_token", chat_id="test_chat")
+        service._send_message = AsyncMock(return_value={
             "ok": False,
             "description": "Bad request"
         })
 
-        mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock()
-        mock_session_class.return_value = mock_session
-
-        service = TelegramAlertService(bot_token="test_token", chat_id="test_chat")
         comment_data = {"comment_id": "test", "comment_text": "Test"}
 
         # Act
@@ -159,21 +134,15 @@ class TestTelegramAlertService:
         assert result["comment_text"].endswith("...")
         assert len(result["reasoning"]) <= 500
 
-    @patch("aiohttp.ClientSession")
-    async def test_send_partnership_proposal_notification(self, mock_session_class):
+    async def test_send_partnership_proposal_notification(self):
         """Test sending partnership proposal notification."""
         # Arrange
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"ok": True, "result": {"message_id": 789}})
-
-        mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock()
-        mock_session_class.return_value = mock_session
-
         service = TelegramAlertService(bot_token="test_token", chat_id="test_chat")
+        service._send_message = AsyncMock(return_value={
+            "ok": True,
+            "result": {"message_id": 789}
+        })
+
         comment_data = {
             "comment_id": "comment_789",
             "comment_text": "Partnership opportunity",
@@ -187,21 +156,12 @@ class TestTelegramAlertService:
         assert result["success"] is True
         assert result["message_id"] == 789
 
-    @patch("aiohttp.ClientSession")
-    async def test_send_log_alert(self, mock_session_class):
+    async def test_send_log_alert(self):
         """Test sending log alert."""
         # Arrange
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"ok": True, "result": {}})
-
-        mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock()
-        mock_session_class.return_value = mock_session
-
         service = TelegramAlertService(bot_token="test_token", chat_id="test_chat")
+        service._send_message = AsyncMock(return_value={"ok": True, "result": {}})
+
         log_data = {
             "level": "ERROR",
             "message": "Test error",
@@ -224,6 +184,7 @@ class TestTelegramAlertService:
         service.send_urgent_issue_notification = AsyncMock(return_value={"success": True})
         service.send_critical_feedback_notification = AsyncMock(return_value={"success": True})
         service.send_partnership_proposal_notification = AsyncMock(return_value={"success": True})
+        service.send_toxic_abusive_notification = AsyncMock(return_value={"success": True})
 
         # Act & Assert - urgent issue
         await service.send_notification({"classification": "urgent issue / complaint"})
@@ -236,3 +197,46 @@ class TestTelegramAlertService:
         # Act & Assert - partnership
         await service.send_notification({"classification": "partnership proposal"})
         service.send_partnership_proposal_notification.assert_called_once()
+
+        # Act & Assert - toxic
+        await service.send_notification({"classification": "toxic / abusive"})
+        service.send_toxic_abusive_notification.assert_called_once()
+
+    async def test_send_notification_unknown_classification(self):
+        """Test that send_notification handles unknown classification."""
+        # Arrange
+        service = TelegramAlertService(bot_token="test", chat_id="test")
+
+        # Act
+        result = await service.send_notification({"classification": "unknown type"})
+
+        # Assert
+        assert result["success"] is False
+        assert "No notification configured" in result["error"]
+
+    async def test_send_toxic_abusive_notification(self):
+        """Test sending toxic/abusive notification."""
+        # Arrange
+        service = TelegramAlertService(bot_token="test_token", chat_id="test_chat")
+        service._send_message = AsyncMock(return_value={
+            "ok": True,
+            "result": {"message_id": 999}
+        })
+
+        comment_data = {
+            "comment_id": "comment_999",
+            "comment_text": "Abusive content",
+            "classification": "toxic / abusive",
+            "confidence": 98,
+            "reasoning": "Contains toxic language",
+            "media_id": "media_999",
+            "username": "user999",
+            "timestamp": "2025-01-01 12:00:00"
+        }
+
+        # Act
+        result = await service.send_toxic_abusive_notification(comment_data)
+
+        # Assert
+        assert result["success"] is True
+        assert result["message_id"] == 999

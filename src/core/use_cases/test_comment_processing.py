@@ -1,7 +1,8 @@
 """Test comment processing use case - for development/testing mode."""
 
 import logging
-from typing import Optional
+from typing import Callable, Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.media import Media
@@ -32,6 +33,8 @@ class TestCommentProcessingUseCase:
         session: AsyncSession,
         classify_use_case: Optional[ClassifyCommentUseCase] = None,
         answer_use_case: Optional[GenerateAnswerUseCase] = None,
+        media_repository_factory: Callable[..., MediaRepository] | None = None,
+        comment_repository_factory: Callable[..., CommentRepository] | None = None,
     ):
         """
         Initialize test use case with dependencies.
@@ -40,10 +43,14 @@ class TestCommentProcessingUseCase:
             session: Database session
             classify_use_case: Optional ClassifyCommentUseCase (will use container if not provided)
             answer_use_case: Optional GenerateAnswerUseCase (will use container if not provided)
+            media_repository_factory: Optional factory for MediaRepository instances
+            comment_repository_factory: Optional factory for CommentRepository instances
         """
         self.session = session
-        self.media_repo = MediaRepository(session)
-        self.comment_repo = CommentRepository(session)
+        media_repo_factory = media_repository_factory or MediaRepository
+        comment_repo_factory = comment_repository_factory or CommentRepository
+        self.media_repo = media_repo_factory(session=session)
+        self.comment_repo = comment_repo_factory(session=session)
         self.classify_use_case = classify_use_case
         self.answer_use_case = answer_use_case
 
@@ -99,8 +106,9 @@ class TestCommentProcessingUseCase:
             # Step 4: Run classification
             logger.info(f"Executing classification for test comment | comment_id={comment_id}")
             if not self.classify_use_case:
-                # Use container if use case not provided
-                from ..container import container
+                # Use container if use case not provided (lazy import to avoid circular dependency)
+                from ..container import get_container
+                container = get_container()
                 classification_use_case = container.classify_comment_use_case(session=self.session)
             else:
                 classification_use_case = self.classify_use_case
@@ -148,8 +156,9 @@ class TestCommentProcessingUseCase:
                     f"classification={classification_type}"
                 )
                 if not self.answer_use_case:
-                    # Use container if use case not provided
-                    from ..container import container
+                    # Use container if use case not provided (lazy import to avoid circular dependency)
+                    from ..container import get_container
+                    container = get_container()
                     answer_use_case = container.generate_answer_use_case(session=self.session)
                 else:
                     answer_use_case = self.answer_use_case

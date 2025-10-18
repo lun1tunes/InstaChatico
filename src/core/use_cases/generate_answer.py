@@ -1,7 +1,8 @@
 """Generate answer use case - handles question answering business logic."""
 
 import logging
-from typing import Dict, Any
+from typing import Any, Callable, Dict
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
@@ -21,17 +22,25 @@ class GenerateAnswerUseCase:
     Follows Dependency Inversion Principle - depends on IAnswerService protocol.
     """
 
-    def __init__(self, session: AsyncSession, qa_service: IAnswerService):
+    def __init__(
+        self,
+        session: AsyncSession,
+        qa_service: IAnswerService,
+        comment_repository_factory: Callable[..., CommentRepository],
+        answer_repository_factory: Callable[..., AnswerRepository],
+    ):
         """
         Initialize use case with dependencies.
 
         Args:
             session: Database session
             qa_service: Service implementing IAnswerService protocol
+            comment_repository_factory: Factory producing CommentRepository instances
+            answer_repository_factory: Factory producing AnswerRepository instances
         """
         self.session = session
-        self.comment_repo = CommentRepository(session)
-        self.answer_repo = AnswerRepository(session)
+        self.comment_repo = comment_repository_factory(session=session)
+        self.answer_repo = answer_repository_factory(session=session)
         self.qa_service = qa_service
 
     @handle_task_errors()

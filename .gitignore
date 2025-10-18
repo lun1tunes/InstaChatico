@@ -219,3 +219,5 @@ src/core/agents/instructions/
 
 # Claude
 .claude/
+
+conversations/

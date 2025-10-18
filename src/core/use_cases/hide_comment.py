@@ -1,7 +1,8 @@
 """Hide comment use case - handles comment hiding business logic."""
 
 import logging
-from typing import Dict, Any
+from typing import Any, Callable, Dict
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
@@ -19,16 +20,22 @@ class HideCommentUseCase:
     Follows Dependency Inversion Principle - depends on IInstagramService protocol.
     """
 
-    def __init__(self, session: AsyncSession, instagram_service: IInstagramService):
+    def __init__(
+        self,
+        session: AsyncSession,
+        instagram_service: IInstagramService,
+        comment_repository_factory: Callable[..., CommentRepository],
+    ):
         """
         Initialize use case with dependencies.
 
         Args:
             session: Database session
             instagram_service: Service implementing IInstagramService protocol
+            comment_repository_factory: Factory producing CommentRepository instances
         """
         self.session = session
-        self.comment_repo = CommentRepository(session)
+        self.comment_repo = comment_repository_factory(session=session)
         self.instagram_service = instagram_service
 
     @handle_task_errors()

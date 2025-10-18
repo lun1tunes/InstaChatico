@@ -1,7 +1,8 @@
 """Process webhook comment use case - handles comment ingestion from Instagram webhooks."""
 
 import logging
-from typing import Optional
+from typing import Callable, Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
@@ -32,6 +33,8 @@ class ProcessWebhookCommentUseCase:
         session: AsyncSession,
         media_service: IMediaService,
         task_queue: ITaskQueue,
+        comment_repository_factory: Callable[..., CommentRepository],
+        media_repository_factory: Callable[..., MediaRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -40,10 +43,12 @@ class ProcessWebhookCommentUseCase:
             session: Database session
             media_service: Service implementing IMediaService protocol
             task_queue: Task queue implementing ITaskQueue protocol
+            comment_repository_factory: Factory producing CommentRepository instances
+            media_repository_factory: Factory producing MediaRepository instances
         """
         self.session = session
-        self.comment_repo = CommentRepository(session)
-        self.media_repo = MediaRepository(session)
+        self.comment_repo = comment_repository_factory(session=session)
+        self.media_repo = media_repository_factory(session=session)
         self.media_service = media_service
         self.task_queue = task_queue
 

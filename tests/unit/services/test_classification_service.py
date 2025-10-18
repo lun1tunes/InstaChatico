@@ -19,7 +19,7 @@ class TestCommentClassificationService:
         # Arrange
         mock_result = MagicMock()
         mock_result.final_output.classification = "question / inquiry"
-        mock_result.final_output.confidence = 0.95
+        mock_result.final_output.confidence = 95
         mock_result.final_output.reasoning = "Contains question mark"
         mock_result.raw_responses = [MagicMock()]
         mock_result.raw_responses[0].usage.input_tokens = 100
@@ -37,7 +37,7 @@ class TestCommentClassificationService:
         # Assert
         assert result.status == "success"
         assert result.classification == "question / inquiry"
-        assert result.confidence == 0.95
+        assert result.confidence == 95
         assert result.input_tokens == 100
         assert result.output_tokens == 50
         mock_runner.run.assert_called_once()
@@ -48,7 +48,7 @@ class TestCommentClassificationService:
         # Arrange
         mock_result = MagicMock()
         mock_result.final_output.classification = "positive"
-        mock_result.final_output.confidence = 0.9
+        mock_result.final_output.confidence = 90
         mock_result.final_output.reasoning = "Positive feedback"
         mock_result.raw_responses = []
         mock_runner.run = AsyncMock(return_value=mock_result)
@@ -92,7 +92,7 @@ class TestCommentClassificationService:
         service = CommentClassificationService(api_key="test_key")
 
         # Act
-        conv_id = service._generate_conversation_id("comment_123")
+        conv_id = service.generate_conversation_id("comment_123")
 
         # Assert
         assert conv_id == "first_question_comment_comment_123"
@@ -103,7 +103,7 @@ class TestCommentClassificationService:
         service = CommentClassificationService(api_key="test_key")
 
         # Act
-        conv_id = service._generate_conversation_id("comment_456", parent_id="comment_123")
+        conv_id = service.generate_conversation_id("comment_456", parent_id="comment_123")
 
         # Assert
         assert conv_id == "first_question_comment_comment_123"

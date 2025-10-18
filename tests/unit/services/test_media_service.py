@@ -40,6 +40,7 @@ class TestMediaService:
         # Arrange
         existing_media = Media(
             id="media_123",
+            permalink="https://instagram.com/p/VIDEO123",
             media_type="VIDEO",
             media_url="https://example.com/video.mp4",
             caption="Test video"
@@ -64,6 +65,7 @@ class TestMediaService:
         # Arrange
         existing_media = Media(
             id="media_456",
+            permalink="https://instagram.com/p/IMG456",
             media_type="IMAGE",
             media_url="https://example.com/image.jpg",
             caption="Test image",
@@ -90,6 +92,7 @@ class TestMediaService:
         # Arrange
         existing_media = Media(
             id="media_789",
+            permalink="https://instagram.com/p/IMG789",
             media_type="IMAGE",
             media_url="https://example.com/image.jpg",
             caption="Test image",
@@ -105,6 +108,33 @@ class TestMediaService:
         assert media is not None
         assert media.media_context == "Existing context"
         mock_task_queue.enqueue.assert_not_called()
+
+    async def test_get_or_create_media_existing_queue_failure(
+        self, media_service, mock_task_queue, db_session
+    ):
+        """Test that task queue failure for existing media is handled gracefully."""
+        # Arrange
+        existing_media = Media(
+            id="media_999",
+            permalink="https://instagram.com/p/IMG999",
+            media_type="IMAGE",
+            media_url="https://example.com/image.jpg",
+            caption="Test image",
+            media_context=None
+        )
+        db_session.add(existing_media)
+        await db_session.commit()
+
+        mock_task_queue.enqueue.side_effect = Exception("Queue error")
+
+        # Act
+        media = await media_service.get_or_create_media("media_999", db_session)
+
+        # Assert
+        assert media is not None
+        assert media.id == "media_999"
+        # Should return media despite queue failure
+        mock_task_queue.enqueue.assert_called_once()
 
     async def test_get_or_create_media_fetches_from_api(
         self, media_service, mock_instagram_service, mock_task_queue, db_session
@@ -186,6 +216,34 @@ class TestMediaService:
         assert media.media_url == "https://example.com/img1.jpg"  # First child used
         mock_task_queue.enqueue.assert_called_once()
 
+    async def test_get_or_create_media_new_queue_failure(
+        self, media_service, mock_instagram_service, mock_task_queue, db_session
+    ):
+        """Test that task queue failure for new media is handled gracefully."""
+        # Arrange
+        mock_instagram_service.get_media_info = AsyncMock(return_value={
+            "success": True,
+            "media_info": {
+                "id": "new_media_888",
+                "media_type": "IMAGE",
+                "media_url": "https://example.com/image.jpg",
+                "caption": "New image",
+                "permalink": "https://instagram.com/p/NEW888",
+                "timestamp": "2025-01-15T10:00:00Z"
+            }
+        })
+
+        mock_task_queue.enqueue.side_effect = Exception("Queue error")
+
+        # Act
+        media = await media_service.get_or_create_media("new_media_888", db_session)
+
+        # Assert
+        assert media is not None
+        assert media.id == "new_media_888"
+        # Should return media despite queue failure
+        mock_task_queue.enqueue.assert_called_once()
+
     async def test_get_or_create_media_exception_rollback(
         self, media_service, mock_instagram_service, db_session
     ):
@@ -211,6 +269,7 @@ class TestMediaService:
         # Arrange
         existing_media = Media(
             id="existing_media",
+            permalink="https://instagram.com/p/EXIST",
             media_type="IMAGE",
             caption="Existing"
         )
@@ -297,6 +356,42 @@ class TestMediaService:
         # Arrange
         media_info = {
             "media_type": "CAROUSEL_ALBUM"
+        }
+
+        # Act
+        urls = media_service._extract_carousel_children_urls(media_info)
+
+        # Assert
+        assert urls is None
+
+    def test_extract_carousel_children_urls_empty_data(self, media_service):
+        """Test extracting URLs from carousel with empty data list."""
+        # Arrange
+        media_info = {
+            "media_type": "CAROUSEL_ALBUM",
+            "children": {
+                "data": []
+            }
+        }
+
+        # Act
+        urls = media_service._extract_carousel_children_urls(media_info)
+
+        # Assert
+        assert urls is None
+
+    def test_extract_carousel_children_urls_no_valid_urls(self, media_service):
+        """Test extracting URLs from carousel with no valid media_url values."""
+        # Arrange
+        media_info = {
+            "media_type": "CAROUSEL_ALBUM",
+            "children": {
+                "data": [
+                    {"media_url": None},
+                    {"media_url": None},
+                    {"other_field": "value"}  # No media_url field
+                ]
+            }
         }
 
         # Act

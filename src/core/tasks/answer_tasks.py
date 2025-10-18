@@ -35,10 +35,13 @@ async def generate_answer_task(self, comment_id: str):
                 f"quality_score={result.get('quality_score')} | triggering_reply=True"
             )
             try:
-                reply_result = celery_app.send_task(
-                    "core.tasks.instagram_reply_tasks.send_instagram_reply_task", args=[comment_id, result["answer"]]
+                task_queue = container.task_queue()
+                task_id = task_queue.enqueue(
+                    "core.tasks.instagram_reply_tasks.send_instagram_reply_task",
+                    comment_id,
+                    result["answer"],
                 )
-                logger.debug(f"Reply task queued | task_id={reply_result.id} | comment_id={comment_id}")
+                logger.debug(f"Reply task queued | task_id={task_id} | comment_id={comment_id}")
             except Exception as e:
                 logger.error(
                     f"Failed to queue reply | comment_id={comment_id} | error={str(e)}",

@@ -283,6 +283,21 @@ class TestMediaAnalysisService:
         # Assert
         assert result is None
 
+    @patch("core.services.media_analysis_service.asyncio.gather")
+    async def test_analyze_carousel_images_general_exception(
+        self, mock_gather, media_analysis_service
+    ):
+        """Test carousel analysis handles general exceptions in try block."""
+        # Arrange
+        mock_gather.side_effect = Exception("Unexpected system error")
+        media_urls = ["https://example.com/img1.jpg"]
+
+        # Act
+        result = await media_analysis_service.analyze_carousel_images(media_urls)
+
+        # Assert
+        assert result is None
+
     @patch("core.services.media_analysis_service._analyze_image_implementation")
     async def test_analyze_single_image_success(self, mock_analyze_impl, media_analysis_service):
         """Test _analyze_single_image helper method."""

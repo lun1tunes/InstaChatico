@@ -22,27 +22,24 @@ class TestDocumentContextService:
     @pytest.fixture
     def mock_documents(self):
         """Create mock documents."""
-        doc1 = Document(
-            id=1,
-            document_name="Product Catalog",
-            description="List of all products",
-            markdown_content="## Products\n\n- Product 1\n- Product 2",
-            status="completed"
-        )
-        doc2 = Document(
-            id=2,
-            document_name="Pricing Info",
-            description="Pricing and discounts",
-            markdown_content="## Pricing\n\n- Item A: 100\n- Item B: 200",
-            status="completed"
-        )
-        doc3 = Document(
-            id=3,
-            document_name="Company Info",
-            description=None,  # No description
-            markdown_content="## About Us\n\nWe are a company",
-            status="completed"
-        )
+        doc1 = MagicMock()
+        doc1.id = 1
+        doc1.document_name = "Product Catalog"
+        doc1.description = "List of all products"
+        doc1.markdown_content = "## Products\n\n- Product 1\n- Product 2"
+
+        doc2 = MagicMock()
+        doc2.id = 2
+        doc2.document_name = "Pricing Info"
+        doc2.description = "Pricing and discounts"
+        doc2.markdown_content = "## Pricing\n\n- Item A: 100\n- Item B: 200"
+
+        doc3 = MagicMock()
+        doc3.id = 3
+        doc3.document_name = "Company Info"
+        doc3.description = None  # No description
+        doc3.markdown_content = "## About Us\n\nWe are a company"
+
         return [doc1, doc2, doc3]
 
     @patch("core.services.document_context_service.DocumentRepository")
@@ -92,13 +89,12 @@ class TestDocumentContextService:
     ):
         """Test that context includes document descriptions when present."""
         # Arrange
-        doc_with_desc = Document(
-            id=1,
-            document_name="Test Doc",
-            description="Important document",
-            markdown_content="Content here",
-            status="completed"
-        )
+        doc_with_desc = MagicMock()
+        doc_with_desc.id = 1
+        doc_with_desc.document_name = "Test Doc"
+        doc_with_desc.description = "Important document"
+        doc_with_desc.markdown_content = "Content here"
+
         mock_repo = AsyncMock()
         mock_repo_class.return_value = mock_repo
         mock_repo.get_completed_with_content = AsyncMock(return_value=[doc_with_desc])
@@ -115,13 +111,12 @@ class TestDocumentContextService:
     ):
         """Test that context works without descriptions."""
         # Arrange
-        doc_no_desc = Document(
-            id=1,
-            document_name="Test Doc",
-            description=None,
-            markdown_content="Content",
-            status="completed"
-        )
+        doc_no_desc = MagicMock()
+        doc_no_desc.id = 1
+        doc_no_desc.document_name = "Test Doc"
+        doc_no_desc.description = None
+        doc_no_desc.markdown_content = "Content"
+
         mock_repo = AsyncMock()
         mock_repo_class.return_value = mock_repo
         mock_repo.get_completed_with_content = AsyncMock(return_value=[doc_no_desc])
@@ -241,13 +236,12 @@ class TestDocumentContextService:
     ):
         """Test that context is properly formatted as markdown."""
         # Arrange
-        doc = Document(
-            id=1,
-            document_name="Test Document",
-            description="Test description",
-            markdown_content="## Section 1\n\nParagraph text.\n\n## Section 2\n\nMore text.",
-            status="completed"
-        )
+        doc = MagicMock()
+        doc.id = 1
+        doc.document_name = "Test Document"
+        doc.description = "Test description"
+        doc.markdown_content = "## Section 1\n\nParagraph text.\n\n## Section 2\n\nMore text."
+
         mock_repo = AsyncMock()
         mock_repo_class.return_value = mock_repo
         mock_repo.get_completed_with_content = AsyncMock(return_value=[doc])
@@ -268,13 +262,12 @@ class TestDocumentContextService:
     ):
         """Test that original markdown formatting is preserved."""
         # Arrange
-        doc = Document(
-            id=1,
-            document_name="Formatted Doc",
-            description=None,
-            markdown_content="# Heading\n\n**Bold text**\n\n- List item 1\n- List item 2",
-            status="completed"
-        )
+        doc = MagicMock()
+        doc.id = 1
+        doc.document_name = "Formatted Doc"
+        doc.description = None
+        doc.markdown_content = "# Heading\n\n**Bold text**\n\n- List item 1\n- List item 2"
+
         mock_repo = AsyncMock()
         mock_repo_class.return_value = mock_repo
         mock_repo.get_completed_with_content = AsyncMock(return_value=[doc])
@@ -314,13 +307,12 @@ class TestDocumentContextService:
     ):
         """Test context with documents that have empty markdown content."""
         # Arrange
-        doc = Document(
-            id=1,
-            document_name="Empty Doc",
-            description="Has no content",
-            markdown_content="",
-            status="completed"
-        )
+        doc = MagicMock()
+        doc.id = 1
+        doc.document_name = "Empty Doc"
+        doc.description = "Has no content"
+        doc.markdown_content = ""
+
         mock_repo = AsyncMock()
         mock_repo_class.return_value = mock_repo
         mock_repo.get_completed_with_content = AsyncMock(return_value=[doc])

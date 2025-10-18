@@ -36,6 +36,23 @@ class IClassificationService(Protocol):
         """
         ...
 
+    def generate_conversation_id(
+        self,
+        comment_id: str,
+        parent_id: Optional[str] = None,
+    ) -> str:
+        """
+        Generate stable conversation identifier for a comment thread.
+
+        Args:
+            comment_id: Identifier of the current comment
+            parent_id: Optional identifier of the parent comment
+
+        Returns:
+            Deterministic conversation ID string
+        """
+        ...
+
 
 class IAnswerService(Protocol):
     """Protocol for answer generation services."""

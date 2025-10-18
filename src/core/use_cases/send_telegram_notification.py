@@ -1,7 +1,8 @@
 """Send Telegram notification use case - handles notification business logic."""
 
 import logging
-from typing import Dict, Any
+from typing import Any, Callable, Dict
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.comment import CommentRepository
@@ -18,16 +19,22 @@ class SendTelegramNotificationUseCase:
     Follows Dependency Inversion Principle - depends on ITelegramService protocol.
     """
 
-    def __init__(self, session: AsyncSession, telegram_service: ITelegramService):
+    def __init__(
+        self,
+        session: AsyncSession,
+        telegram_service: ITelegramService,
+        comment_repository_factory: Callable[..., CommentRepository],
+    ):
         """
         Initialize use case with dependencies.
 
         Args:
             session: Database session
             telegram_service: Service implementing ITelegramService protocol
+            comment_repository_factory: Factory producing CommentRepository instances
         """
         self.session = session
-        self.comment_repo = CommentRepository(session)
+        self.comment_repo = comment_repository_factory(session=session)
         self.telegram_service = telegram_service
 
     @handle_task_errors()

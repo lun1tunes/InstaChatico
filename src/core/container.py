@@ -22,6 +22,7 @@ from .services.document_context_service import DocumentContextService
 # Infrastructure
 from .infrastructure.task_queue import CeleryTaskQueue
 from .celery_app import celery_app
+from .models.db_helper import db_helper
 
 # Use cases
 from .use_cases.classify_comment import ClassifyCommentUseCase
@@ -33,6 +34,13 @@ from .use_cases.send_telegram_notification import SendTelegramNotificationUseCas
 from .use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
 from .use_cases.process_document import ProcessDocumentUseCase
 from .use_cases.test_comment_processing import TestCommentProcessingUseCase
+
+# Repositories
+from .repositories.comment import CommentRepository
+from .repositories.classification import ClassificationRepository
+from .repositories.answer import AnswerRepository
+from .repositories.media import MediaRepository
+from .repositories.document import DocumentRepository
 
 
 class Container(containers.DeclarativeContainer):
@@ -51,6 +59,18 @@ class Container(containers.DeclarativeContainer):
         CeleryTaskQueue,
         celery_app=celery_app,
     )
+
+    # Database infrastructure
+    database_helper = providers.Object(db_helper)
+    db_engine = providers.Callable(lambda helper: helper.engine, database_helper)
+    db_session_factory = providers.Callable(lambda helper: helper.session_factory, database_helper)
+
+    # Repository factories
+    comment_repository_factory = providers.Factory(CommentRepository)
+    classification_repository_factory = providers.Factory(ClassificationRepository)
+    answer_repository_factory = providers.Factory(AnswerRepository)
+    media_repository_factory = providers.Factory(MediaRepository)
+    document_repository_factory = providers.Factory(DocumentRepository)
 
     # Services - Factory (new instance each time, allows different configs)
     classification_service = providers.Factory(
@@ -79,6 +99,11 @@ class Container(containers.DeclarativeContainer):
         TelegramAlertService,
     )
 
+    log_alert_service = providers.Singleton(
+        TelegramAlertService,
+        alert_type="app_logs",
+    )
+
     media_analysis_service = providers.Factory(
         MediaAnalysisService,
     )
@@ -101,6 +126,8 @@ class Container(containers.DeclarativeContainer):
     classify_comment_use_case = providers.Factory(
         ClassifyCommentUseCase,
         # session is injected at runtime
+        comment_repository_factory=comment_repository_factory.provider,
+        classification_repository_factory=classification_repository_factory.provider,
         classification_service=classification_service,
         media_service=media_service,
     )
@@ -108,24 +135,31 @@ class Container(containers.DeclarativeContainer):
     generate_answer_use_case = providers.Factory(
         GenerateAnswerUseCase,
         # session is injected at runtime
+        comment_repository_factory=comment_repository_factory.provider,
+        answer_repository_factory=answer_repository_factory.provider,
         qa_service=answer_service,
     )
 
     send_reply_use_case = providers.Factory(
         SendReplyUseCase,
         # session is injected at runtime
+        comment_repository_factory=comment_repository_factory.provider,
+        answer_repository_factory=answer_repository_factory.provider,
         instagram_service=instagram_service,
     )
 
     hide_comment_use_case = providers.Factory(
         HideCommentUseCase,
         # session is injected at runtime
+        comment_repository_factory=comment_repository_factory.provider,
         instagram_service=instagram_service,
     )
 
     process_webhook_comment_use_case = providers.Factory(
         ProcessWebhookCommentUseCase,
         # session is injected at runtime
+        comment_repository_factory=comment_repository_factory.provider,
+        media_repository_factory=media_repository_factory.provider,
         media_service=media_service,
         task_queue=task_queue,
     )
@@ -133,12 +167,14 @@ class Container(containers.DeclarativeContainer):
     send_telegram_notification_use_case = providers.Factory(
         SendTelegramNotificationUseCase,
         # session is injected at runtime
+        comment_repository_factory=comment_repository_factory.provider,
         telegram_service=telegram_service,
     )
 
     process_media_use_case = providers.Factory(
         ProcessMediaUseCase,
         # session is injected at runtime
+        media_repository_factory=media_repository_factory.provider,
         media_service=media_service,
         analysis_service=media_analysis_service,
     )
@@ -146,12 +182,14 @@ class Container(containers.DeclarativeContainer):
     analyze_media_use_case = providers.Factory(
         AnalyzeMediaUseCase,
         # session is injected at runtime
+        media_repository_factory=media_repository_factory.provider,
         analysis_service=media_analysis_service,
     )
 
     process_document_use_case = providers.Factory(
         ProcessDocumentUseCase,
         # session is injected at runtime
+        document_repository_factory=document_repository_factory.provider,
         s3_service=s3_service,
         doc_processing_service=document_processing_service,
     )
@@ -159,6 +197,8 @@ class Container(containers.DeclarativeContainer):
     test_comment_processing_use_case = providers.Factory(
         TestCommentProcessingUseCase,
         # session is injected at runtime
+        comment_repository_factory=comment_repository_factory.provider,
+        media_repository_factory=media_repository_factory.provider,
         # Optional use cases will use container if not provided
     )
 

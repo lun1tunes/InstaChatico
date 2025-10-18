@@ -1,7 +1,8 @@
 """Process document use case - handles document processing business logic."""
 
 import logging
-from typing import Dict, Any
+from typing import Any, Callable, Dict
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..repositories.document import DocumentRepository
@@ -23,6 +24,7 @@ class ProcessDocumentUseCase:
         session: AsyncSession,
         s3_service: IS3Service,
         doc_processing_service: IDocumentProcessingService,
+        document_repository_factory: Callable[..., DocumentRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -31,9 +33,10 @@ class ProcessDocumentUseCase:
             session: Database session
             s3_service: Service implementing IS3Service protocol
             doc_processing_service: Service implementing IDocumentProcessingService protocol
+            document_repository_factory: Factory producing DocumentRepository instances
         """
         self.session = session
-        self.document_repo = DocumentRepository(session)
+        self.document_repo = document_repository_factory(session=session)
         self.s3_service = s3_service
         self.doc_processing = doc_processing_service
 

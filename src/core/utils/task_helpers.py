@@ -4,48 +4,50 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from functools import wraps
+from typing import Callable
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-
-from ..config import settings
+from ..container import get_container
 
 logger = logging.getLogger(__name__)
 
 
-def async_task(celery_task_func):
-    """Decorator for Celery tasks that run async functions with event loop management."""
+def _get_worker_event_loop() -> asyncio.AbstractEventLoop:
+    """
+    Provide a stable event loop for Celery worker processes.
+
+    Celery runs tasks synchronously inside worker processes. Creating a fresh
+    loop per task breaks async drivers like asyncpg (connections are bound to
+    the loop they were created on). We lazily create a single loop per process
+    and reuse it for every task to keep futures on the correct loop.
+    """
+    loop = getattr(_get_worker_event_loop, "_loop", None)
+    if loop is None:
+        loop = asyncio.new_event_loop()
+        _get_worker_event_loop._loop = loop  # type: ignore[attr-defined]
+    return loop
+
+
+def async_task(celery_task_func: Callable):
+    """Decorator for Celery tasks that run async functions without loop churn."""
 
     @wraps(celery_task_func)
     def wrapper(*args, **kwargs):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(celery_task_func(*args, **kwargs))
-        finally:
-            loop.close()
+        loop = _get_worker_event_loop()
+        if asyncio.get_event_loop_policy().get_event_loop() is not loop:
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(celery_task_func(*args, **kwargs))
 
     return wrapper
 
 
 @asynccontextmanager
 async def get_db_session():
-    """Context manager for database session with automatic cleanup and connection pooling."""
-    # Create engine with connection pooling settings to handle concurrency better
-    engine = create_async_engine(
-        settings.db.url,
-        echo=settings.db.echo,
-        pool_size=10,  # Increase pool size for better concurrency
-        max_overflow=20,  # Allow more connections when needed
-        pool_pre_ping=True,  # Verify connections before use
-        pool_recycle=3600,  # Recycle connections every hour
-    )
-    session_factory = async_sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    """Context manager for database session using container-managed session factory."""
+    container = get_container()
+    session_factory = container.db_session_factory()
 
     async with session_factory() as session:
-        try:
-            yield session
-        finally:
-            await engine.dispose()
+        yield session
 
 
 def retry_with_backoff(task_instance, exc: Exception, max_retries: int = 3):

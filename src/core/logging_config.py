@@ -1,9 +1,11 @@
 import os
 import logging
 import contextvars
-from logging.config import dictConfig
-from core.services.telegram_alert_service import TelegramAlertService
 from datetime import datetime
+from logging.config import dictConfig
+from typing import Optional
+
+from core.services.telegram_alert_service import TelegramAlertService
 
 
 class ChannelAliasFilter(logging.Filter):
@@ -39,9 +41,9 @@ class TraceIdFilter(logging.Filter):
 class TelegramLogHandler(logging.Handler):
     """Simplified handler using TelegramAlertService for log alerts."""
 
-    def __init__(self, level: int = logging.WARNING):
+    def __init__(self, level: int = logging.WARNING, alert_service: Optional[TelegramAlertService] = None):
         super().__init__(level)
-        self._service = TelegramAlertService(alert_type="app_logs")
+        self._service = alert_service
 
     def emit(self, record: logging.LogRecord) -> None:
         """Send log message to Telegram LOGS thread."""
@@ -64,19 +66,20 @@ class TelegramLogHandler(logging.Handler):
             # Use async service in sync context (create new event loop if needed)
             import asyncio
 
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If loop is running, create task (fire and forget)
-                    asyncio.create_task(self._service.send_log_alert(log_data))
-                else:
-                    # If no loop running, run until complete
+            if self._service:
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # If loop is running, create task (fire and forget)
+                        asyncio.create_task(self._service.send_log_alert(log_data))
+                    else:
+                        # If no loop running, run until complete
+                        loop.run_until_complete(self._service.send_log_alert(log_data))
+                except RuntimeError:
+                    # No event loop, create new one
+                    loop = asyncio.new_event_loop()
                     loop.run_until_complete(self._service.send_log_alert(log_data))
-            except RuntimeError:
-                # No event loop, create new one
-                loop = asyncio.new_event_loop()
-                loop.run_until_complete(self._service.send_log_alert(log_data))
-                loop.close()
+                    loop.close()
 
         except Exception:
             # Never raise from logging handler
@@ -99,6 +102,21 @@ def configure_logging() -> None:
     - Keep existing loggers (disable_existing_loggers=False)
     """
     level = _resolve_log_level()
+
+    # Obtain shared infrastructure instances from the container
+    log_alert_handler_config = {
+        "class": "core.logging_config.TelegramLogHandler",
+        "level": "WARNING",
+    }
+
+    try:
+        from core.container import get_container
+
+        container = get_container()
+        alert_service = container.log_alert_service()
+        log_alert_handler_config["alert_service"] = alert_service
+    except Exception:
+        logging.getLogger(__name__).debug("Log alert service unavailable; Telegram log handler will be inert.")
 
     config = {
         "version": 1,
@@ -137,10 +155,7 @@ def configure_logging() -> None:
                 "stream": "ext://sys.stdout",
                 "filters": ["channel", "trace"],
             },
-            "telegram_alerts": {
-                "class": "core.logging_config.TelegramLogHandler",
-                "level": "WARNING",
-            },
+            "telegram_alerts": log_alert_handler_config,
         },
         "loggers": {
             # App-level
