@@ -207,3 +207,169 @@ class TestInstagramGraphAPIService:
         assert result["success"] is True
         assert result["media_info"]["id"] == "media_123"
         assert result["status_code"] == 200
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_get_media_info_failure(self, mock_session_class):
+        mock_response = AsyncMock()
+        mock_response.status = 404
+        mock_response.json = AsyncMock(return_value={"error": "not found"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+        result = await service.get_media_info("media_404")
+
+        assert result["success"] is False
+        assert result["status_code"] == 404
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_get_media_info_exception(self, mock_session_class):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(side_effect=Exception("network"))
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+        result = await service.get_media_info("media")
+
+        assert result["success"] is False
+        assert result["status_code"] is None
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_get_comment_info_success(self, mock_session_class):
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"id": "comment_1"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+        result = await service.get_comment_info("comment_1")
+
+        assert result["success"] is True
+        assert result["comment_info"]["id"] == "comment_1"
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_get_comment_info_failure(self, mock_session_class):
+        mock_response = AsyncMock()
+        mock_response.status = 404
+        mock_response.json = AsyncMock(return_value={"error": "missing"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+        result = await service.get_comment_info("comment_missing")
+
+        assert result["success"] is False
+        assert result["status_code"] == 404
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_validate_token_success(self, mock_session_class):
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"data": {"is_valid": True}})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+        result = await service.validate_token()
+
+        assert result["success"] is True
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_validate_token_failure(self, mock_session_class):
+        mock_response = AsyncMock()
+        mock_response.status = 401
+        mock_response.json = AsyncMock(return_value={"error": "invalid"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+        result = await service.validate_token()
+
+        assert result["success"] is False
+        assert result["status_code"] == 401
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_get_page_info_success(self, mock_session_class):
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"id": "page_1"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+        result = await service.get_page_info()
+
+        assert result["success"] is True
+        assert result["page_info"]["id"] == "page_1"
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_get_page_info_failure(self, mock_session_class):
+        mock_response = AsyncMock()
+        mock_response.status = 500
+        mock_response.json = AsyncMock(return_value={"error": "server"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+        result = await service.get_page_info()
+
+        assert result["success"] is False
+        assert result["status_code"] == 500
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_get_page_info_exception(self, mock_session_class):
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(side_effect=Exception("boom"))
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+        result = await service.get_page_info()
+
+        assert result["success"] is False
+        assert result["status_code"] is None

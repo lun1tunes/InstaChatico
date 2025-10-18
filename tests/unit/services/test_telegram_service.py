@@ -198,9 +198,28 @@ class TestTelegramAlertService:
         await service.send_notification({"classification": "partnership proposal"})
         service.send_partnership_proposal_notification.assert_called_once()
 
-        # Act & Assert - toxic
-        await service.send_notification({"classification": "toxic / abusive"})
-        service.send_toxic_abusive_notification.assert_called_once()
+        # Unknown classification returns error
+        result = await service.send_notification({"classification": "other"})
+        assert result["success"] is False
+        assert "No notification configured" in result["error"]
+
+    @patch("core.services.telegram_alert_service.settings")
+    async def test_send_log_alert_missing_configuration(self, mock_settings):
+        """send_log_alert should fail gracefully when config absent."""
+        mock_settings.telegram.bot_token = None
+        mock_settings.telegram.chat_id = None
+        service = TelegramAlertService(bot_token=None, chat_id=None)
+        result = await service.send_log_alert({"level": "ERROR", "message": "boom"})
+        assert result["success"] is False
+
+    async def test_send_log_alert_handles_exception(self):
+        service = TelegramAlertService(bot_token="token", chat_id="chat")
+        service._send_message = AsyncMock(side_effect=Exception("fail"))
+
+        result = await service.send_log_alert({"level": "ERROR", "message": "oops"})
+
+        assert result["success"] is False
+        assert "fail" in result["error"]
 
     async def test_send_notification_unknown_classification(self):
         """Test that send_notification handles unknown classification."""

@@ -78,9 +78,8 @@ class TestDocumentProcessingService:
             assert error is None
 
     def test_process_pdf_no_text(self, service):
-        """Test PDF processing with no extractable text."""
+        """Test PDF processing with no extractable text returns fallback markdown."""
         with patch("pdfplumber.open") as mock_pdf_open:
-            # Arrange
             mock_page = MagicMock()
             mock_page.extract_text.return_value = ""
 
@@ -91,13 +90,13 @@ class TestDocumentProcessingService:
 
             mock_pdf_open.return_value = mock_pdf
 
-            # Act
             success, markdown, content_hash, error = service._process_pdf(b"content", "hash")
 
-            # Assert
-            assert success is False
-            assert markdown is None
-            assert error == "No text content found in PDF"
+            assert success is True
+            assert markdown is not None
+            assert "В PDF не обнаружен текстовый слой" in markdown
+            assert content_hash == "hash"
+            assert error is None
 
     def test_process_pdf_exception(self, service):
         """Test PDF processing handles exceptions."""

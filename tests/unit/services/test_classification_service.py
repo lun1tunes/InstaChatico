@@ -4,7 +4,7 @@ Unit tests for CommentClassificationService.
 
 import pytest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.services.classification_service import CommentClassificationService
 
@@ -18,9 +18,21 @@ class DummySessionService:
     def __init__(self):
         self.session = DummySession()
         self.messages = False
+        self.ensure_context_calls = AsyncMock(side_effect=self._ensure_context_impl)
 
     def get_session(self, conversation_id: str):
         return self.session
+
+    async def has_messages(self, conversation_id: str) -> bool:
+        return self.messages
+
+    async def _ensure_context_impl(self, conversation_id: str, context_items):
+        await self.session.add_items(context_items)
+        self.messages = True
+        return self.session
+
+    async def ensure_context(self, conversation_id: str, context_items):
+        return await self.ensure_context_calls(conversation_id, context_items)
 
 
 def make_service(executor=None, session_service=None):
@@ -42,15 +54,6 @@ def make_service(executor=None, session_service=None):
         agent_executor=executor,
         session_service=session_service,
     )
-
-    async def has_messages(self, conversation_id: str) -> bool:
-        return self.messages
-
-    async def ensure_context(self, conversation_id: str, context_items):
-        if not self.messages:
-            await self.session.add_items(context_items)
-            self.messages = True
-        return self.session
 
 
 @pytest.mark.unit
@@ -86,6 +89,7 @@ class TestCommentClassificationService:
         assert result.input_tokens == 100
         assert result.output_tokens == 50
         executor.run.assert_called_once()
+        assert session_service.ensure_context_calls.await_count == 0
 
     async def test_classify_comment_with_media_context(self):
         """Test classification with media context."""
@@ -108,6 +112,7 @@ class TestCommentClassificationService:
         # Act
         result = await service.classify_comment(
             comment_text="Отличный товар!",
+            conversation_id="conv_123",
             media_context=media_context
         )
 
@@ -115,6 +120,90 @@ class TestCommentClassificationService:
         assert result.status == "success"
         assert result.classification == "positive"
         executor.run.assert_called_once()
+        assert session_service.ensure_context_calls.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_classify_comment_uses_default_executor(self):
+        mock_result = MagicMock()
+        mock_result.final_output.classification = "neutral"
+        mock_result.final_output.confidence = 50
+        mock_result.final_output.reasoning = ""
+        mock_result.raw_responses = []
+
+        session_service = DummySessionService()
+        service = CommentClassificationService(api_key="test_key", session_service=session_service)
+
+        service.agent_executor.run = AsyncMock(return_value=mock_result)
+
+        await service.classify_comment("Test", conversation_id="conv_1", media_context={"caption": "hi"})
+
+        service.agent_executor.run.assert_awaited()
+        assert session_service.ensure_context_calls.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_classify_comment_stateless(self):
+        mock_result = MagicMock()
+        mock_result.final_output.classification = "positive"
+        mock_result.final_output.confidence = 90
+        mock_result.final_output.reasoning = ""
+        mock_result.raw_responses = []
+
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
+        service = make_service(executor=executor, session_service=session_service)
+
+        result = await service.classify_comment("Nice product")
+
+        executor.run.assert_awaited_once()
+        assert session_service.ensure_context_calls.await_count == 0
+        assert result.status == "success"
+
+    @pytest.mark.asyncio
+    async def test_classify_comment_truncates_long_input(self):
+        long_text = "a" * 2100
+        mock_result = MagicMock()
+        mock_result.final_output.classification = "neutral"
+        mock_result.final_output.confidence = 10
+        mock_result.final_output.reasoning = ""
+        mock_result.raw_responses = []
+
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
+        service = make_service(executor=executor, session_service=session_service)
+
+        await service.classify_comment(long_text, conversation_id="conv", media_context=None)
+
+        args, kwargs = executor.run.await_args
+        assert len(kwargs["input"]) == 2003
+
+    @pytest.mark.asyncio
+    async def test_classify_comment_error_path(self):
+        executor = SimpleNamespace(run=AsyncMock(side_effect=Exception("boom")))
+        session_service = DummySessionService()
+        service = make_service(executor=executor, session_service=session_service)
+
+        result = await service.classify_comment("text", conversation_id="conv")
+
+        assert result.status == "error"
+        assert result.classification == "spam / irrelevant"
+        assert result.error == "boom"
+
+    def test_create_media_description_handles_missing_fields(self):
+        service = make_service()
+        description = service._create_media_description({})
+        assert description == ""
+
+        description = service._create_media_description({
+            "media_type": "CAROUSEL_ALBUM",
+            "children_media_urls": ["u1"],
+            "username": "author",
+            "is_comment_enabled": False,
+        })
+        assert "CAROUSEL_ALBUM" in description
+        assert "@author" in description
+        assert "disabled" in description
+        assert "Engagement" not in description
+        assert "Post URL" not in description
 
     async def test_classify_comment_error_handling(self):
         """Test error handling when API fails."""
