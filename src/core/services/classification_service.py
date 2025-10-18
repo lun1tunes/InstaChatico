@@ -1,12 +1,11 @@
 import logging
 from typing import Any, Dict, Optional
 
-from agents import Runner, SQLiteSession
-
 from .base_service import BaseService
 from ..agents import comment_classification_agent
 from ..config import settings
 from ..schemas.classification import ClassificationResponse
+from ..interfaces.agents import IAgentExecutor, IAgentSessionService, IAgentSession
 
 logger = logging.getLogger(__name__)
 
@@ -14,68 +13,47 @@ logger = logging.getLogger(__name__)
 class CommentClassificationService(BaseService):
     """Classify Instagram comments using OpenAI Agents SDK with persistent sessions."""
 
-    def __init__(self, api_key: str = None, db_path: str = "conversations/conversations.db"):
-        super().__init__(db_path)
+    def __init__(
+        self,
+        api_key: str = None,
+        db_path: str = "conversations/conversations.db",
+        agent_executor: Optional[IAgentExecutor] = None,
+        session_service: Optional[IAgentSessionService] = None,
+    ):
+        super().__init__(db_path, session_service=session_service)
         self.api_key = api_key or settings.openai.api_key
         self.classification_agent = comment_classification_agent
+        if agent_executor is None:
+            from .agent_executor import AgentExecutor
+
+            self.agent_executor: IAgentExecutor = AgentExecutor()
+        else:
+            self.agent_executor = agent_executor
 
     async def _get_session_with_media_context(
         self, conversation_id: str, media_context: Optional[Dict[str, Any]] = None
-    ) -> SQLiteSession:
+    ) -> IAgentSession:
         """Get or create session, inject media context once on first message."""
-        logger.debug(f"Creating/retrieving SQLiteSession for conversation_id: {conversation_id}")
-        logger.debug(f"Session database path: {self.db_path}")
-        session = SQLiteSession(conversation_id, self.db_path)
+        logger.debug(f"Preparing agent session for conversation_id: {conversation_id}")
 
-        # Check if this is a new conversation by checking if it has any history
-        # According to OpenAI Agents SDK docs, SQLiteSession automatically manages persistence
-        try:
-            # Get the session's current state to check if it's new
-            # If session has no items, it's a new conversation - add media context
-            if media_context and not await self._session_has_context(conversation_id):
-                await self._inject_media_context_to_session(session, media_context)
-                logger.info(f"✅ Media context injected into NEW conversation: {conversation_id}")
-            elif media_context:
-                logger.debug(
-                    f"⏭️  Skipping media context injection - conversation {conversation_id} already has context"
-                )
-        except Exception as e:
-            logger.warning(f"Failed to check/inject media context: {e} - continuing without context")
-
-        logger.debug(f"SQLiteSession retrieved successfully for conversation: {conversation_id}")
-        return session
-
-    async def _session_has_context(self, conversation_id: str) -> bool:
-        """Check if session has existing messages in agent_messages table."""
-        has_messages = await self._session_has_messages(conversation_id)
-        if has_messages:
-            logger.debug(f"Session {conversation_id} has existing messages - skipping context")
-        else:
-            logger.debug(f"Session {conversation_id} is new - will inject context")
-        return has_messages
-
-    async def _inject_media_context_to_session(self, session: SQLiteSession, media_context: Dict[str, Any]) -> None:
-        """Add media context as system message to new conversation."""
-        try:
-            # Create a comprehensive media description
+        if media_context:
             media_description = self._create_media_description(media_context)
+            context_items = [
+                {
+                    "role": "system",
+                    "content": (
+                        "📋 MEDIA CONTEXT (Post Information):\n"
+                        f"{media_description}\n\nUse this context when analyzing comments and generating responses."
+                    ),
+                }
+            ]
+            session = await self.session_service.ensure_context(conversation_id, context_items)
+            logger.info(f"✅ Media context ensured for conversation: {conversation_id}")
+        else:
+            session = self.session_service.get_session(conversation_id)
 
-            # Add media context as a system message to the session
-            # According to OpenAI Agents SDK docs, this will be persisted and available
-            # throughout the conversation lifecycle
-            await session.add_items(
-                [
-                    {
-                        "role": "system",
-                        "content": f"📋 MEDIA CONTEXT (Post Information):\n{media_description}\n\nUse this context when analyzing comments and generating responses.",
-                    }
-                ]
-            )
-
-            logger.info(f"✅ Injected media context into session: {media_description[:150]}...")
-
-        except Exception as e:
-            logger.error(f"❌ Failed to inject media context into session: {e}")
+        logger.debug(f"Agent session ready for conversation: {conversation_id}")
+        return session
 
     def _create_media_description(self, media_context: Dict[str, Any]) -> str:
         """Format media context into readable description."""
@@ -160,14 +138,16 @@ class CommentClassificationService(BaseService):
                 logger.debug(f"Starting classification with persistent session for conversation_id: {conversation_id}")
                 # Use SQLiteSession with media context for persistent conversation
                 session = await self._get_session_with_media_context(conversation_id, media_context)
-                result = await Runner.run(self.classification_agent, input=formatted_input, session=session)
+                result = await self.agent_executor.run(
+                    self.classification_agent, input=formatted_input, session=session
+                )
                 logger.info(
                     f"Classification completed using SQLiteSession with media context for conversation: {conversation_id}"
                 )
             else:
                 logger.debug("Starting classification without session (stateless mode)")
                 # Use regular Runner without session
-                result = await Runner.run(self.classification_agent, input=formatted_input)
+                result = await self.agent_executor.run(self.classification_agent, input=formatted_input)
                 logger.info("Classification completed without session")
 
             # Extract the final output from the result

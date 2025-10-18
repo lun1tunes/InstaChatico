@@ -6,10 +6,9 @@ from typing import Any, Callable, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.comment_classification import CommentClassification, ProcessingStatus
-from ..repositories.comment import CommentRepository
-from ..repositories.classification import ClassificationRepository
 from ..interfaces.services import IClassificationService, IMediaService
 from ..utils.decorators import handle_task_errors
+from ..interfaces.repositories import ICommentRepository, IClassificationRepository
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +26,8 @@ class ClassifyCommentUseCase:
         session: AsyncSession,
         classification_service: IClassificationService,
         media_service: IMediaService,
-        comment_repository_factory: Callable[..., CommentRepository],
-        classification_repository_factory: Callable[..., ClassificationRepository],
+        comment_repository_factory: Callable[..., ICommentRepository],
+        classification_repository_factory: Callable[..., IClassificationRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -41,8 +40,8 @@ class ClassifyCommentUseCase:
             classification_repository_factory: Factory producing ClassificationRepository instances
         """
         self.session = session
-        self.comment_repo = comment_repository_factory(session=session)
-        self.classification_repo = classification_repository_factory(session=session)
+        self.comment_repo: ICommentRepository = comment_repository_factory(session=session)
+        self.classification_repo: IClassificationRepository = classification_repository_factory(session=session)
         self.classification_service = classification_service
         self.media_service = media_service
 

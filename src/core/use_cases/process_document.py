@@ -5,8 +5,8 @@ from typing import Any, Callable, Dict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..repositories.document import DocumentRepository
 from ..interfaces.services import IS3Service, IDocumentProcessingService
+from ..interfaces.repositories import IDocumentRepository
 from ..utils.decorators import handle_task_errors
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class ProcessDocumentUseCase:
         session: AsyncSession,
         s3_service: IS3Service,
         doc_processing_service: IDocumentProcessingService,
-        document_repository_factory: Callable[..., DocumentRepository],
+        document_repository_factory: Callable[..., IDocumentRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -36,7 +36,7 @@ class ProcessDocumentUseCase:
             document_repository_factory: Factory producing DocumentRepository instances
         """
         self.session = session
-        self.document_repo = document_repository_factory(session=session)
+        self.document_repo: IDocumentRepository = document_repository_factory(session=session)
         self.s3_service = s3_service
         self.doc_processing = doc_processing_service
 

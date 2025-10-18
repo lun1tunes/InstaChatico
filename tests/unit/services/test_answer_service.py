@@ -3,9 +3,30 @@ Unit tests for QuestionAnswerService.
 """
 
 import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.services.answer_service import QuestionAnswerService
+
+
+class DummySession:
+    async def add_items(self, items):
+        self.items = items
+
+
+class DummySessionService:
+    def __init__(self):
+        self.session = DummySession()
+        self.messages = False
+
+    def get_session(self, conversation_id: str):
+        return self.session
+
+    async def has_messages(self, conversation_id: str) -> bool:
+        return self.messages
+
+    async def ensure_context(self, conversation_id: str, context_items):
+        return self.session
 
 
 @pytest.mark.unit
@@ -14,8 +35,7 @@ class TestQuestionAnswerService:
     """Test QuestionAnswerService methods."""
 
     @patch("core.services.answer_service.time.time")
-    @patch("core.services.answer_service.Runner")
-    async def test_generate_answer_success(self, mock_runner, mock_time):
+    async def test_generate_answer_success(self, mock_time):
         """Test successful answer generation."""
         # Arrange
         # Mock time to simulate 100ms processing time
@@ -28,9 +48,14 @@ class TestQuestionAnswerService:
         mock_result.raw_responses = [MagicMock()]
         mock_result.raw_responses[0].usage.input_tokens = 200
         mock_result.raw_responses[0].usage.output_tokens = 150
-        mock_runner.run = AsyncMock(return_value=mock_result)
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
 
-        service = QuestionAnswerService(api_key="test_key")
+        service = QuestionAnswerService(
+            api_key="test_key",
+            agent_executor=executor,
+            session_service=session_service,
+        )
 
         # Act
         result = await service.generate_answer(
@@ -45,8 +70,7 @@ class TestQuestionAnswerService:
         assert result.output_tokens == 150
         assert result.processing_time_ms == 100  # 1000.1 - 1000.0 = 0.1s = 100ms
 
-    @patch("core.services.answer_service.Runner")
-    async def test_generate_answer_with_username_attribution(self, mock_runner):
+    async def test_generate_answer_with_username_attribution(self):
         """Test that username is added to question text."""
         # Arrange
         mock_result = MagicMock()
@@ -54,9 +78,14 @@ class TestQuestionAnswerService:
         mock_result.final_output.confidence = 0.80
         mock_result.final_output.quality_score = 70
         mock_result.raw_responses = []
-        mock_runner.run = AsyncMock(return_value=mock_result)
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
 
-        service = QuestionAnswerService(api_key="test_key")
+        service = QuestionAnswerService(
+            api_key="test_key",
+            agent_executor=executor,
+            session_service=session_service,
+        )
 
         # Act
         await service.generate_answer(
@@ -65,12 +94,11 @@ class TestQuestionAnswerService:
         )
 
         # Assert
-        call_args = mock_runner.run.call_args
+        call_args = executor.run.call_args
         input_text = call_args.kwargs.get("input") or call_args.args[1]
         assert "@john_doe:" in input_text
 
-    @patch("core.services.answer_service.Runner")
-    async def test_generate_answer_truncates_long_text(self, mock_runner):
+    async def test_generate_answer_truncates_long_text(self):
         """Test that long questions are truncated to 1000 chars."""
         # Arrange
         mock_result = MagicMock()
@@ -78,21 +106,25 @@ class TestQuestionAnswerService:
         mock_result.final_output.confidence = 0.80
         mock_result.final_output.quality_score = 70
         mock_result.raw_responses = []
-        mock_runner.run = AsyncMock(return_value=mock_result)
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
 
-        service = QuestionAnswerService(api_key="test_key")
+        service = QuestionAnswerService(
+            api_key="test_key",
+            agent_executor=executor,
+            session_service=session_service,
+        )
         long_question = "a" * 1500
 
         # Act
         await service.generate_answer(question_text=long_question)
 
         # Assert
-        call_args = mock_runner.run.call_args
+        call_args = executor.run.call_args
         input_text = call_args.kwargs.get("input") or call_args.args[1]
         assert len(input_text) <= 1003  # 1000 + "..."
 
-    @patch("core.services.answer_service.Runner")
-    async def test_generate_answer_with_conversation_id(self, mock_runner):
+    async def test_generate_answer_with_conversation_id(self):
         """Test answer generation with conversation_id uses session."""
         # Arrange
         mock_result = MagicMock()
@@ -100,9 +132,14 @@ class TestQuestionAnswerService:
         mock_result.final_output.confidence = 0.90
         mock_result.final_output.quality_score = 80
         mock_result.raw_responses = []
-        mock_runner.run = AsyncMock(return_value=mock_result)
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
 
-        service = QuestionAnswerService(api_key="test_key")
+        service = QuestionAnswerService(
+            api_key="test_key",
+            agent_executor=executor,
+            session_service=session_service,
+        )
 
         # Act
         result = await service.generate_answer(
@@ -114,11 +151,10 @@ class TestQuestionAnswerService:
         assert result.status == "success"
         assert result.comment_id == "conv_123"
         # Verify session was passed to Runner.run
-        call_args = mock_runner.run.call_args
+        call_args = executor.run.call_args
         assert "session" in call_args.kwargs
 
-    @patch("core.services.answer_service.Runner")
-    async def test_generate_answer_without_usage_data(self, mock_runner):
+    async def test_generate_answer_without_usage_data(self):
         """Test answer generation when raw_responses has no usage data."""
         # Arrange
         mock_result = MagicMock()
@@ -129,9 +165,14 @@ class TestQuestionAnswerService:
         mock_response = MagicMock()
         del mock_response.usage  # Remove usage attribute
         mock_result.raw_responses = [mock_response]
-        mock_runner.run = AsyncMock(return_value=mock_result)
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
 
-        service = QuestionAnswerService(api_key="test_key")
+        service = QuestionAnswerService(
+            api_key="test_key",
+            agent_executor=executor,
+            session_service=session_service,
+        )
 
         # Act
         result = await service.generate_answer(question_text="Test question")
@@ -141,12 +182,16 @@ class TestQuestionAnswerService:
         assert result.input_tokens is None
         assert result.output_tokens is None
 
-    @patch("core.services.answer_service.Runner")
-    async def test_generate_answer_error_handling(self, mock_runner):
+    async def test_generate_answer_error_handling(self):
         """Test error handling when answer generation fails."""
         # Arrange
-        mock_runner.run = AsyncMock(side_effect=Exception("API Error"))
-        service = QuestionAnswerService(api_key="test_key")
+        executor = SimpleNamespace(run=AsyncMock(side_effect=Exception("API Error")))
+        session_service = DummySessionService()
+        service = QuestionAnswerService(
+            api_key="test_key",
+            agent_executor=executor,
+            session_service=session_service,
+        )
 
         # Act
         result = await service.generate_answer(question_text="Test question")

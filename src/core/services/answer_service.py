@@ -2,12 +2,11 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
-from agents import Runner
-
 from .base_service import BaseService
 from ..agents import get_comment_response_agent
 from ..config import settings
 from ..schemas.answer import AnswerResponse
+from ..interfaces.agents import IAgentExecutor, IAgentSessionService
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +15,21 @@ class QuestionAnswerService(BaseService):
     """Generate answers using OpenAI Agents SDK, reuses sessions from classification."""
 
     def __init__(
-        self, api_key: str = None, db_path: str = "conversations/conversations.db"
+        self,
+        api_key: str = None,
+        db_path: str = "conversations/conversations.db",
+        agent_executor: Optional[IAgentExecutor] = None,
+        session_service: Optional[IAgentSessionService] = None,
     ):
-        super().__init__(db_path)
+        super().__init__(db_path, session_service=session_service)
         self.api_key = api_key or settings.openai.api_key
         self.response_agent = get_comment_response_agent()
+        if agent_executor is None:
+            from .agent_executor import AgentExecutor
+
+            self.agent_executor: IAgentExecutor = AgentExecutor()
+        else:
+            self.agent_executor = agent_executor
 
     async def generate_answer(
         self,
@@ -49,8 +58,8 @@ class QuestionAnswerService(BaseService):
                     f"Starting answer generation with persistent session for conversation_id: {conversation_id}"
                 )
                 # Use SQLiteSession (media context already injected by classification service)
-                session = self._get_session(conversation_id)
-                result = await Runner.run(
+                session = self.session_service.get_session(conversation_id)
+                result = await self.agent_executor.run(
                     self.response_agent, input=sanitized_text, session=session
                 )
                 logger.info(
@@ -61,7 +70,7 @@ class QuestionAnswerService(BaseService):
                     "Starting answer generation without session (stateless mode)"
                 )
                 # Use regular Runner without session
-                result = await Runner.run(self.response_agent, input=sanitized_text)
+                result = await self.agent_executor.run(self.response_agent, input=sanitized_text)
                 logger.info("Answer generated successfully without session")
 
             answer_result = result.final_output

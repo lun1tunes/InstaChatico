@@ -8,11 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.media import Media
 from ..models.instagram_comment import InstagramComment
 from ..models.comment_classification import CommentClassification, ProcessingStatus
-from ..repositories.media import MediaRepository
-from ..repositories.comment import CommentRepository
 from ..use_cases.classify_comment import ClassifyCommentUseCase
 from ..use_cases.generate_answer import GenerateAnswerUseCase
 from ..utils.time import now_db_utc
+from ..interfaces.repositories import IMediaRepository, ICommentRepository
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +32,8 @@ class TestCommentProcessingUseCase:
         session: AsyncSession,
         classify_use_case: Optional[ClassifyCommentUseCase] = None,
         answer_use_case: Optional[GenerateAnswerUseCase] = None,
-        media_repository_factory: Callable[..., MediaRepository] | None = None,
-        comment_repository_factory: Callable[..., CommentRepository] | None = None,
+        media_repository_factory: Callable[..., IMediaRepository] | None = None,
+        comment_repository_factory: Callable[..., ICommentRepository] | None = None,
     ):
         """
         Initialize test use case with dependencies.
@@ -47,10 +46,13 @@ class TestCommentProcessingUseCase:
             comment_repository_factory: Optional factory for CommentRepository instances
         """
         self.session = session
+        from ..repositories.media import MediaRepository
+        from ..repositories.comment import CommentRepository
+
         media_repo_factory = media_repository_factory or MediaRepository
         comment_repo_factory = comment_repository_factory or CommentRepository
-        self.media_repo = media_repo_factory(session=session)
-        self.comment_repo = comment_repo_factory(session=session)
+        self.media_repo: IMediaRepository = media_repo_factory(session=session)
+        self.comment_repo: ICommentRepository = comment_repo_factory(session=session)
         self.classify_use_case = classify_use_case
         self.answer_use_case = answer_use_case
 

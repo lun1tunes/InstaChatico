@@ -18,6 +18,8 @@ from .services.telegram_alert_service import TelegramAlertService
 from .services.s3_service import S3Service
 from .services.document_processing_service import DocumentProcessingService
 from .services.document_context_service import DocumentContextService
+from .services.agent_session_service import AgentSessionService
+from .services.agent_executor import AgentExecutor
 
 # Infrastructure
 from .infrastructure.task_queue import CeleryTaskQueue
@@ -72,13 +74,25 @@ class Container(containers.DeclarativeContainer):
     media_repository_factory = providers.Factory(MediaRepository)
     document_repository_factory = providers.Factory(DocumentRepository)
 
+    agent_session_service = providers.Singleton(
+        AgentSessionService,
+    )
+
+    agent_executor = providers.Singleton(
+        AgentExecutor,
+    )
+
     # Services - Factory (new instance each time, allows different configs)
     classification_service = providers.Factory(
         CommentClassificationService,
+        agent_executor=agent_executor,
+        session_service=agent_session_service,
     )
 
     answer_service = providers.Factory(
         QuestionAnswerService,
+        agent_executor=agent_executor,
+        session_service=agent_session_service,
     )
 
     instagram_service = providers.Factory(

@@ -5,9 +5,9 @@ from typing import Any, Callable, Dict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..repositories.comment import CommentRepository
 from ..interfaces.services import ITelegramService
 from ..utils.decorators import handle_task_errors
+from ..interfaces.repositories import ICommentRepository
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class SendTelegramNotificationUseCase:
         self,
         session: AsyncSession,
         telegram_service: ITelegramService,
-        comment_repository_factory: Callable[..., CommentRepository],
+        comment_repository_factory: Callable[..., ICommentRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -34,7 +34,7 @@ class SendTelegramNotificationUseCase:
             comment_repository_factory: Factory producing CommentRepository instances
         """
         self.session = session
-        self.comment_repo = comment_repository_factory(session=session)
+        self.comment_repo: ICommentRepository = comment_repository_factory(session=session)
         self.telegram_service = telegram_service
 
     @handle_task_errors()

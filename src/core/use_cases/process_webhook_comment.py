@@ -8,9 +8,8 @@ from sqlalchemy.exc import IntegrityError
 
 from ..models.instagram_comment import InstagramComment
 from ..models.comment_classification import CommentClassification, ProcessingStatus
-from ..repositories.comment import CommentRepository
-from ..repositories.media import MediaRepository
 from ..interfaces.services import IMediaService, ITaskQueue
+from ..interfaces.repositories import ICommentRepository, IMediaRepository
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +32,8 @@ class ProcessWebhookCommentUseCase:
         session: AsyncSession,
         media_service: IMediaService,
         task_queue: ITaskQueue,
-        comment_repository_factory: Callable[..., CommentRepository],
-        media_repository_factory: Callable[..., MediaRepository],
+        comment_repository_factory: Callable[..., ICommentRepository],
+        media_repository_factory: Callable[..., IMediaRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -47,8 +46,8 @@ class ProcessWebhookCommentUseCase:
             media_repository_factory: Factory producing MediaRepository instances
         """
         self.session = session
-        self.comment_repo = comment_repository_factory(session=session)
-        self.media_repo = media_repository_factory(session=session)
+        self.comment_repo: ICommentRepository = comment_repository_factory(session=session)
+        self.media_repo: IMediaRepository = media_repository_factory(session=session)
         self.media_service = media_service
         self.task_queue = task_queue
 

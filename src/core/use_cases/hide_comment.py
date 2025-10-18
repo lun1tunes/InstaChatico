@@ -5,10 +5,10 @@ from typing import Any, Callable, Dict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..repositories.comment import CommentRepository
 from ..interfaces.services import IInstagramService
 from ..utils.decorators import handle_task_errors
 from ..utils.time import now_db_utc
+from ..interfaces.repositories import ICommentRepository
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class HideCommentUseCase:
         self,
         session: AsyncSession,
         instagram_service: IInstagramService,
-        comment_repository_factory: Callable[..., CommentRepository],
+        comment_repository_factory: Callable[..., ICommentRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -35,7 +35,7 @@ class HideCommentUseCase:
             comment_repository_factory: Factory producing CommentRepository instances
         """
         self.session = session
-        self.comment_repo = comment_repository_factory(session=session)
+        self.comment_repo: ICommentRepository = comment_repository_factory(session=session)
         self.instagram_service = instagram_service
 
     @handle_task_errors()

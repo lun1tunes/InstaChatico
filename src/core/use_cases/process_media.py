@@ -5,9 +5,9 @@ from typing import Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..repositories.media import MediaRepository
 from ..interfaces.services import IMediaService, IMediaAnalysisService
 from ..schemas.media import MediaCreateResult, MediaAnalysisResult
+from ..interfaces.repositories import IMediaRepository
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class ProcessMediaUseCase:
         session: AsyncSession,
         media_service: IMediaService,
         analysis_service: IMediaAnalysisService,
-        media_repository_factory: Callable[..., MediaRepository],
+        media_repository_factory: Callable[..., IMediaRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -36,7 +36,7 @@ class ProcessMediaUseCase:
             media_repository_factory: Factory producing MediaRepository instances
         """
         self.session = session
-        self.media_repo = media_repository_factory(session=session)
+        self.media_repo: IMediaRepository = media_repository_factory(session=session)
         self.media_service = media_service
         self.analysis_service = analysis_service
 
@@ -119,7 +119,7 @@ class AnalyzeMediaUseCase:
         self,
         session: AsyncSession,
         analysis_service: IMediaAnalysisService,
-        media_repository_factory: Callable[..., MediaRepository],
+        media_repository_factory: Callable[..., IMediaRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -129,7 +129,7 @@ class AnalyzeMediaUseCase:
             analysis_service: Service implementing IMediaAnalysisService protocol
         """
         self.session = session
-        self.media_repo = media_repository_factory(session=session)
+        self.media_repo: IMediaRepository = media_repository_factory(session=session)
         self.analysis_service = analysis_service
 
     async def execute(self, media_id: str) -> MediaAnalysisResult:

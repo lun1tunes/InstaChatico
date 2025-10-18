@@ -3,9 +3,33 @@ Unit tests for CommentClassificationService.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 from core.services.classification_service import CommentClassificationService
+
+
+class DummySession:
+    async def add_items(self, items):
+        self.items = items
+
+
+class DummySessionService:
+    def __init__(self):
+        self.session = DummySession()
+        self.messages = False
+
+    def get_session(self, conversation_id: str):
+        return self.session
+
+    async def has_messages(self, conversation_id: str) -> bool:
+        return self.messages
+
+    async def ensure_context(self, conversation_id: str, context_items):
+        if not self.messages:
+            await self.session.add_items(context_items)
+            self.messages = True
+        return self.session
 
 
 @pytest.mark.unit
@@ -13,8 +37,7 @@ from core.services.classification_service import CommentClassificationService
 class TestCommentClassificationService:
     """Test CommentClassificationService methods."""
 
-    @patch("core.services.classification_service.Runner")
-    async def test_classify_comment_success(self, mock_runner):
+    async def test_classify_comment_success(self):
         """Test successful comment classification."""
         # Arrange
         mock_result = MagicMock()
@@ -24,9 +47,14 @@ class TestCommentClassificationService:
         mock_result.raw_responses = [MagicMock()]
         mock_result.raw_responses[0].usage.input_tokens = 100
         mock_result.raw_responses[0].usage.output_tokens = 50
-        mock_runner.run = AsyncMock(return_value=mock_result)
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
 
-        service = CommentClassificationService(api_key="test_key")
+        service = CommentClassificationService(
+            api_key="test_key",
+            agent_executor=executor,
+            session_service=session_service,
+        )
 
         # Act
         result = await service.classify_comment(
@@ -40,10 +68,9 @@ class TestCommentClassificationService:
         assert result.confidence == 95
         assert result.input_tokens == 100
         assert result.output_tokens == 50
-        mock_runner.run.assert_called_once()
+        executor.run.assert_called_once()
 
-    @patch("core.services.classification_service.Runner")
-    async def test_classify_comment_with_media_context(self, mock_runner):
+    async def test_classify_comment_with_media_context(self):
         """Test classification with media context."""
         # Arrange
         mock_result = MagicMock()
@@ -51,9 +78,14 @@ class TestCommentClassificationService:
         mock_result.final_output.confidence = 90
         mock_result.final_output.reasoning = "Positive feedback"
         mock_result.raw_responses = []
-        mock_runner.run = AsyncMock(return_value=mock_result)
+        executor = SimpleNamespace(run=AsyncMock(return_value=mock_result))
+        session_service = DummySessionService()
 
-        service = CommentClassificationService(api_key="test_key")
+        service = CommentClassificationService(
+            api_key="test_key",
+            agent_executor=executor,
+            session_service=session_service,
+        )
         media_context = {
             "caption": "New product launch!",
             "media_type": "IMAGE",
@@ -69,14 +101,18 @@ class TestCommentClassificationService:
         # Assert
         assert result.status == "success"
         assert result.classification == "positive"
-        mock_runner.run.assert_called_once()
+        executor.run.assert_called_once()
 
-    @patch("core.services.classification_service.Runner")
-    async def test_classify_comment_error_handling(self, mock_runner):
+    async def test_classify_comment_error_handling(self):
         """Test error handling when API fails."""
         # Arrange
-        mock_runner.run = AsyncMock(side_effect=Exception("API Error"))
-        service = CommentClassificationService(api_key="test_key")
+        executor = SimpleNamespace(run=AsyncMock(side_effect=Exception("API Error")))
+        session_service = DummySessionService()
+        service = CommentClassificationService(
+            api_key="test_key",
+            agent_executor=executor,
+            session_service=session_service,
+        )
 
         # Act
         result = await service.classify_comment(comment_text="Test comment")

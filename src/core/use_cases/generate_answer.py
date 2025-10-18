@@ -5,12 +5,11 @@ from typing import Any, Callable, Dict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..repositories.comment import CommentRepository
-from ..repositories.answer import AnswerRepository
 from ..interfaces.services import IAnswerService
 from ..utils.decorators import handle_task_errors
 from ..utils.time import now_db_utc
 from ..models.question_answer import AnswerStatus
+from ..interfaces.repositories import ICommentRepository, IAnswerRepository
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +25,8 @@ class GenerateAnswerUseCase:
         self,
         session: AsyncSession,
         qa_service: IAnswerService,
-        comment_repository_factory: Callable[..., CommentRepository],
-        answer_repository_factory: Callable[..., AnswerRepository],
+        comment_repository_factory: Callable[..., ICommentRepository],
+        answer_repository_factory: Callable[..., IAnswerRepository],
     ):
         """
         Initialize use case with dependencies.
@@ -39,8 +38,8 @@ class GenerateAnswerUseCase:
             answer_repository_factory: Factory producing AnswerRepository instances
         """
         self.session = session
-        self.comment_repo = comment_repository_factory(session=session)
-        self.answer_repo = answer_repository_factory(session=session)
+        self.comment_repo: ICommentRepository = comment_repository_factory(session=session)
+        self.answer_repo: IAnswerRepository = answer_repository_factory(session=session)
         self.qa_service = qa_service
 
     @handle_task_errors()
