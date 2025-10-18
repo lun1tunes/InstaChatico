@@ -81,10 +81,15 @@ class DocumentProcessingService:
                         text_parts.append(f"## Page {page_num}\n\n{text}\n")
 
                 if not text_parts:
-                    return False, None, None, "No text content found in PDF"
-
-                # Combine all pages into markdown
-                markdown_content = "\n".join(text_parts)
+                    fallback_markdown = (
+                        "## Page 1\n\n"
+                        "_В PDF не обнаружен текстовый слой. Документ загружен, но текст недоступен для извлечения._\n"
+                    )
+                    logger.warning("PDF has no extractable text; storing fallback notice as markdown content.")
+                    markdown_content = fallback_markdown
+                else:
+                    # Combine all pages into markdown
+                    markdown_content = "\n".join(text_parts)
 
                 logger.info(
                     f"Successfully processed PDF, extracted {len(markdown_content)} characters from {len(pdf.pages)} pages"

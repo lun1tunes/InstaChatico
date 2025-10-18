@@ -62,6 +62,7 @@ celery_app.conf.update(
         "core.tasks.classification_tasks.classify_comment_task": {"queue": "llm_queue"},
         "core.tasks.answer_tasks.generate_answer_task": {"queue": "llm_queue"},
         "core.tasks.media_tasks.analyze_media_image_task": {"queue": "llm_queue"},
+        "core.tasks.document_tasks.process_document_task": {"queue": "llm_queue"},
         "core.tasks.instagram_reply_tasks.send_instagram_reply_task": {"queue": "instagram_queue"},
         "core.tasks.instagram_reply_tasks.hide_instagram_comment_task": {"queue": "instagram_queue"},
         "core.tasks.telegram_tasks.send_telegram_notification_task": {"queue": "instagram_queue"},
