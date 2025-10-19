@@ -95,7 +95,7 @@ class Container(containers.DeclarativeContainer):
         session_service=agent_session_service,
     )
 
-    instagram_service = providers.Factory(
+    instagram_service = providers.Singleton(
         InstagramGraphAPIService,
     )
 

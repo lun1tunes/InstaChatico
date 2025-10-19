@@ -1,7 +1,8 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import aiohttp
+from aiolimiter import AsyncLimiter
 
 from ..config import settings
 
@@ -9,15 +10,47 @@ logger = logging.getLogger(__name__)
 
 
 class InstagramGraphAPIService:
-    """Service for interacting with Instagram Graph API"""
+    """Service for interacting with Instagram Graph API."""
 
-    def __init__(self, access_token: str = None):
+    def __init__(self, access_token: str = None, session: Optional[aiohttp.ClientSession] = None):
         self.access_token = access_token or settings.instagram.access_token
-        # Use graph.instagram.com instead of graph.facebook.com for Instagram API
         self.base_url = f"https://graph.instagram.com/{settings.instagram.api_version}"
 
         if not self.access_token:
             raise ValueError("Instagram access token is required")
+
+        self._session = session
+        self._should_close_session = session is None
+        self._reply_rate_limiter = AsyncLimiter(
+            max_rate=settings.instagram.replies_rate_limit_per_hour,
+            time_period=settings.instagram.replies_rate_period_seconds,
+        )
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create aiohttp session."""
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30),
+                connector=aiohttp.TCPConnector(limit=100, limit_per_host=30)
+            )
+            self._should_close_session = True
+            logger.debug("Created new aiohttp.ClientSession")
+        return self._session
+
+    async def close(self):
+        """Close the aiohttp session."""
+        if self._session and not self._session.closed and self._should_close_session:
+            await self._session.close()
+            logger.info("InstagramGraphAPIService session closed")
+
+    async def __aenter__(self):
+        """Context manager support."""
+        await self._get_session()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Context manager cleanup."""
+        await self.close()
 
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
         """Send reply to Instagram comment via Graph API."""
@@ -30,7 +63,8 @@ class InstagramGraphAPIService:
         )
 
         try:
-            async with aiohttp.ClientSession() as session:
+            async with self._reply_rate_limiter:
+                session = await self._get_session()
                 async with session.post(url, params=params) as response:
                     response_data = await response.json()
 
@@ -47,7 +81,6 @@ class InstagramGraphAPIService:
                             "status_code": response.status,
                         }
                     else:
-                        # Check if it's a rate limiting error
                         error_data = response_data.get("error", {})
                         if (
                             error_data.get("code") == 2
@@ -77,7 +110,7 @@ class InstagramGraphAPIService:
 
     async def get_comment_info(self, comment_id: str) -> Dict[str, Any]:
         """
-        Get information about an Instagram comment
+        Get information about an Instagram comment.
 
         Args:
             comment_id: The ID of the Instagram comment
@@ -86,7 +119,6 @@ class InstagramGraphAPIService:
             Dict containing comment information
         """
         url = f"{self.base_url}/{comment_id}"
-
         params = {
             "access_token": self.access_token,
             "fields": "id,text,from,created_time,parent_id",
@@ -95,29 +127,29 @@ class InstagramGraphAPIService:
         logger.debug(f"Getting comment info | comment_id={comment_id}")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    response_data = await response.json()
+            session = await self._get_session()
+            async with session.get(url, params=params) as response:
+                response_data = await response.json()
 
-                    if response.status == 200:
-                        logger.info(
-                            f"Comment info retrieved | comment_id={comment_id} | status_code={response.status}"
-                        )
-                        return {
-                            "success": True,
-                            "comment_info": response_data,
-                            "status_code": response.status,
-                        }
-                    else:
-                        logger.error(
-                            f"Failed to get comment info | comment_id={comment_id} | "
-                            f"status_code={response.status} | error={response_data}"
-                        )
-                        return {
-                            "success": False,
-                            "error": response_data,
-                            "status_code": response.status,
-                        }
+                if response.status == 200:
+                    logger.info(
+                        f"Comment info retrieved | comment_id={comment_id} | status_code={response.status}"
+                    )
+                    return {
+                        "success": True,
+                        "comment_info": response_data,
+                        "status_code": response.status,
+                    }
+                else:
+                    logger.error(
+                        f"Failed to get comment info | comment_id={comment_id} | "
+                        f"status_code={response.status} | error={response_data}"
+                    )
+                    return {
+                        "success": False,
+                        "error": response_data,
+                        "status_code": response.status,
+                    }
 
         except Exception as e:
             logger.error(
@@ -128,14 +160,12 @@ class InstagramGraphAPIService:
 
     async def validate_token(self) -> Dict[str, Any]:
         """
-        Validate the Instagram access token using Instagram Graph API debug endpoint
+        Validate the Instagram access token.
 
         Returns:
             Dict containing validation result
         """
-        # Use Instagram Graph API debug endpoint to validate token
         url = f"https://graph.facebook.com/{settings.instagram.api_version}/debug_token"
-
         params = {"input_token": self.access_token, "access_token": self.access_token}
 
         try:
@@ -144,29 +174,27 @@ class InstagramGraphAPIService:
                 f"Token: {self.access_token[:10]}...{self.access_token[-4:] if len(self.access_token) > 14 else '***'}"
             )
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    response_data = await response.json()
+            session = await self._get_session()
+            async with session.get(url, params=params) as response:
+                response_data = await response.json()
 
-                    logger.debug(f"Token validation response status: {response.status}")
-                    logger.debug(f"Token validation response: {response_data}")
+                logger.debug(f"Token validation response status: {response.status}")
+                logger.debug(f"Token validation response: {response_data}")
 
-                    if response.status == 200:
-                        logger.info("Instagram access token is valid")
-                        return {
-                            "success": True,
-                            "token_info": response_data,
-                            "status_code": response.status,
-                        }
-                    else:
-                        logger.error(
-                            f"Instagram access token validation failed: {response_data}"
-                        )
-                        return {
-                            "success": False,
-                            "error": response_data,
-                            "status_code": response.status,
-                        }
+                if response.status == 200:
+                    logger.info("Instagram access token is valid")
+                    return {
+                        "success": True,
+                        "token_info": response_data,
+                        "status_code": response.status,
+                    }
+                else:
+                    logger.error(f"Instagram access token validation failed: {response_data}")
+                    return {
+                        "success": False,
+                        "error": response_data,
+                        "status_code": response.status,
+                    }
 
         except Exception as e:
             logger.exception("Exception while validating Instagram token")
@@ -174,7 +202,7 @@ class InstagramGraphAPIService:
 
     async def get_media_info(self, media_id: str) -> Dict[str, Any]:
         """
-        Get information about an Instagram media post
+        Get information about an Instagram media post.
 
         Args:
             media_id: The ID of the Instagram media post
@@ -183,8 +211,6 @@ class InstagramGraphAPIService:
             Dict containing media information
         """
         url = f"{self.base_url}/{media_id}"
-
-        # Include children{media_url,media_type} to get all images from CAROUSEL_ALBUM
         params = {
             "access_token": self.access_token,
             "fields": "permalink,comments_count,like_count,shortcode,timestamp,is_comment_enabled,media_type,media_url,username,owner,caption,children{media_url,media_type}",
@@ -193,31 +219,31 @@ class InstagramGraphAPIService:
         logger.debug(f"Getting media info | media_id={media_id}")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    response_data = await response.json()
+            session = await self._get_session()
+            async with session.get(url, params=params) as response:
+                response_data = await response.json()
 
-                    if response.status == 200:
-                        media_type = response_data.get("media_type", "unknown")
-                        logger.info(
-                            f"Media info retrieved | media_id={media_id} | media_type={media_type} | "
-                            f"status_code={response.status}"
-                        )
-                        return {
-                            "success": True,
-                            "media_info": response_data,
-                            "status_code": response.status,
-                        }
-                    else:
-                        logger.error(
-                            f"Failed to get media info | media_id={media_id} | "
-                            f"status_code={response.status} | error={response_data}"
-                        )
-                        return {
-                            "success": False,
-                            "error": response_data,
-                            "status_code": response.status,
-                        }
+                if response.status == 200:
+                    media_type = response_data.get("media_type", "unknown")
+                    logger.info(
+                        f"Media info retrieved | media_id={media_id} | media_type={media_type} | "
+                        f"status_code={response.status}"
+                    )
+                    return {
+                        "success": True,
+                        "media_info": response_data,
+                        "status_code": response.status,
+                    }
+                else:
+                    logger.error(
+                        f"Failed to get media info | media_id={media_id} | "
+                        f"status_code={response.status} | error={response_data}"
+                    )
+                    return {
+                        "success": False,
+                        "error": response_data,
+                        "status_code": response.status,
+                    }
 
         except Exception as e:
             logger.error(
@@ -228,39 +254,38 @@ class InstagramGraphAPIService:
 
     async def get_page_info(self) -> Dict[str, Any]:
         """
-        Get Instagram page information using the access token
+        Get Instagram page information.
 
         Returns:
             Dict containing page information
         """
         url = f"{self.base_url}/me"
-
         params = {"access_token": self.access_token, "fields": "id,name,username"}
 
         try:
             logger.debug(f"Getting page info with URL: {url}")
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    response_data = await response.json()
+            session = await self._get_session()
+            async with session.get(url, params=params) as response:
+                response_data = await response.json()
 
-                    logger.debug(f"Page info response status: {response.status}")
-                    logger.debug(f"Page info response: {response_data}")
+                logger.debug(f"Page info response status: {response.status}")
+                logger.debug(f"Page info response: {response_data}")
 
-                    if response.status == 200:
-                        logger.info("Successfully retrieved page info")
-                        return {
-                            "success": True,
-                            "page_info": response_data,
-                            "status_code": response.status,
-                        }
-                    else:
-                        logger.error(f"Failed to get page info: {response_data}")
-                        return {
-                            "success": False,
-                            "error": response_data,
-                            "status_code": response.status,
-                        }
+                if response.status == 200:
+                    logger.info("Successfully retrieved page info")
+                    return {
+                        "success": True,
+                        "page_info": response_data,
+                        "status_code": response.status,
+                    }
+                else:
+                    logger.error(f"Failed to get page info: {response_data}")
+                    return {
+                        "success": False,
+                        "error": response_data,
+                        "status_code": response.status,
+                    }
 
         except Exception as e:
             logger.exception("Exception while getting page info")
@@ -268,7 +293,7 @@ class InstagramGraphAPIService:
 
     async def hide_comment(self, comment_id: str, hide: bool = True) -> Dict[str, Any]:
         """
-        Hide or unhide an Instagram comment via Graph API.
+        Hide or unhide an Instagram comment.
 
         Note: Comments from media owners to their own media will always be shown.
         Live video comments are not supported.
@@ -287,31 +312,31 @@ class InstagramGraphAPIService:
         logger.info(f"{action} comment | comment_id={comment_id} | hide={hide}")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, params=params) as response:
-                    response_data = await response.json()
+            session = await self._get_session()
+            async with session.post(url, params=params) as response:
+                response_data = await response.json()
 
-                    if response.status == 200:
-                        action_past = "hidden" if hide else "unhidden"
-                        logger.info(
-                            f"Comment {action_past} successfully | comment_id={comment_id} | "
-                            f"status_code={response.status}"
-                        )
-                        return {
-                            "success": True,
-                            "response": response_data,
-                            "status_code": response.status,
-                        }
-                    else:
-                        logger.error(
-                            f"Failed to {action.lower()} comment | comment_id={comment_id} | "
-                            f"status_code={response.status} | error={response_data}"
-                        )
-                        return {
-                            "success": False,
-                            "error": response_data,
-                            "status_code": response.status,
-                        }
+                if response.status == 200:
+                    action_past = "hidden" if hide else "unhidden"
+                    logger.info(
+                        f"Comment {action_past} successfully | comment_id={comment_id} | "
+                        f"status_code={response.status}"
+                    )
+                    return {
+                        "success": True,
+                        "response": response_data,
+                        "status_code": response.status,
+                    }
+                else:
+                    logger.error(
+                        f"Failed to {action.lower()} comment | comment_id={comment_id} | "
+                        f"status_code={response.status} | error={response_data}"
+                    )
+                    return {
+                        "success": False,
+                        "error": response_data,
+                        "status_code": response.status,
+                    }
 
         except Exception as e:
             logger.error(

@@ -17,9 +17,20 @@ import uuid
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure logging is configured at startup when running under uvicorn
     configure_logging()
+    logger = logging.getLogger(__name__)
+    logger.info("Application starting up...")
+
+    from core.container import get_container
+    container = get_container()
+    instagram_service = container.instagram_service()
+    logger.info("Instagram service initialized")
+
     yield
+
+    logger.info("Application shutting down...")
+    await instagram_service.close()
+    logger.info("Instagram service session closed")
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
