@@ -328,3 +328,92 @@ class TestDocumentRepository:
         assert doc.processing_status == "completed"
         assert doc.processing_error is None
         assert doc.markdown_content == "# Success\nNow it works"
+
+    async def test_get_by_status_empty_result(self, db_session):
+        """Test get_by_status returns empty list when no documents match."""
+        # Arrange
+        repo = DocumentRepository(db_session)
+
+        # Act
+        docs = await repo.get_by_status("pending", limit=100)
+
+        # Assert
+        assert docs == []
+
+    async def test_get_pending_documents_empty(self, db_session):
+        """Test get_pending_documents returns empty list when none pending."""
+        # Arrange
+        repo = DocumentRepository(db_session)
+
+        # Act
+        pending = await repo.get_pending_documents(limit=10)
+
+        # Assert
+        assert pending == []
+
+    async def test_get_summary_stats_empty_database(self, db_session):
+        """Test get_summary_stats with no documents."""
+        # Arrange
+        repo = DocumentRepository(db_session)
+
+        # Act
+        stats = await repo.get_summary_stats()
+
+        # Assert
+        assert stats["total_documents"] == 0
+        assert stats["completed"] == 0
+        assert stats["failed"] == 0
+        assert stats["pending"] == 0
+        assert stats["types"] == []
+
+    async def test_exists_by_content_hash_false(self, db_session):
+        """Test exists_by_content_hash returns False for nonexistent hash."""
+        # Arrange
+        repo = DocumentRepository(db_session)
+
+        # Act
+        exists = await repo.exists_by_content_hash("nonexistent_hash_123")
+
+        # Assert
+        assert exists is False
+
+    async def test_get_by_type_limit_zero(self, db_session, document_factory):
+        """Test get_by_type with limit=0."""
+        # Arrange
+        repo = DocumentRepository(db_session)
+        await document_factory(document_type="pdf")
+
+        # Act
+        docs = await repo.get_by_type("pdf", limit=0)
+
+        # Assert
+        assert len(docs) == 0
+
+    async def test_mark_processing_sets_status(self, db_session, document_factory):
+        """Test that mark_processing sets correct status."""
+        # Arrange
+        repo = DocumentRepository(db_session)
+        doc = await document_factory(processing_status="pending")
+
+        # Act
+        await repo.mark_processing(doc)
+        await db_session.flush()
+
+        # Assert
+        assert doc.processing_status == "processing"
+
+    async def test_mark_failed_preserves_error(self, db_session, document_factory):
+        """Test that mark_failed stores error message."""
+        # Arrange
+        repo = DocumentRepository(db_session)
+        doc = await document_factory()
+        error_msg = "Failed to extract text from corrupted PDF"
+
+        # Act
+        await repo.mark_failed(doc, error_msg)
+        await db_session.flush()
+
+        # Assert
+        assert doc.processing_status == "failed"
+        assert doc.processing_error == error_msg
+        assert doc.processed_at is not None

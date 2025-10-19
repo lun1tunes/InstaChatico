@@ -269,3 +269,61 @@ class TestMediaRepository:
         # Assert
         assert result is not None
         assert len(result.comments) == 0
+
+    async def test_get_media_needing_analysis_empty_result(self, db_session):
+        """Test get_media_needing_analysis returns empty list when none need analysis."""
+        # Arrange
+        repo = MediaRepository(db_session)
+
+        # Act
+        media_list = await repo.get_media_needing_analysis(limit=10)
+
+        # Assert
+        assert media_list == []
+
+    async def test_get_media_needing_analysis_excludes_video(self, db_session, media_factory):
+        """Test that VIDEO media is excluded from analysis queue."""
+        # Arrange
+        repo = MediaRepository(db_session)
+        await media_factory(media_type="VIDEO", media_url="http://example.com/video.mp4", media_context=None)
+
+        # Act
+        media_list = await repo.get_media_needing_analysis(limit=10)
+
+        # Assert
+        assert len(media_list) == 0
+
+    async def test_get_with_comments_nonexistent_media(self, db_session):
+        """Test get_with_comments with nonexistent media ID."""
+        # Arrange
+        repo = MediaRepository(db_session)
+
+        # Act
+        result = await repo.get_with_comments("nonexistent_media_id")
+
+        # Assert
+        assert result is None
+
+    async def test_exists_by_id_with_empty_string(self, db_session):
+        """Test exists_by_id with empty string."""
+        # Arrange
+        repo = MediaRepository(db_session)
+
+        # Act
+        exists = await repo.exists_by_id("")
+
+        # Assert
+        assert exists is False
+
+    async def test_get_media_needing_analysis_limit_one(self, db_session, media_factory):
+        """Test get_media_needing_analysis respects limit=1."""
+        # Arrange
+        repo = MediaRepository(db_session)
+        await media_factory(media_type="IMAGE", media_context=None)
+        await media_factory(media_type="IMAGE", media_context=None)
+
+        # Act
+        media_list = await repo.get_media_needing_analysis(limit=1)
+
+        # Assert
+        assert len(media_list) == 1

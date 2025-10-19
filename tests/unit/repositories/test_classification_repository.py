@@ -230,3 +230,110 @@ class TestClassificationRepository:
         # Assert
         assert clf1.classification == "positive"
         assert clf2.classification == "question / inquiry"
+
+    async def test_get_pending_retries_empty_result(self, db_session):
+        """Test get_pending_retries returns empty list when no retries pending."""
+        # Arrange
+        repo = ClassificationRepository(db_session)
+
+        # Act
+        pending = await repo.get_pending_retries()
+
+        # Assert
+        assert pending == []
+
+    async def test_get_pending_retries_excludes_max_retries(self, db_session, instagram_comment_factory, classification_factory):
+        """Test get_pending_retries excludes classifications that hit max retries."""
+        # Arrange
+        comment = await instagram_comment_factory()
+        clf = await classification_factory(
+            comment_id=comment.id,
+            retry_count=3,
+            max_retries=3,
+            processing_status=ProcessingStatus.RETRY
+        )
+        repo = ClassificationRepository(db_session)
+
+        # Act
+        pending = await repo.get_pending_retries()
+
+        # Assert - Should be empty because retry_count == max_retries
+        assert len(pending) == 0
+
+    async def test_mark_completed_clears_error(self, db_session, instagram_comment_factory, classification_factory):
+        """Test mark_completed clears last_error field."""
+        # Arrange
+        comment = await instagram_comment_factory()
+        clf = await classification_factory(comment_id=comment.id)
+        clf.last_error = "Previous error message"
+        repo = ClassificationRepository(db_session)
+
+        # Act
+        await repo.mark_completed(clf)
+        await db_session.flush()
+
+        # Assert
+        assert clf.processing_status == ProcessingStatus.COMPLETED
+        assert clf.last_error is None
+
+    async def test_get_by_comment_id_with_empty_string(self, db_session):
+        """Test get_by_comment_id with empty string returns None."""
+        # Arrange
+        repo = ClassificationRepository(db_session)
+
+        # Act
+        result = await repo.get_by_comment_id("")
+
+        # Assert
+        assert result is None
+
+    async def test_mark_processing_updates_timestamp(self, db_session, instagram_comment_factory, classification_factory):
+        """Test mark_processing sets processing_started_at timestamp."""
+        # Arrange
+        comment = await instagram_comment_factory()
+        clf = await classification_factory(comment_id=comment.id)
+        repo = ClassificationRepository(db_session)
+        assert clf.processing_started_at is None
+
+        # Act
+        await repo.mark_processing(clf, retry_count=0)
+        await db_session.flush()
+
+        # Assert
+        assert clf.processing_started_at is not None
+
+    async def test_mark_failed_preserves_error_message(self, db_session, instagram_comment_factory, classification_factory):
+        """Test mark_failed stores error message correctly."""
+        # Arrange
+        comment = await instagram_comment_factory()
+        clf = await classification_factory(comment_id=comment.id)
+        repo = ClassificationRepository(db_session)
+        error_msg = "Connection timeout after 30 seconds"
+
+        # Act
+        await repo.mark_failed(clf, error_msg)
+        await db_session.flush()
+
+        # Assert
+        assert clf.processing_status == ProcessingStatus.FAILED
+        assert clf.last_error == error_msg
+
+    async def test_classification_with_minimal_fields(self, db_session, instagram_comment_factory):
+        """Test creating classification with only required fields."""
+        # Arrange
+        comment = await instagram_comment_factory()
+        repo = ClassificationRepository(db_session)
+        clf_entity = CommentClassification(
+            comment_id=comment.id,
+            classification="positive",
+        )
+
+        # Act
+        clf = await repo.create(clf_entity)
+        await db_session.flush()
+
+        # Assert
+        assert clf.comment_id == comment.id
+        assert clf.classification == "positive"
+        assert clf.confidence is None
+        assert clf.reasoning is None

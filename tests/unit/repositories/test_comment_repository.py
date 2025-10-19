@@ -1,11 +1,12 @@
 """Fixed CommentRepository tests"""
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select
 
 from core.repositories.comment import CommentRepository
 from core.models import InstagramComment
+from core.utils.time import now_utc
 
 
 @pytest.mark.unit
@@ -23,7 +24,7 @@ class TestCommentRepository:
             user_id="user_123",
             username="test_user",
             text="Test comment",
-            created_at=datetime.utcnow(),
+            created_at=now_utc(),
             raw_data={},
         )
 
@@ -99,7 +100,7 @@ class TestCommentRepository:
             user_id="user_123",
             username="test",
             text="Persist test",
-            created_at=datetime.utcnow(),
+            created_at=now_utc(),
             raw_data={},
         )
 
@@ -211,7 +212,7 @@ class TestCommentRepository:
             username="replier",
             text="This is a reply",
             parent_id=parent_comment.id,
-            created_at=datetime.utcnow(),
+            created_at=now_utc(),
             raw_data={},
         )
 
@@ -261,7 +262,7 @@ class TestCommentRepository:
             username="test",
             text="Part of conversation",
             conversation_id="conversation_abc",
-            created_at=datetime.utcnow(),
+            created_at=now_utc(),
             raw_data={},
         )
 
@@ -284,3 +285,47 @@ class TestCommentRepository:
         # Assert
         assert exists is True
         assert not_exists is False
+
+    async def test_get_with_classification_with_empty_id(self, db_session):
+        """Test get_with_classification with empty string ID."""
+        # Arrange
+        repo = CommentRepository(db_session)
+
+        # Act
+        result = await repo.get_with_classification("")
+
+        # Assert
+        assert result is None
+
+    async def test_get_full_nonexistent_comment(self, db_session):
+        """Test get_full with nonexistent comment ID."""
+        # Arrange
+        repo = CommentRepository(db_session)
+
+        # Act
+        result = await repo.get_full("nonexistent_id")
+
+        # Assert
+        assert result is None
+
+    async def test_comment_with_very_long_text(self, db_session):
+        """Test creating comment with very long text."""
+        # Arrange
+        repo = CommentRepository(db_session)
+        long_text = "a" * 5000
+        comment_entity = InstagramComment(
+            id="long_text_comment",
+            media_id="media_123",
+            user_id="user_123",
+            username="test",
+            text=long_text,
+            created_at=now_utc(),
+            raw_data={},
+        )
+
+        # Act
+        comment = await repo.create(comment_entity)
+
+        # Assert
+        assert comment.text == long_text
+        assert len(comment.text) == 5000

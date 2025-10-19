@@ -6,7 +6,7 @@ Note: Vector similarity search tests are simplified for SQLite compatibility.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from core.repositories.product_embedding import ProductEmbeddingRepository
 from core.models.product_embedding import ProductEmbedding
@@ -238,13 +238,13 @@ class TestProductEmbeddingRepository:
         repo = ProductEmbeddingRepository(db_session)
 
         prod1 = await product_embedding_factory(
-            created_at=datetime.utcnow() - timedelta(days=2)
+            created_at=datetime.now(timezone.utc) - timedelta(days=2)
         )
         prod2 = await product_embedding_factory(
-            created_at=datetime.utcnow() - timedelta(days=1)
+            created_at=datetime.now(timezone.utc) - timedelta(days=1)
         )
         prod3 = await product_embedding_factory(
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
 
         # Act

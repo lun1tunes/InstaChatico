@@ -312,3 +312,86 @@ class TestAnswerRepository:
 
         # Assert
         assert answer.meta_data == {"source": "agent", "version": "1.0"}
+
+    async def test_get_pending_answers_empty_result(self, db_session):
+        """Test get_pending_answers returns empty list when no pending answers."""
+        # Arrange
+        repo = AnswerRepository(db_session)
+
+        # Act
+        pending = await repo.get_pending_answers(limit=10)
+
+        # Assert
+        assert pending == []
+        assert len(pending) == 0
+
+    async def test_get_pending_answers_limit_zero(self, db_session, instagram_comment_factory):
+        """Test get_pending_answers with limit=0."""
+        # Arrange
+        repo = AnswerRepository(db_session)
+        comment = await instagram_comment_factory()
+        await repo.create_for_comment(comment.id)
+        await db_session.flush()
+
+        # Act
+        pending = await repo.get_pending_answers(limit=0)
+
+        # Assert
+        assert len(pending) == 0
+
+    async def test_get_by_comment_id_with_empty_string(self, db_session):
+        """Test get_by_comment_id with empty string."""
+        # Arrange
+        repo = AnswerRepository(db_session)
+
+        # Act
+        answer = await repo.get_by_comment_id("")
+
+        # Assert
+        assert answer is None
+
+    async def test_get_by_reply_id_with_empty_string(self, db_session):
+        """Test get_by_reply_id with empty string."""
+        # Arrange
+        repo = AnswerRepository(db_session)
+
+        # Act
+        answer = await repo.get_by_reply_id("")
+
+        # Assert
+        assert answer is None
+
+    async def test_answer_with_all_optional_fields_none(self, db_session, instagram_comment_factory):
+        """Test creating answer with minimal required fields only."""
+        # Arrange
+        comment = await instagram_comment_factory()
+        repo = AnswerRepository(db_session)
+        answer_entity = QuestionAnswer(
+            comment_id=comment.id,
+        )
+
+        # Act
+        answer = await repo.create(answer_entity)
+        await db_session.flush()
+
+        # Assert
+        assert answer.comment_id == comment.id
+        assert answer.answer is None
+        assert answer.answer_confidence is None
+        assert answer.answer_quality_score is None
+
+    async def test_multiple_answers_same_comment_id(self, db_session, instagram_comment_factory, answer_factory):
+        """Test that get_by_comment_id returns first match when multiple exist."""
+        # Arrange
+        comment = await instagram_comment_factory()
+        repo = AnswerRepository(db_session)
+
+        # Create two answers for same comment (edge case, shouldn't happen in production)
+        answer1 = await answer_factory(comment_id=comment.id, answer_text="First answer")
+
+        # Act
+        result = await repo.get_by_comment_id(comment.id)
+
+        # Assert
+        assert result is not None
+        assert result.comment_id == comment.id
