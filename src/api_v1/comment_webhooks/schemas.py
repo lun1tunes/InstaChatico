@@ -76,7 +76,7 @@ class WebhookEntry(BaseModel):
 
     id: str = Field(..., min_length=1, description="Instagram business account ID")
     time: int = Field(..., gt=0, description="Unix timestamp of the event")
-    changes: list[CommentChange] = Field(..., min_items=1, description="List of changes")
+    changes: list[CommentChange] = Field(..., min_length=1, description="List of changes")
 
     @field_validator("time")
     @classmethod
@@ -99,7 +99,7 @@ class WebhookPayload(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    entry: list[WebhookEntry] = Field(..., min_items=1, description="List of entries")
+    entry: list[WebhookEntry] = Field(..., min_length=1, description="List of entries")
     object: Literal["instagram"] = Field(..., description="Object type (must be 'instagram')")
 
     def get_all_comments(self) -> list[tuple[WebhookEntry, CommentValue]]:

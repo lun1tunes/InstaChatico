@@ -13,7 +13,7 @@ import asyncio
 import os
 import pytest
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -145,7 +145,7 @@ def instagram_comment_factory(db_session):
             user_id=user_id or fake.uuid4(),
             username=username or fake.user_name(),
             text=text or fake.sentence(),
-            created_at=kwargs.get("created_at", datetime.utcnow()),
+            created_at=kwargs.get("created_at", datetime.now(timezone.utc)),
             raw_data=kwargs.get("raw_data", {}),
             parent_id=parent_id,
             conversation_id=conversation_id,
@@ -326,7 +326,7 @@ def product_embedding_factory(db_session):
             "image_url": kwargs.get("image_url", fake.image_url()),
             "embedding": embedding,
             "is_active": kwargs.get("is_active", True),
-            "created_at": kwargs.get("created_at", datetime.utcnow()),
+            "created_at": kwargs.get("created_at", datetime.now(timezone.utc)),
         }
 
         if product_id is not None:
