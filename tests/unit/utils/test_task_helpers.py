@@ -84,18 +84,57 @@ class TestAsyncTask:
 
         decorated = async_task(my_task)
 
-        # Act
-        with patch('asyncio.set_event_loop') as mock_set_loop:
-            with patch('asyncio.get_event_loop_policy') as mock_policy:
-                mock_event_loop = MagicMock()
-                mock_policy.return_value.get_event_loop.return_value = MagicMock()
+        worker_loop = asyncio.new_event_loop()
+        current_loop = asyncio.new_event_loop()
 
-                with patch.object(_get_worker_event_loop, '_loop', new=mock_event_loop):
-                    mock_event_loop.run_until_complete.return_value = "done"
+        class DummyPolicy:
+            def get_event_loop(self_inner):
+                return current_loop
+
+        try:
+            with patch.object(_get_worker_event_loop, '_loop', new=worker_loop, create=True):
+                with patch('asyncio.set_event_loop') as mock_set_loop, \
+                     patch('asyncio.get_event_loop_policy', return_value=DummyPolicy()):
                     result = decorated()
 
-        # Assert
-        assert result == "done"
+            assert result == "done"
+            mock_set_loop.assert_called_once_with(worker_loop)
+        finally:
+            worker_loop.close()
+            current_loop.close()
+            if hasattr(_get_worker_event_loop, "_loop"):
+                delattr(_get_worker_event_loop, "_loop")
+
+    def test_async_task_skips_setting_loop_when_already_current(self):
+        """async_task should not reset the loop if it is already current."""
+        async def my_task():
+            return "done"
+
+        decorated = async_task(my_task)
+
+        loop = asyncio.new_event_loop()
+        original_loop = getattr(_get_worker_event_loop, "_loop", None)
+
+        class DummyPolicy:
+            def get_event_loop(self_inner):
+                return loop
+
+        try:
+            _get_worker_event_loop._loop = loop
+            with patch('asyncio.get_event_loop_policy', return_value=DummyPolicy()) as mock_policy, \
+                 patch('asyncio.set_event_loop') as mock_set_loop:
+                result = decorated()
+
+            assert result == "done"
+            mock_set_loop.assert_not_called()
+            # Ensure helper asked policy for current loop
+            assert mock_policy.called
+        finally:
+            loop.close()
+            if original_loop is not None:
+                _get_worker_event_loop._loop = original_loop
+            elif hasattr(_get_worker_event_loop, "_loop"):
+                delattr(_get_worker_event_loop, "_loop")
 
     def test_async_task_preserves_function_metadata(self):
         """Test that async_task preserves the original function's metadata."""

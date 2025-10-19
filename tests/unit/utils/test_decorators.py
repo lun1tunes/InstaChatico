@@ -155,6 +155,22 @@ class TestLogExecution:
         # Assert
         assert result == 8
 
+    async def test_log_execution_propagates_exception(self):
+        """Decorator should not swallow exceptions from the wrapped function."""
+        # Arrange
+        @log_execution()
+        async def failing_function():
+            raise RuntimeError("boom")
+
+        # Act & Assert
+        with patch('core.utils.decorators.logger') as mock_logger:
+            with pytest.raises(RuntimeError, match="boom"):
+                await failing_function()
+
+        # Only the start log should be emitted; completion log is skipped
+        assert mock_logger.debug.call_count == 1
+        assert "Executing failing_function" in mock_logger.debug.call_args[0][0]
+
 
 @pytest.mark.unit
 class TestValidateNotNone:
@@ -258,3 +274,21 @@ class TestValidateNotNone:
 
         # Assert
         assert result == "value-data"
+
+    async def test_validate_not_none_missing_field_ignored(self):
+        """Fields not present in signature should be ignored gracefully."""
+        @validate_not_none('nonexistent')
+        async def test_function(existing):
+            return existing
+
+        result = await test_function("value")
+        assert result == "value"
+
+    async def test_validate_not_none_default_none_triggers_error(self):
+        """Default None values should still trigger validation."""
+        @validate_not_none('param')
+        async def test_function(param=None):
+            return param
+
+        with pytest.raises(ValueError, match="param cannot be None"):
+            await test_function()
