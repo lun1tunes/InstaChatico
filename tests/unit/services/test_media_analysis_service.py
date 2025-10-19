@@ -18,7 +18,7 @@ class TestMediaAnalysisService:
         """Create MediaAnalysisService instance."""
         return MediaAnalysisService()
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_media_image_success(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -38,7 +38,7 @@ class TestMediaAnalysisService:
         assert call_args[1]["image_url"] == media_url
         assert "Подпись к посту: Test caption" in call_args[1]["additional_context"]
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_media_image_without_caption(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -56,7 +56,7 @@ class TestMediaAnalysisService:
         call_args = mock_analyze_impl.call_args
         assert "Подпись к посту" not in call_args[1]["additional_context"]
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_media_image_empty_result(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -71,7 +71,7 @@ class TestMediaAnalysisService:
         # Assert
         assert result is None
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_media_image_error_result(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -86,7 +86,7 @@ class TestMediaAnalysisService:
         # Assert
         assert result is None
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_media_image_exception(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -101,7 +101,7 @@ class TestMediaAnalysisService:
         # Assert
         assert result is None
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_carousel_images_success(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -130,7 +130,7 @@ class TestMediaAnalysisService:
         assert "[Изображение 3]: Third image description" in result
         assert mock_analyze_impl.call_count == 3
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_carousel_images_without_caption(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -149,7 +149,7 @@ class TestMediaAnalysisService:
         for call in mock_analyze_impl.call_args_list:
             assert "Подпись к карусели" not in call[1]["additional_context"]
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_carousel_images_empty_list(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -164,7 +164,7 @@ class TestMediaAnalysisService:
         assert result is None
         mock_analyze_impl.assert_not_called()
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_carousel_images_partial_failure(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -191,7 +191,7 @@ class TestMediaAnalysisService:
         assert "[Изображение 3]: Third image description" in result
         assert mock_analyze_impl.call_count == 3
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_carousel_images_all_failures(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -215,7 +215,7 @@ class TestMediaAnalysisService:
         assert result is None
         assert mock_analyze_impl.call_count == 3
 
-    @patch("core.services.media_analysis_service._analyze_image_implementation")
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     async def test_analyze_carousel_images_error_messages(
         self, mock_analyze_impl, media_analysis_service
     ):
@@ -283,13 +283,23 @@ class TestMediaAnalysisService:
         # Assert
         assert result is None
 
+    @patch("core.services.media_analysis_service._analyze_image_implementation", new_callable=AsyncMock)
     @patch("core.services.media_analysis_service.asyncio.gather")
     async def test_analyze_carousel_images_general_exception(
-        self, mock_gather, media_analysis_service
+        self, mock_gather, mock_analyze_impl, media_analysis_service
     ):
         """Test carousel analysis handles general exceptions in try block."""
         # Arrange
-        mock_gather.side_effect = Exception("Unexpected system error")
+        async def fake_gather(*tasks, **kwargs):
+            for task in tasks:
+                try:
+                    await task
+                except Exception:
+                    pass
+            raise Exception("Unexpected system error")
+
+        mock_gather.side_effect = fake_gather
+        mock_analyze_impl.return_value = "desc"
         media_urls = ["https://example.com/img1.jpg"]
 
         # Act
