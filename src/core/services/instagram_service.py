@@ -1,5 +1,6 @@
+import inspect
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Protocol, Tuple
 
 import aiohttp
 from aiolimiter import AsyncLimiter
@@ -9,10 +10,40 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 
 
+class RateLimiterProtocol(Protocol):
+    max_rate: int
+    time_period: int
+
+    async def acquire(self) -> Tuple[bool, float]:
+        ...
+
+
+class _AsyncLimiterAdapter:
+    """Adapter to match AsyncLimiter interface to RateLimiterProtocol."""
+
+    def __init__(self, limiter: AsyncLimiter):
+        self._limiter = limiter
+        self.max_rate = limiter.max_rate
+        self.time_period = limiter.time_period
+
+    async def acquire(self) -> Tuple[bool, float]:
+        async with self._limiter:
+            return True, 0.0
+
+    async def close(self) -> None:
+        # AsyncLimiter does not require explicit close; provided for symmetry.
+        return None
+
+
 class InstagramGraphAPIService:
     """Service for interacting with Instagram Graph API."""
 
-    def __init__(self, access_token: str = None, session: Optional[aiohttp.ClientSession] = None):
+    def __init__(
+        self,
+        access_token: str = None,
+        session: Optional[aiohttp.ClientSession] = None,
+        rate_limiter: Optional[RateLimiterProtocol] = None,
+    ):
         self.access_token = access_token or settings.instagram.access_token
         self.base_url = f"https://graph.instagram.com/{settings.instagram.api_version}"
 
@@ -21,10 +52,17 @@ class InstagramGraphAPIService:
 
         self._session = session
         self._should_close_session = session is None
-        self._reply_rate_limiter = AsyncLimiter(
-            max_rate=settings.instagram.replies_rate_limit_per_hour,
-            time_period=settings.instagram.replies_rate_period_seconds,
-        )
+        if rate_limiter is not None:
+            self._reply_rate_limiter: RateLimiterProtocol = rate_limiter
+            self._owns_rate_limiter = False
+        else:
+            self._reply_rate_limiter = _AsyncLimiterAdapter(
+                AsyncLimiter(
+                    max_rate=settings.instagram.replies_rate_limit_per_hour,
+                    time_period=settings.instagram.replies_rate_period_seconds,
+                )
+            )
+            self._owns_rate_limiter = True
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
@@ -42,6 +80,12 @@ class InstagramGraphAPIService:
         if self._session and not self._session.closed and self._should_close_session:
             await self._session.close()
             logger.info("InstagramGraphAPIService session closed")
+        if self._owns_rate_limiter and hasattr(self._reply_rate_limiter, "close"):
+            closer = getattr(self._reply_rate_limiter, "close")
+            if inspect.iscoroutinefunction(closer):
+                await closer()
+            else:
+                closer()
 
     async def __aenter__(self):
         """Context manager support."""
@@ -63,43 +107,55 @@ class InstagramGraphAPIService:
         )
 
         try:
-            async with self._reply_rate_limiter:
-                session = await self._get_session()
-                async with session.post(url, params=params) as response:
-                    response_data = await response.json()
+            allowed, delay = await self._reply_rate_limiter.acquire()
+            if not allowed:
+                logger.warning(
+                    f"Instagram reply deferred due to rate limit | comment_id={comment_id} | retry_after={delay:.2f}s"
+                )
+                return {
+                    "success": False,
+                    "status": "rate_limited",
+                    "retry_after": float(delay),
+                    "error": "Instagram rate limit reached",
+                }
 
-                    if response.status == 200:
-                        reply_id = response_data.get("id") if isinstance(response_data, dict) else None
-                        logger.info(
-                            f"Instagram reply sent successfully | comment_id={comment_id} | "
-                            f"reply_id={reply_id} | status_code={response.status}"
+            session = await self._get_session()
+            async with session.post(url, params=params) as response:
+                response_data = await response.json()
+
+                if response.status == 200:
+                    reply_id = response_data.get("id") if isinstance(response_data, dict) else None
+                    logger.info(
+                        f"Instagram reply sent successfully | comment_id={comment_id} | "
+                        f"reply_id={reply_id} | status_code={response.status}"
+                    )
+                    return {
+                        "success": True,
+                        "response": response_data,
+                        "reply_id": reply_id,
+                        "status_code": response.status,
+                    }
+                else:
+                    error_data = response_data.get("error", {}) if isinstance(response_data, dict) else {}
+                    if (
+                        isinstance(error_data, dict)
+                        and error_data.get("code") == 2
+                        and "retry" in error_data.get("message", "").lower()
+                    ):
+                        logger.warning(
+                            f"Instagram API rate limit response | comment_id={comment_id} | "
+                            f"status_code={response.status} | will_retry=true"
                         )
-                        return {
-                            "success": True,
-                            "response": response_data,
-                            "reply_id": reply_id,
-                            "status_code": response.status,
-                        }
                     else:
-                        error_data = response_data.get("error", {})
-                        if (
-                            error_data.get("code") == 2
-                            and "retry" in error_data.get("message", "").lower()
-                        ):
-                            logger.warning(
-                                f"Instagram API rate limit | comment_id={comment_id} | "
-                                f"status_code={response.status} | will_retry=true"
-                            )
-                        else:
-                            logger.error(
-                                f"Instagram reply failed | comment_id={comment_id} | "
-                                f"status_code={response.status} | error={response_data}"
-                            )
-                        return {
-                            "success": False,
-                            "error": response_data,
-                            "status_code": response.status,
-                        }
+                        logger.error(
+                            f"Instagram reply failed | comment_id={comment_id} | "
+                            f"status_code={response.status} | error={response_data}"
+                        )
+                    return {
+                        "success": False,
+                        "error": response_data,
+                        "status_code": response.status,
+                    }
 
         except Exception as e:
             logger.error(

@@ -1,6 +1,7 @@
 """Instagram reply and hide tasks - refactored using Clean Architecture."""
 
 import logging
+import math
 
 from ..celery_app import celery_app
 from ..utils.task_helpers import async_task, get_db_session
@@ -42,11 +43,13 @@ async def send_instagram_reply_task(self, comment_id: str, answer_text: str = No
                 )
 
                 if result["status"] == "retry" and self.request.retries < self.max_retries:
+                    retry_after = result.get("retry_after", 10)
+                    countdown = max(int(math.ceil(retry_after)), 1)
                     logger.warning(
                         f"Task retry scheduled: send_instagram_reply_task | task_id={task_id} | "
-                        f"comment_id={comment_id} | retry={self.request.retries + 1}/{self.max_retries} | countdown=10s"
+                        f"comment_id={comment_id} | retry={self.request.retries + 1}/{self.max_retries} | countdown={countdown}s"
                     )
-                    raise self.retry(countdown=10)
+                    raise self.retry(countdown=countdown)
 
                 logger.info(
                     f"Task completed: send_instagram_reply_task | task_id={task_id} | "

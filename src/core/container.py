@@ -6,6 +6,9 @@ This makes the application more testable and maintainable.
 """
 
 from dependency_injector import containers, providers
+from redis import asyncio as redis_async
+
+from .config import settings
 
 # Services
 from .services.classification_service import CommentClassificationService
@@ -20,6 +23,7 @@ from .services.document_processing_service import DocumentProcessingService
 from .services.document_context_service import DocumentContextService
 from .services.agent_session_service import AgentSessionService
 from .services.agent_executor import AgentExecutor
+from .services.rate_limiter import RedisRateLimiter
 
 # Infrastructure
 from .infrastructure.task_queue import CeleryTaskQueue
@@ -62,6 +66,20 @@ class Container(containers.DeclarativeContainer):
         celery_app=celery_app,
     )
 
+    instagram_rate_limit_redis = providers.Singleton(
+        redis_async.Redis.from_url,
+        settings.instagram.rate_limit_redis_url,
+    )
+
+    instagram_rate_limiter = providers.Singleton(
+        RedisRateLimiter,
+        redis_client=instagram_rate_limit_redis,
+        key="instagram:replies",
+        limit=settings.instagram.replies_rate_limit_per_hour,
+        period=settings.instagram.replies_rate_period_seconds,
+        owns_connection=False,
+    )
+
     # Database infrastructure
     database_helper = providers.Object(db_helper)
     db_engine = providers.Callable(lambda helper: helper.engine, database_helper)
@@ -97,6 +115,7 @@ class Container(containers.DeclarativeContainer):
 
     instagram_service = providers.Singleton(
         InstagramGraphAPIService,
+        rate_limiter=instagram_rate_limiter,
     )
 
     media_service = providers.Factory(

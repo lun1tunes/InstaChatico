@@ -99,6 +99,17 @@ class SendReplyUseCase:
             message=reply_text
         )
 
+        if result.get("status") == "rate_limited":
+            retry_after = float(result.get("retry_after", 10.0))
+            logger.warning(
+                f"Reply deferred due to Instagram rate limit | comment_id={comment_id} | retry_after={retry_after:.2f}s"
+            )
+            return {
+                "status": "retry",
+                "reason": "rate_limited",
+                "retry_after": retry_after,
+            }
+
         # 6. Update tracking
         if result.get("success"):
             logger.info(

@@ -40,6 +40,10 @@ class InstagramSettings(BaseModel):
     api_version: str = os.getenv("INSTAGRAM_API_VERSION", "v23.0")
     base_url: str = f"https://graph.instagram.com/{os.getenv('INSTAGRAM_API_VERSION', 'v23.0')}"
     bot_username: str = os.getenv("INSTAGRAM_BOT_USERNAME", "")
+    rate_limit_redis_url: str = os.getenv(
+        "INSTAGRAM_RATE_LIMIT_REDIS_URL",
+        os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"),
+    )
     replies_rate_limit_per_hour: int = int(os.getenv("INSTAGRAM_REPLIES_RATE_LIMIT_PER_HOUR", "750"))
     replies_rate_period_seconds: int = int(os.getenv("INSTAGRAM_REPLIES_RATE_PERIOD_SECONDS", "3600"))
 

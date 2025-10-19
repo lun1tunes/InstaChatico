@@ -8,13 +8,36 @@ Tests cover:
 - Edge cases and error handling
 """
 
-import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock, call
-from aiolimiter import AsyncLimiter
+from typing import List, Optional, Tuple
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
-from core.services.instagram_service import InstagramGraphAPIService
+import pytest
+
 from core.config import settings
+from core.services.instagram_service import InstagramGraphAPIService
+
+
+class DummyLimiter:
+    def __init__(self, results: Optional[List[Tuple[bool, float]]] = None):
+        self.results = results or [(True, 0.0)]
+        self.index = 0
+        self.max_rate = settings.instagram.replies_rate_limit_per_hour
+        self.time_period = settings.instagram.replies_rate_period_seconds
+
+    async def acquire(self) -> Tuple[bool, float]:
+        if self.index < len(self.results):
+            result = self.results[self.index]
+            self.index += 1
+            return result
+        return True, 0.0
+
+    async def close(self) -> None:
+        return None
+
+
+def make_service(limiter: Optional[DummyLimiter] = None) -> InstagramGraphAPIService:
+    return InstagramGraphAPIService(access_token="test_token", rate_limiter=limiter or DummyLimiter())
 
 
 @pytest.mark.unit
@@ -28,19 +51,22 @@ class TestInstagramServiceSessionManagement:
 
         assert service._session is None
         assert service._should_close_session is True
-        assert isinstance(service._reply_rate_limiter, AsyncLimiter)
+        assert service._reply_rate_limiter.max_rate == settings.instagram.replies_rate_limit_per_hour
+        assert service._reply_rate_limiter.time_period == settings.instagram.replies_rate_period_seconds
 
     async def test_init_with_provided_session(self):
         """Test initialization with externally provided session."""
         mock_session = AsyncMock()
-        service = InstagramGraphAPIService(access_token="test_token", session=mock_session)
+        service = InstagramGraphAPIService(
+            access_token="test_token", session=mock_session, rate_limiter=DummyLimiter()
+        )
 
         assert service._session is mock_session
         assert service._should_close_session is False
 
     async def test_lazy_session_initialization(self):
         """Test that session is created only when first needed."""
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
 
         assert service._session is None
 
@@ -52,7 +78,7 @@ class TestInstagramServiceSessionManagement:
 
     async def test_session_reuse(self):
         """Test that session is reused across multiple calls."""
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
 
         session1 = await service._get_session()
         session2 = await service._get_session()
@@ -62,7 +88,7 @@ class TestInstagramServiceSessionManagement:
 
     async def test_closed_session_recreation(self):
         """Test that closed session is recreated on next access."""
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
 
         session1 = await service._get_session()
         await service.close()
@@ -74,7 +100,7 @@ class TestInstagramServiceSessionManagement:
 
     async def test_close_when_session_not_created(self):
         """Test close() when session was never created."""
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
 
         await service.close()  # Should not raise
 
@@ -84,7 +110,9 @@ class TestInstagramServiceSessionManagement:
         """Test that externally provided session is NOT closed."""
         mock_session = AsyncMock()
         mock_session.closed = False
-        service = InstagramGraphAPIService(access_token="test_token", session=mock_session)
+        service = InstagramGraphAPIService(
+            access_token="test_token", session=mock_session, rate_limiter=DummyLimiter()
+        )
 
         await service.close()
 
@@ -92,7 +120,7 @@ class TestInstagramServiceSessionManagement:
 
     async def test_close_internal_session_is_closed(self):
         """Test that internally created session IS closed."""
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         session = await service._get_session()
 
         await service.close()
@@ -101,7 +129,7 @@ class TestInstagramServiceSessionManagement:
 
     async def test_context_manager_support(self):
         """Test async context manager protocol."""
-        async with InstagramGraphAPIService(access_token="test_token") as service:
+        async with make_service() as service:
             session = await service._get_session()
             assert session is not None
 
@@ -123,9 +151,10 @@ class TestInstagramServiceRateLimiting:
 
     async def test_rate_limiter_initialized(self):
         """Test that rate limiter is properly configured."""
-        service = InstagramGraphAPIService(access_token="test_token")
+        limiter = DummyLimiter()
+        service = InstagramGraphAPIService(access_token="test_token", rate_limiter=limiter)
 
-        assert service._reply_rate_limiter is not None
+        assert service._reply_rate_limiter is limiter
         assert service._reply_rate_limiter.max_rate == settings.instagram.replies_rate_limit_per_hour
         assert service._reply_rate_limiter.time_period == settings.instagram.replies_rate_period_seconds
 
@@ -143,7 +172,8 @@ class TestInstagramServiceRateLimiting:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        limiter = DummyLimiter(results=[(True, 0.0)])
+        service = InstagramGraphAPIService(access_token="test_token", rate_limiter=limiter)
 
         # Verify rate limiter exists and will be used
         # We can't directly mock acquire() since it's read-only,
@@ -156,6 +186,19 @@ class TestInstagramServiceRateLimiting:
         assert result["success"] is True
         assert mock_session.post.call_count == 1
         await service.close()
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_send_reply_returns_rate_limited_status(self, mock_session_class):
+        """When limiter denies sending, service responds with rate_limited status."""
+        limiter = DummyLimiter(results=[(False, 12.5)])
+        service = InstagramGraphAPIService(access_token="test_token", rate_limiter=limiter)
+
+        result = await service.send_reply_to_comment("comment_1", "Test")
+
+        assert result["success"] is False
+        assert result["status"] == "rate_limited"
+        assert result["retry_after"] == pytest.approx(12.5)
+        mock_session_class.assert_not_called()
 
     @patch("core.services.instagram_service.aiohttp.ClientSession")
     async def test_multiple_requests_within_limit(self, mock_session_class):
@@ -171,7 +214,8 @@ class TestInstagramServiceRateLimiting:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        limiter = DummyLimiter(results=[(True, 0.0)] * 5)
+        service = make_service(limiter)
 
         # Make 5 requests (well within limit)
         results = []
@@ -203,7 +247,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
 
         result = await service.send_reply_to_comment("comment_123", "Test reply")
 
@@ -226,7 +270,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.send_reply_to_comment("comment_123", "Test")
 
         assert result["reply_id"] == "reply_456"
@@ -246,7 +290,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.send_reply_to_comment("comment_123", "Test")
 
         assert result["reply_id"] is None
@@ -268,7 +312,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.send_reply_to_comment("comment_123", "Test")
 
         assert result["success"] is False
@@ -291,7 +335,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.send_reply_to_comment("comment_123", "Test")
 
         assert result["success"] is False
@@ -306,7 +350,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.send_reply_to_comment("comment_123", "Test")
 
         assert result["success"] is False
@@ -328,7 +372,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_comment_info("comment_1")
 
         assert result["success"] is True
@@ -349,7 +393,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_comment_info("comment_missing")
 
         assert result["success"] is False
@@ -364,7 +408,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_comment_info("comment_1")
 
         assert result["success"] is False
@@ -385,7 +429,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.validate_token()
 
         assert result["success"] is True
@@ -405,7 +449,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.validate_token()
 
         assert result["success"] is False
@@ -420,7 +464,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.validate_token()
 
         assert result["success"] is False
@@ -445,7 +489,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_media_info("media_123")
 
         assert result["success"] is True
@@ -470,7 +514,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_media_info("carousel_1")
 
         assert result["media_info"]["media_type"] == "CAROUSEL_ALBUM"
@@ -491,7 +535,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_media_info("media_404")
 
         assert result["success"] is False
@@ -506,7 +550,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_media_info("media_1")
 
         assert result["success"] is False
@@ -526,7 +570,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_page_info()
 
         assert result["success"] is True
@@ -547,7 +591,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_page_info()
 
         assert result["success"] is False
@@ -562,7 +606,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.get_page_info()
 
         assert result["success"] is False
@@ -582,7 +626,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.hide_comment("comment_123", hide=True)
 
         assert result["success"] is True
@@ -602,7 +646,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.hide_comment("comment_123", hide=False)
 
         assert result["success"] is True
@@ -622,7 +666,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.hide_comment("comment_123", hide=True)
 
         assert result["success"] is False
@@ -637,7 +681,7 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
-        service = InstagramGraphAPIService(access_token="test_token")
+        service = make_service()
         result = await service.hide_comment("comment_123", hide=True)
 
         assert result["success"] is False
