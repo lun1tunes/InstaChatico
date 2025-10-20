@@ -11,6 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .container import get_container, Container
 from .models import db_helper
+from .interfaces.services import (
+    ITaskQueue,
+    IS3Service,
+    IDocumentProcessingService,
+    IDocumentContextService,
+)
 
 # Import use cases
 from .use_cases.classify_comment import ClassifyCommentUseCase
@@ -164,3 +170,32 @@ def create_use_case_dependency(use_case_factory: Callable) -> Callable:
         return use_case_factory(container, session)
 
     return dependency
+
+
+# ============================================================================
+# Infrastructure Dependencies
+# ============================================================================
+
+
+def get_task_queue(container: Container = Depends(get_container)) -> ITaskQueue:
+    """Provide task queue interface from DI container."""
+    return container.task_queue()
+
+
+def get_s3_service(container: Container = Depends(get_container)) -> IS3Service:
+    """Provide S3 service abstraction."""
+    return container.s3_service()
+
+
+def get_document_processing_service(
+    container: Container = Depends(get_container),
+) -> IDocumentProcessingService:
+    """Provide document processing service abstraction."""
+    return container.document_processing_service()
+
+
+def get_document_context_service(
+    container: Container = Depends(get_container),
+) -> IDocumentContextService:
+    """Provide document context retrieval service."""
+    return container.document_context_service()
