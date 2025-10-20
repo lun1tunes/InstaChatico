@@ -1,5 +1,6 @@
 import inspect
 import logging
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional, Protocol, Tuple
 
 import aiohttp
@@ -221,40 +222,83 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing validation result
         """
-        url = f"https://graph.facebook.com/{settings.instagram.api_version}/debug_token"
-        params = {"input_token": self.access_token, "access_token": self.access_token}
-
         try:
-            logger.debug(f"Validating Instagram token with URL: {url}")
-            logger.debug(
-                f"Token: {self.access_token[:10]}...{self.access_token[-4:] if len(self.access_token) > 14 else '***'}"
-            )
+            status_code, response_data = await self._fetch_debug_token()
+            logger.debug(f"Token validation response status: {status_code}")
+            logger.debug(f"Token validation response: {response_data}")
 
-            session = await self._get_session()
-            async with session.get(url, params=params) as response:
-                response_data = await response.json()
+            if status_code == 200:
+                logger.info("Instagram access token is valid")
+                return {
+                    "success": True,
+                    "token_info": response_data,
+                    "status_code": status_code,
+                }
 
-                logger.debug(f"Token validation response status: {response.status}")
-                logger.debug(f"Token validation response: {response_data}")
-
-                if response.status == 200:
-                    logger.info("Instagram access token is valid")
-                    return {
-                        "success": True,
-                        "token_info": response_data,
-                        "status_code": response.status,
-                    }
-                else:
-                    logger.error(f"Instagram access token validation failed: {response_data}")
-                    return {
-                        "success": False,
-                        "error": response_data,
-                        "status_code": response.status,
-                    }
+            logger.error(f"Instagram access token validation failed: {response_data}")
+            return {
+                "success": False,
+                "error": response_data,
+                "status_code": status_code,
+            }
 
         except Exception as e:
             logger.exception("Exception while validating Instagram token")
             return {"success": False, "error": str(e), "status_code": None}
+
+    async def get_token_expiration(self) -> Dict[str, Any]:
+        """
+        Retrieve token expiration metadata (expires_at, seconds remaining).
+
+        Returns:
+            Dict with success flag, expires_at (datetime | None), expires_in (seconds | None)
+        """
+        try:
+            status_code, response_data = await self._fetch_debug_token()
+            if status_code != 200:
+                logger.error(f"Failed to fetch token expiration metadata: {response_data}")
+                return {
+                    "success": False,
+                    "error": response_data,
+                    "status_code": status_code,
+                }
+
+            token_data = response_data.get("data", response_data)
+            expires_at_timestamp = token_data.get("expires_at")
+            expires_in_seconds = token_data.get("expires_in")
+
+            expires_at_datetime: Optional[datetime] = None
+            seconds_remaining: Optional[int] = None
+
+            now = datetime.now(timezone.utc)
+
+            if isinstance(expires_at_timestamp, (int, float)):
+                expires_at_datetime = datetime.fromtimestamp(expires_at_timestamp, tz=timezone.utc)
+            elif isinstance(expires_in_seconds, (int, float)):
+                expires_at_datetime = now + timedelta(seconds=float(expires_in_seconds))
+
+            if expires_at_datetime:
+                seconds_remaining = max(int((expires_at_datetime - now).total_seconds()), 0)
+            elif isinstance(expires_in_seconds, (int, float)):
+                seconds_remaining = max(int(expires_in_seconds), 0)
+
+            logger.info(
+                "Fetched Instagram token expiration metadata | expires_at=%s | seconds_remaining=%s",
+                expires_at_datetime.isoformat() if expires_at_datetime else None,
+                seconds_remaining,
+            )
+
+            return {
+                "success": True,
+                "expires_at": expires_at_datetime,
+                "expires_in": seconds_remaining,
+                "status_code": status_code,
+                "raw": token_data,
+            }
+
+        except Exception as exc:
+            logger.exception("Exception while fetching Instagram token expiration metadata")
+            return {"success": False, "error": str(exc), "status_code": None}
 
     async def get_media_info(self, media_id: str) -> Dict[str, Any]:
         """
@@ -400,3 +444,18 @@ class InstagramGraphAPIService:
                 exc_info=True
             )
             return {"success": False, "error": str(e), "status_code": None}
+
+    async def _fetch_debug_token(self) -> Tuple[int, Dict[str, Any]]:
+        """Fetch token debug information from Facebook Graph API."""
+        url = f"https://graph.facebook.com/{settings.instagram.api_version}/debug_token"
+        params = {
+            "input_token": self.access_token,
+            "access_token": self.access_token,
+        }
+
+        logger.debug("Fetching token debug info | url=%s", url)
+
+        session = await self._get_session()
+        async with session.get(url, params=params) as response:
+            response_data = await response.json()
+            return response.status, response_data

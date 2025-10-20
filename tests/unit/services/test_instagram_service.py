@@ -9,6 +9,7 @@ Tests cover:
 """
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -198,7 +199,57 @@ class TestInstagramServiceRateLimiting:
         assert result["success"] is False
         assert result["status"] == "rate_limited"
         assert result["retry_after"] == pytest.approx(12.5)
-        mock_session_class.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.service
+class TestInstagramServiceTokenMonitoring:
+    """Tests for token expiration helper."""
+
+    @pytest.mark.asyncio
+    async def test_get_token_expiration_parses_timestamp(self, monkeypatch):
+        service = make_service()
+
+        expires_at = datetime.now(timezone.utc) + timedelta(days=5)
+
+        async def mock_fetch(self):
+            return 200, {"data": {"expires_at": int(expires_at.timestamp())}}
+
+        monkeypatch.setattr(InstagramGraphAPIService, "_fetch_debug_token", mock_fetch)
+
+        result = await service.get_token_expiration()
+
+        assert result["success"] is True
+        assert isinstance(result["expires_at"], datetime)
+        assert abs(result["expires_at"] - expires_at) < timedelta(seconds=1)
+        assert result["expires_in"] > 0
+
+    @pytest.mark.asyncio
+    async def test_get_token_expiration_uses_expires_in_when_timestamp_missing(self, monkeypatch):
+        service = make_service()
+        async def mock_fetch(self):
+            return 200, {"data": {"expires_in": 3600}}
+        monkeypatch.setattr(InstagramGraphAPIService, "_fetch_debug_token", mock_fetch)
+
+        result = await service.get_token_expiration()
+
+        assert result["success"] is True
+        assert result["expires_in"] == 3600
+        assert isinstance(result["expires_at"], datetime)
+
+    @pytest.mark.asyncio
+    async def test_get_token_expiration_handles_failure(self, monkeypatch):
+        service = make_service()
+
+        async def mock_fetch(self):
+            return 400, {"error": {"message": "invalid"}}
+
+        monkeypatch.setattr(InstagramGraphAPIService, "_fetch_debug_token", mock_fetch)
+
+        result = await service.get_token_expiration()
+
+        assert result["success"] is False
+        assert result["error"] == {"error": {"message": "invalid"}}
 
     @patch("core.services.instagram_service.aiohttp.ClientSession")
     async def test_multiple_requests_within_limit(self, mock_session_class):

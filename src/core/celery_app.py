@@ -17,6 +17,7 @@ celery_app = Celery(
         "core.tasks.health_tasks",
         "core.tasks.media_tasks",
         "core.tasks.document_tasks",
+        "core.tasks.instagram_token_tasks",
     ],
 )
 
@@ -86,6 +87,10 @@ celery_app.conf.beat_schedule = {
     "check-system-health": {
         "task": "core.tasks.health_tasks.check_system_health_task",
         "schedule": settings.health.check_interval_seconds,
+    },
+    "check-instagram-token-expiration": {
+        "task": "core.tasks.instagram_token_tasks.check_instagram_token_expiration_task",
+        "schedule": crontab(hour=3, minute=0),
     },
 }
 
