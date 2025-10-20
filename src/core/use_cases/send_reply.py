@@ -135,9 +135,12 @@ class SendReplyUseCase:
                 answer_record.reply_error = str(error) if isinstance(error, dict) else error
                 answer_record.reply_response = result
 
-            await self.session.commit()
-        except Exception as commit_exc:
-            setattr(commit_exc, "should_reraise", True)
+            try:
+                await self.session.commit()
+            except Exception as commit_exc:
+                setattr(commit_exc, "should_reraise", True)
+                raise
+        except Exception:
             await self.session.rollback()
             raise
 
