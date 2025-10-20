@@ -27,7 +27,7 @@ class DocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    client_id: str
+    client_id: Optional[str] = None
     client_name: Optional[str] = None
     document_name: str
     document_type: str

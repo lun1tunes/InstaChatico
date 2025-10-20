@@ -12,7 +12,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.models.db_helper import db_helper
 from core.models.document import Document
 from core.config import settings
-from core.container import get_container, Container
+from core.interfaces.services import (
+    IS3Service,
+    IDocumentProcessingService,
+    ITaskQueue,
+    IDocumentContextService,
+)
+from core.dependencies import (
+    get_s3_service,
+    get_document_processing_service,
+    get_task_queue,
+    get_document_context_service,
+)
 from .schemas import DocumentUploadResponse, DocumentResponse, DocumentListResponse, DocumentSummaryResponse
 
 logger = logging.getLogger(__name__)
@@ -25,7 +36,9 @@ async def register_document(
     document_name: str = Form(...),
     description: Optional[str] = Form(None),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
-    container: Container = Depends(get_container),
+    s3_service: IS3Service = Depends(get_s3_service),
+    document_processing_service: IDocumentProcessingService = Depends(get_document_processing_service),
+    task_queue: ITaskQueue = Depends(get_task_queue),
 ):
     """
     Register a document that's already in S3 (uploaded by main app).
@@ -41,11 +54,6 @@ async def register_document(
     4. Markdown stored in DB and used by answer agent
     """
     try:
-        # Get services from DI container
-        s3_service = container.s3_service()
-        document_processing_service = container.document_processing_service()
-        task_queue = container.task_queue()
-
         # Extract S3 key from URL
         # Supported formats:
         # 1. S3 URI: s3://bucket/path/to/file.pdf
@@ -53,8 +61,9 @@ async def register_document(
         # 3. HTTPS URL: https://bucket.s3.region.storage.selcloud.ru/path/to/file.pdf
         s3_key = None
 
+        bucket_name = s3_service.get_bucket_name()
         logger.info(f"Processing S3 URL: {s3_url}")
-        logger.info(f"Expected bucket: {s3_service.bucket_name}")
+        logger.info(f"Expected bucket: {bucket_name}")
 
         if s3_url.startswith("s3://"):
             # S3 URI format: s3://bucket/path/to/file.pdf
@@ -64,7 +73,7 @@ async def register_document(
 
             if len(parts) > 1:
                 bucket_from_uri = parts[0]
-                if bucket_from_uri == s3_service.bucket_name:
+                if bucket_from_uri == bucket_name:
                     s3_key = parts[1]
                     logger.info(f"Extracted S3 key from URI: {s3_key}")
                 else:
@@ -83,14 +92,14 @@ async def register_document(
             if len(parts) > 1:
                 # Remove bucket name from path
                 path = parts[1]
-                if path.startswith(f"{s3_service.bucket_name}/"):
-                    s3_key = path.replace(f"{s3_service.bucket_name}/", "", 1)
+                if path.startswith(f"{bucket_name}/"):
+                    s3_key = path.replace(f"{bucket_name}/", "", 1)
                 else:
                     s3_key = path
                 logger.info(f"Extracted S3 key from HTTPS URL: {s3_key}")
-        elif s3_service.bucket_name in s3_url:
+        elif bucket_name in s3_url:
             # Format: https://bucket.s3.ru-7.storage.selcloud.ru/path/to/file.pdf
-            parts = s3_url.split(f"{s3_service.bucket_name}.", 1)
+            parts = s3_url.split(f"{bucket_name}.", 1)
             if len(parts) > 1:
                 s3_key = parts[1].split("/", 1)[1] if "/" in parts[1] else None
                 logger.info(f"Extracted S3 key from bucket subdomain URL: {s3_key}")
@@ -98,7 +107,7 @@ async def register_document(
         if not s3_key:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot extract S3 key from URL. Supported formats: s3://{s3_service.bucket_name}/path/to/file OR https://{settings.s3.s3_url}/{s3_service.bucket_name}/path/to/file",
+                detail=f"Cannot extract S3 key from URL. Supported formats: s3://{bucket_name}/path/to/file OR https://{settings.s3.s3_url}/{bucket_name}/path/to/file",
             )
 
         # Detect document type from filename
@@ -119,7 +128,7 @@ async def register_document(
             document_name=document_name,
             document_type=document_type,
             description=description,
-            s3_bucket=s3_service.bucket_name,
+            s3_bucket=bucket_name,
             s3_key=s3_key,
             s3_url=s3_url,
             file_size_bytes=file_size,
@@ -152,7 +161,9 @@ async def upload_document(
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
-    container: Container = Depends(get_container),
+    s3_service: IS3Service = Depends(get_s3_service),
+    document_processing_service: IDocumentProcessingService = Depends(get_document_processing_service),
+    task_queue: ITaskQueue = Depends(get_task_queue),
 ):
     """
     Upload a document directly to this app (alternative to /register).
@@ -163,11 +174,6 @@ async def upload_document(
     Supports: PDF, Excel, CSV, Word, TXT files
     """
     try:
-        # Get services from DI container
-        s3_service = container.s3_service()
-        document_processing_service = container.document_processing_service()
-        task_queue = container.task_queue()
-
         # Validate file
         if not file.filename:
             raise HTTPException(status_code=400, detail="No filename provided")
@@ -202,7 +208,7 @@ async def upload_document(
             document_name=file.filename,
             document_type=document_type,
             description=description,
-            s3_bucket=s3_service.bucket_name,
+            s3_bucket=s3_service.get_bucket_name(),
             s3_key=s3_key,
             s3_url=s3_url_or_error,
             file_size_bytes=file_size,
@@ -265,11 +271,10 @@ async def list_documents(
 @router.get("/summary", response_model=DocumentSummaryResponse)
 async def get_documents_summary(
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
-    container: Container = Depends(get_container),
+    document_context_service: IDocumentContextService = Depends(get_document_context_service),
 ):
     """Get summary statistics for documents."""
     try:
-        document_context_service = container.document_context_service()
         summary = await document_context_service.get_document_summary(session)
         return DocumentSummaryResponse(**summary)
     except Exception as e:
@@ -301,13 +306,10 @@ async def get_document(document_id: UUID, session: AsyncSession = Depends(db_hel
 async def delete_document(
     document_id: UUID,
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
-    container: Container = Depends(get_container),
+    s3_service: IS3Service = Depends(get_s3_service),
 ):
     """Delete a document (from DB and S3)."""
     try:
-        # Get services from DI container
-        s3_service = container.s3_service()
-
         # Get document
         stmt = select(Document).where(Document.id == document_id)
         result = await session.execute(stmt)
@@ -339,13 +341,10 @@ async def delete_document(
 async def reprocess_document(
     document_id: UUID,
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
-    container: Container = Depends(get_container),
+    task_queue: ITaskQueue = Depends(get_task_queue),
 ):
     """Reprocess a failed document."""
     try:
-        # Get services from DI container
-        task_queue = container.task_queue()
-
         # Get document
         stmt = select(Document).where(Document.id == document_id)
         result = await session.execute(stmt)
