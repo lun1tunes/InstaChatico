@@ -25,9 +25,12 @@ from core.schemas.comment import (
     CommentListItem,
 )
 from core.use_cases.hide_comment import HideCommentUseCase
-from core.dependencies import get_hide_comment_use_case, get_comment_repository
-from core.container import get_container, Container
-from core.utils.time import now_db_utc
+from core.dependencies import (
+    get_hide_comment_use_case,
+    get_comment_repository,
+    get_task_queue,
+)
+from core.interfaces.services import ITaskQueue
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Comments"], prefix="/comments")
@@ -297,7 +300,7 @@ async def list_comments(
 async def hide_comment(
     comment_id: str,
     comment_repo: CommentRepository = Depends(get_comment_repository),
-    container: Container = Depends(get_container),
+    task_queue: ITaskQueue = Depends(get_task_queue),
 ):
     """
     Hide an Instagram comment (queues Celery task).
@@ -318,8 +321,7 @@ async def hide_comment(
             hidden_at=comment.hidden_at,
         )
 
-    # Queue hide task using DI container
-    task_queue = container.task_queue()
+    # Queue hide task
     task_id = task_queue.enqueue(
         "core.tasks.instagram_reply_tasks.hide_instagram_comment_task",
         comment_id,
@@ -381,7 +383,7 @@ async def send_manual_reply(
     comment_id: str,
     message: str = Query(..., min_length=1, max_length=500, description="Reply message"),
     comment_repo: CommentRepository = Depends(get_comment_repository),
-    container: Container = Depends(get_container),
+    task_queue: ITaskQueue = Depends(get_task_queue),
 ):
     """
     Send a manual reply to a comment (queues Celery task).
@@ -398,8 +400,7 @@ async def send_manual_reply(
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
 
-    # Queue reply task using DI container
-    task_queue = container.task_queue()
+    # Queue reply task
     task_id = task_queue.enqueue(
         "core.tasks.instagram_reply_tasks.send_instagram_reply_task",
         comment_id,
