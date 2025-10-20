@@ -113,7 +113,10 @@ class StubS3Service:
         self.bucket_name = settings.s3.bucket_name
         self.s3_url = settings.s3.s3_url
 
-    def upload_file(self, file_obj, s3_key: str, content_type: Optional[str] = None) -> tuple[bool, str]:
+    def get_bucket_name(self) -> str:
+        return self.bucket_name
+
+    def upload_file(self, file_obj, s3_key: str, content_type: Optional[str] = None) -> tuple[bool, Optional[str]]:
         data = file_obj.read()
         self.uploaded[s3_key] = data
         return True, f"https://{self.s3_url}/{self.bucket_name}/{s3_key}"
@@ -126,10 +129,11 @@ class StubS3Service:
         self.deleted.append(s3_key)
         return True, None
 
-    def generate_upload_key(self, filename: str, client_id: str = "default") -> str:
+    def generate_upload_key(self, filename: str, client_id: Optional[str] = None) -> str:
+        client_segment = client_id or "default"
         safe_name = filename.replace(" ", "_").replace("/", "_")
         timestamp = now_db_utc().strftime("%Y%m%d_%H%M%S")
-        return f"documents/{client_id}/{timestamp}_{safe_name}"
+        return f"documents/{client_segment}/{timestamp}_{safe_name}"
 
 
 class StubDocumentProcessingService:

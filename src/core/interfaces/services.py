@@ -6,7 +6,7 @@ allowing use cases to depend on abstractions rather than concrete implementation
 This follows the Dependency Inversion Principle (DIP) from SOLID.
 """
 
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, BinaryIO
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..schemas.classification import ClassificationResponse
@@ -305,6 +305,10 @@ class ITelegramService(Protocol):
 class IS3Service(Protocol):
     """Protocol for S3 storage services."""
 
+    def get_bucket_name(self) -> str:
+        """Return configured bucket name."""
+        ...
+
     def download_file(self, s3_key: str) -> tuple[bool, Optional[bytes], Optional[str]]:
         """
         Download file from S3.
@@ -318,18 +322,28 @@ class IS3Service(Protocol):
         ...
 
     def upload_file(
-        self, file_content: bytes, s3_key: str, content_type: Optional[str] = None
+        self, file_obj: BinaryIO, s3_key: str, content_type: Optional[str] = None
     ) -> tuple[bool, Optional[str]]:
         """
         Upload file to S3.
 
         Args:
-            file_content: File content as bytes
+            file_obj: File-like object to upload
             s3_key: S3 key/path for the file
             content_type: Optional content type
 
         Returns:
             Tuple of (success: bool, error: str or None)
+        """
+        ...
+
+    def generate_upload_key(self, filename: str, client_id: Optional[str] = None) -> str:
+        """
+        Generate key for uploading new document.
+
+        Args:
+            filename: Original filename
+            client_id: Optional client identifier for multi-tenant scenarios
         """
         ...
 
@@ -363,6 +377,18 @@ class IDocumentProcessingService(Protocol):
         Returns:
             Document type string
         """
+        ...
+
+
+class IDocumentContextService(Protocol):
+    """Protocol for retrieving and formatting document context."""
+
+    async def get_client_context(self, session: AsyncSession) -> str:
+        """Return formatted markdown context for all documents."""
+        ...
+
+    async def get_document_summary(self, session: AsyncSession) -> dict:
+        """Return summary statistics across documents."""
         ...
 
 

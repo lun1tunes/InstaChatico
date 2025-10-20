@@ -31,6 +31,10 @@ class S3Service:
         )
         self.bucket_name = settings.s3.bucket_name
 
+    def get_bucket_name(self) -> str:
+        """Return configured bucket name."""
+        return self.bucket_name
+
     def upload_file(
         self,
         file_obj: BinaryIO,
@@ -120,7 +124,7 @@ class S3Service:
             logger.error(error_msg)
             return False, error_msg
 
-    def generate_upload_key(self, filename: str, client_id: str) -> str:
+    def generate_upload_key(self, filename: str, client_id: Optional[str] = None) -> str:
         """
         Generate S3 key for uploading a new document.
 
@@ -131,10 +135,11 @@ class S3Service:
         Returns:
             S3 key in format: documents/{client_id}/{timestamp}_{filename}
         """
+        client_segment = client_id or "default"
         timestamp = now_db_utc().strftime("%Y%m%d_%H%M%S")
         # Sanitize filename
         safe_filename = filename.replace(" ", "_").replace("/", "_")
-        return f"documents/{client_id}/{timestamp}_{safe_filename}"
+        return f"documents/{client_segment}/{timestamp}_{safe_filename}"
 
 
 # Singleton instance
