@@ -472,3 +472,166 @@ class TestProcessWebhookCommentUseCase:
 
         # Assert
         assert result["status"] == "created"
+
+    async def test_execute_media_service_exception(self, db_session):
+        """Test handling when media service raises an exception."""
+        # Mock services - media service throws exception
+        mock_media_service = MagicMock()
+        mock_media_service.get_or_create_media = AsyncMock(
+            side_effect=Exception("Instagram API timeout")
+        )
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_by_id = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.rollback = AsyncMock()
+
+        # Create use case
+        use_case = ProcessWebhookCommentUseCase(
+            session=mock_session,
+            media_service=mock_media_service,
+            task_queue=MagicMock(),
+            comment_repository_factory=lambda session: mock_comment_repo,
+            media_repository_factory=lambda session: MagicMock(),
+        )
+
+        # Act
+        result = await use_case.execute(
+            comment_id="comment_1",
+            media_id="media_error",
+            user_id="user_123",
+            username="testuser",
+            text="Comment text",
+            entry_timestamp=1234567890,
+        )
+
+        # Assert
+        assert result["status"] == "error"
+        assert result["comment_id"] == "comment_1"
+        assert result["should_classify"] is False
+        assert "unexpected error" in result["reason"].lower()
+        mock_session.rollback.assert_awaited_once()
+
+    async def test_execute_existing_comment_classification_processing(
+        self, db_session, comment_factory, classification_factory
+    ):
+        """Test handling existing comment with classification in PROCESSING status."""
+        # Arrange
+        comment = await comment_factory(comment_id="comment_1")
+        comment.classification = await classification_factory(
+            comment_id="comment_1",
+            processing_status=ProcessingStatus.PROCESSING,
+        )
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_by_id = AsyncMock(return_value=comment)
+
+        # Create use case
+        use_case = ProcessWebhookCommentUseCase(
+            session=db_session,
+            media_service=MagicMock(),
+            task_queue=MagicMock(),
+            comment_repository_factory=lambda session: mock_comment_repo,
+            media_repository_factory=lambda session: MagicMock(),
+        )
+
+        # Act
+        result = await use_case.execute(
+            comment_id="comment_1",
+            media_id="media_1",
+            user_id="user_123",
+            username="testuser",
+            text="Existing comment",
+            entry_timestamp=1234567890,
+        )
+
+        # Assert
+        assert result["status"] == "exists"
+        assert result["should_classify"] is True  # Should retry if processing
+
+    async def test_execute_existing_comment_classification_failed(
+        self, db_session, comment_factory, classification_factory
+    ):
+        """Test handling existing comment with FAILED classification status."""
+        # Arrange
+        comment = await comment_factory(comment_id="comment_1")
+        comment.classification = await classification_factory(
+            comment_id="comment_1",
+            processing_status=ProcessingStatus.FAILED,
+        )
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_by_id = AsyncMock(return_value=comment)
+
+        # Create use case
+        use_case = ProcessWebhookCommentUseCase(
+            session=db_session,
+            media_service=MagicMock(),
+            task_queue=MagicMock(),
+            comment_repository_factory=lambda session: mock_comment_repo,
+            media_repository_factory=lambda session: MagicMock(),
+        )
+
+        # Act
+        result = await use_case.execute(
+            comment_id="comment_1",
+            media_id="media_1",
+            user_id="user_123",
+            username="testuser",
+            text="Existing comment",
+            entry_timestamp=1234567890,
+        )
+
+        # Assert
+        assert result["status"] == "exists"
+        assert result["should_classify"] is True  # Should retry if failed
+
+    async def test_execute_db_commit_generic_exception(self, db_session, media_factory):
+        """Test handling when database commit raises a non-IntegrityError exception."""
+        # Arrange
+        media = await media_factory(media_id="media_1")
+
+        # Mock services
+        mock_media_service = MagicMock()
+        mock_media_service.get_or_create_media = AsyncMock(return_value=media)
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_by_id = AsyncMock(return_value=None)
+
+        # Create use case with mocked session that raises generic exception
+        mock_session = MagicMock()
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock(
+            side_effect=Exception("Database connection lost")
+        )
+        mock_session.rollback = AsyncMock()
+
+        use_case = ProcessWebhookCommentUseCase(
+            session=mock_session,
+            media_service=mock_media_service,
+            task_queue=MagicMock(),
+            comment_repository_factory=lambda session: mock_comment_repo,
+            media_repository_factory=lambda session: MagicMock(),
+        )
+
+        # Act
+        result = await use_case.execute(
+            comment_id="comment_db_error",
+            media_id="media_1",
+            user_id="user_123",
+            username="testuser",
+            text="DB error comment",
+            entry_timestamp=1234567890,
+        )
+
+        # Assert
+        assert result["status"] == "error"
+        assert result["comment_id"] == "comment_db_error"
+        assert result["should_classify"] is False
+        assert "unexpected error" in result["reason"].lower()
+        mock_session.rollback.assert_awaited_once()

@@ -431,3 +431,301 @@ class TestGenerateAnswerUseCase:
 
         # Assert
         assert captured_username == "alice_wonderland"
+
+    async def test_execute_db_commit_fails_after_success(self, db_session, comment_factory):
+        """Test handling when database commit fails after successful answer generation."""
+        # Arrange
+        comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
+
+        from core.models.question_answer import QuestionAnswer
+        answer_record = QuestionAnswer(comment_id="comment_1")
+
+        mock_answer_result = SimpleNamespace(
+            answer="Answer",
+            answer_confidence=0.9,
+            answer_quality_score=85,
+            input_tokens=100,
+            output_tokens=50,
+            processing_time_ms=1000,
+        )
+
+        # Mock services
+        mock_qa_service = MagicMock()
+        mock_qa_service.generate_answer = AsyncMock(return_value=mock_answer_result)
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_with_classification = AsyncMock(return_value=comment)
+
+        mock_answer_repo = MagicMock()
+        mock_answer_repo.get_by_comment_id = AsyncMock(return_value=None)
+        mock_answer_repo.create_for_comment = AsyncMock(return_value=answer_record)
+
+        # Mock session that fails on commit
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock(side_effect=Exception("DB commit failed"))
+        mock_session.rollback = AsyncMock()
+
+        # Create use case
+        use_case = GenerateAnswerUseCase(
+            session=mock_session,
+            qa_service=mock_qa_service,
+            comment_repository_factory=lambda session: mock_comment_repo,
+            answer_repository_factory=lambda session: mock_answer_repo,
+        )
+
+        # Act & Assert
+        with pytest.raises(Exception) as exc_info:
+            await use_case.execute(comment_id="comment_1", retry_count=0)
+
+        assert "DB commit failed" in str(exc_info.value)
+        mock_session.rollback.assert_awaited_once()
+
+    async def test_execute_db_commit_fails_after_error(self, db_session, comment_factory):
+        """Test handling when database commit fails after service error."""
+        # Arrange
+        comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
+
+        from core.models.question_answer import QuestionAnswer
+        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=3)
+
+        # Mock services - raises exception
+        mock_qa_service = MagicMock()
+        mock_qa_service.generate_answer = AsyncMock(side_effect=Exception("Service error"))
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_with_classification = AsyncMock(return_value=comment)
+
+        mock_answer_repo = MagicMock()
+        mock_answer_repo.get_by_comment_id = AsyncMock(return_value=None)
+        mock_answer_repo.create_for_comment = AsyncMock(return_value=answer_record)
+
+        # Mock session that fails on commit
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock(side_effect=Exception("DB commit failed"))
+        mock_session.rollback = AsyncMock()
+
+        # Create use case
+        use_case = GenerateAnswerUseCase(
+            session=mock_session,
+            qa_service=mock_qa_service,
+            comment_repository_factory=lambda session: mock_comment_repo,
+            answer_repository_factory=lambda session: mock_answer_repo,
+        )
+
+        # Act & Assert
+        with pytest.raises(Exception) as exc_info:
+            await use_case.execute(comment_id="comment_1", retry_count=0)
+
+        assert "DB commit failed" in str(exc_info.value)
+        mock_session.rollback.assert_awaited_once()
+
+    async def test_execute_retry_count_zero(self, db_session, comment_factory):
+        """Test that retry_count=0 means first attempt."""
+        # Arrange
+        comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
+
+        from core.models.question_answer import QuestionAnswer
+        answer_record = QuestionAnswer(comment_id="comment_1")
+
+        mock_answer_result = SimpleNamespace(
+            answer="Answer",
+            answer_confidence=0.9,
+            answer_quality_score=85,
+            input_tokens=100,
+            output_tokens=50,
+            processing_time_ms=1000,
+        )
+
+        # Mock services
+        mock_qa_service = MagicMock()
+        mock_qa_service.generate_answer = AsyncMock(return_value=mock_answer_result)
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_with_classification = AsyncMock(return_value=comment)
+
+        mock_answer_repo = MagicMock()
+        mock_answer_repo.get_by_comment_id = AsyncMock(return_value=None)
+        mock_answer_repo.create_for_comment = AsyncMock(return_value=answer_record)
+
+        # Create use case
+        use_case = GenerateAnswerUseCase(
+            session=db_session,
+            qa_service=mock_qa_service,
+            comment_repository_factory=lambda session: mock_comment_repo,
+            answer_repository_factory=lambda session: mock_answer_repo,
+        )
+
+        # Act
+        await use_case.execute(comment_id="comment_1", retry_count=0)
+
+        # Assert
+        assert answer_record.retry_count == 0
+        assert answer_record.processing_status == AnswerStatus.COMPLETED
+
+    async def test_execute_service_exception_at_max_retries_boundary(
+        self, db_session, comment_factory
+    ):
+        """Test that retry_count equal to max_retries results in error status."""
+        # Arrange
+        comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
+
+        from core.models.question_answer import QuestionAnswer
+        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=3)
+
+        # Mock services - raises exception
+        mock_qa_service = MagicMock()
+        mock_qa_service.generate_answer = AsyncMock(side_effect=Exception("API error"))
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_with_classification = AsyncMock(return_value=comment)
+
+        mock_answer_repo = MagicMock()
+        mock_answer_repo.get_by_comment_id = AsyncMock(return_value=None)
+        mock_answer_repo.create_for_comment = AsyncMock(return_value=answer_record)
+
+        # Create use case
+        use_case = GenerateAnswerUseCase(
+            session=db_session,
+            qa_service=mock_qa_service,
+            comment_repository_factory=lambda session: mock_comment_repo,
+            answer_repository_factory=lambda session: mock_answer_repo,
+        )
+
+        # Act - retry_count = 3, which equals max_retries
+        result = await use_case.execute(comment_id="comment_1", retry_count=3)
+
+        # Assert - should return error, not retry
+        assert result["status"] == "error"
+        assert "API error" in result["reason"]
+        assert answer_record.processing_status == AnswerStatus.FAILED
+
+    async def test_execute_service_exception_one_less_than_max_retries(
+        self, db_session, comment_factory
+    ):
+        """Test that retry_count < max_retries results in retry status."""
+        # Arrange
+        comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
+
+        from core.models.question_answer import QuestionAnswer
+        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=3)
+
+        # Mock services - raises exception
+        mock_qa_service = MagicMock()
+        mock_qa_service.generate_answer = AsyncMock(side_effect=Exception("Transient error"))
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_with_classification = AsyncMock(return_value=comment)
+
+        mock_answer_repo = MagicMock()
+        mock_answer_repo.get_by_comment_id = AsyncMock(return_value=None)
+        mock_answer_repo.create_for_comment = AsyncMock(return_value=answer_record)
+
+        # Create use case
+        use_case = GenerateAnswerUseCase(
+            session=db_session,
+            qa_service=mock_qa_service,
+            comment_repository_factory=lambda session: mock_comment_repo,
+            answer_repository_factory=lambda session: mock_answer_repo,
+        )
+
+        # Act - retry_count = 2, which is less than max_retries = 3
+        result = await use_case.execute(comment_id="comment_1", retry_count=2)
+
+        # Assert - should return retry
+        assert result["status"] == "retry"
+        assert "Transient error" in result["reason"]
+        assert answer_record.processing_status == AnswerStatus.FAILED
+
+    async def test_execute_processing_timestamps_set_correctly(
+        self, db_session, comment_factory
+    ):
+        """Test that processing timestamps are set at the right times."""
+        # Arrange
+        comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
+
+        from core.models.question_answer import QuestionAnswer
+        answer_record = QuestionAnswer(comment_id="comment_1")
+
+        mock_answer_result = SimpleNamespace(
+            answer="Answer",
+            answer_confidence=0.9,
+            answer_quality_score=85,
+            input_tokens=100,
+            output_tokens=50,
+            processing_time_ms=1000,
+        )
+
+        # Mock services
+        mock_qa_service = MagicMock()
+        mock_qa_service.generate_answer = AsyncMock(return_value=mock_answer_result)
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_with_classification = AsyncMock(return_value=comment)
+
+        mock_answer_repo = MagicMock()
+        mock_answer_repo.get_by_comment_id = AsyncMock(return_value=None)
+        mock_answer_repo.create_for_comment = AsyncMock(return_value=answer_record)
+
+        # Create use case
+        use_case = GenerateAnswerUseCase(
+            session=db_session,
+            qa_service=mock_qa_service,
+            comment_repository_factory=lambda session: mock_comment_repo,
+            answer_repository_factory=lambda session: mock_answer_repo,
+        )
+
+        # Act
+        await use_case.execute(comment_id="comment_1", retry_count=0)
+
+        # Assert
+        assert answer_record.processing_started_at is not None
+        assert answer_record.processing_completed_at is not None
+        # Started should be before or equal to completed
+        assert answer_record.processing_started_at <= answer_record.processing_completed_at
+
+    async def test_execute_service_exception_updates_timestamps_and_error(
+        self, db_session, comment_factory
+    ):
+        """Test that error information is captured when service fails."""
+        # Arrange
+        comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
+
+        from core.models.question_answer import QuestionAnswer
+        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=1)
+
+        # Mock services - raises exception
+        mock_qa_service = MagicMock()
+        mock_qa_service.generate_answer = AsyncMock(
+            side_effect=Exception("OpenAI API rate limit exceeded")
+        )
+
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_with_classification = AsyncMock(return_value=comment)
+
+        mock_answer_repo = MagicMock()
+        mock_answer_repo.get_by_comment_id = AsyncMock(return_value=None)
+        mock_answer_repo.create_for_comment = AsyncMock(return_value=answer_record)
+
+        # Create use case
+        use_case = GenerateAnswerUseCase(
+            session=db_session,
+            qa_service=mock_qa_service,
+            comment_repository_factory=lambda session: mock_comment_repo,
+            answer_repository_factory=lambda session: mock_answer_repo,
+        )
+
+        # Act
+        result = await use_case.execute(comment_id="comment_1", retry_count=0)
+
+        # Assert
+        assert result["status"] == "retry"
+        assert answer_record.processing_started_at is not None
+        assert answer_record.last_error == "OpenAI API rate limit exceeded"
+        assert answer_record.processing_status == AnswerStatus.FAILED

@@ -13,7 +13,7 @@ unit/
 │   ├── test_answer_service.py
 │   ├── test_instagram_service.py
 │   └── ... (add more as needed)
-├── use_cases/             # Use case tests (TODO)
+├── use_cases/             # Use case tests
 ├── agents/                # Agent tool tests (TODO)
 └── schemas/               # Schema validation tests (TODO)
 ```
