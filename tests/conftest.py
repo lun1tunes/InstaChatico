@@ -342,6 +342,17 @@ def product_embedding_factory(db_session):
 
 
 # ============================================================================
+# CONVENIENCE ALIASES
+# ============================================================================
+
+
+@pytest.fixture
+def comment_factory(instagram_comment_factory):
+    """Alias for instagram_comment_factory for shorter test code."""
+    return instagram_comment_factory
+
+
+# ============================================================================
 # API CLIENT FIXTURES
 # ============================================================================
 

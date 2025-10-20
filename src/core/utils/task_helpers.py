@@ -4,7 +4,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from functools import wraps
-from typing import Callable
+from typing import Callable, Optional
 
 from ..container import get_container
 
@@ -27,13 +27,27 @@ def _get_worker_event_loop() -> asyncio.AbstractEventLoop:
     return loop
 
 
+def _close_worker_event_loop() -> None:
+    """Close the cached worker event loop (used in tests to avoid warnings)."""
+    loop: Optional[asyncio.AbstractEventLoop] = getattr(_get_worker_event_loop, "_loop", None)  # type: ignore[attr-defined]
+    if loop is not None and not loop.is_closed():
+        loop.close()
+    if hasattr(_get_worker_event_loop, "_loop"):
+        delattr(_get_worker_event_loop, "_loop")
+
+
 def async_task(celery_task_func: Callable):
     """Decorator for Celery tasks that run async functions without loop churn."""
 
     @wraps(celery_task_func)
     def wrapper(*args, **kwargs):
         loop = _get_worker_event_loop()
-        if asyncio.get_event_loop_policy().get_event_loop() is not loop:
+        try:
+            current = asyncio.get_running_loop()
+        except RuntimeError:
+            current = None
+
+        if current is not loop:
             asyncio.set_event_loop(loop)
         return loop.run_until_complete(celery_task_func(*args, **kwargs))
 
