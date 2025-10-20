@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from celery import Celery
 from ..interfaces.services import ITaskQueue
+from ..logging_config import trace_id_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,10 @@ class CeleryTaskQueue(ITaskQueue):
             Task ID
         """
         try:
-            logger.debug(f"Enqueueing task: {task_name} with args={args}, kwargs={kwargs}")
+            trace_id = trace_id_ctx.get()
+            logger.debug(
+                f"Enqueueing task | name={task_name} | trace_id={trace_id or '-'} | args={args} | kwargs={kwargs}"
+            )
 
             task_kwargs = {}
             if countdown is not None:
@@ -55,14 +59,25 @@ class CeleryTaskQueue(ITaskQueue):
                 task_name,
                 args=args,
                 kwargs=kwargs,
+                headers={"trace_id": trace_id} if trace_id else None,
                 **task_kwargs,
             )
 
-            logger.info(f"Task {task_name} enqueued with ID: {result.id}")
+            logger.info(
+                "Task enqueued | name=%s | id=%s | trace_id=%s",
+                task_name,
+                result.id,
+                trace_id or "-",
+            )
             return result.id
 
         except Exception as e:
-            logger.error(f"Failed to enqueue task {task_name}: {e}")
+            logger.error(
+                "Failed to enqueue task | name=%s | trace_id=%s | error=%s",
+                task_name,
+                trace_id or "-",
+                e,
+            )
             raise
 
     def enqueue_batch(self, tasks: List[Dict[str, Any]]) -> List[str]:
