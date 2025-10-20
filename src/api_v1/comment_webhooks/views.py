@@ -17,9 +17,10 @@ from core.dependencies import (
     get_process_webhook_comment_use_case,
     get_test_comment_processing_use_case,
     get_answer_repository,
+    get_task_queue,
 )
 from core.repositories.answer import AnswerRepository
-from core.container import get_container, Container
+from core.interfaces.services import ITaskQueue
 
 from .helpers import should_skip_comment, extract_comment_data
 from .schemas import TestCommentPayload, WebhookPayload
@@ -52,7 +53,7 @@ async def process_webhook(
     request: Request,
     process_use_case: ProcessWebhookCommentUseCase = Depends(get_process_webhook_comment_use_case),
     answer_repo: AnswerRepository = Depends(get_answer_repository),
-    container: Container = Depends(get_container),
+    task_queue: ITaskQueue = Depends(get_task_queue),
 ):
     """Process Instagram webhook for new comments."""
     # Bind trace ID early if provided
@@ -96,14 +97,14 @@ async def process_webhook(
 
                 # Queue classification if needed
                 if result.get("should_classify"):
-                    task_queue = container.task_queue()
                     task_queue.enqueue(
                         "core.tasks.classification_tasks.classify_comment_task",
                         comment_id,
                     )
                     logger.info(f"Comment {comment_id} queued for classification")
 
-                if result["status"] == "created":
+                status = result.get("status", "error")
+                if status == "created":
                     processed_count += 1
                 else:
                     skipped_count += 1
