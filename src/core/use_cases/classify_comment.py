@@ -80,34 +80,39 @@ class ClassifyCommentUseCase:
         # 4. Get or create classification record
         classification = await self._get_or_create_classification(comment_id)
 
-        # 5. Update status to processing
-        await self.classification_repo.mark_processing(classification, retry_count)
-        await self.session.commit()
+        try:
+            # 5. Update status to processing (no commit yet)
+            await self.classification_repo.mark_processing(classification, retry_count)
+            await self.session.flush()  # persist status within transaction
 
-        # 6. Generate conversation ID
-        conversation_id = self.classification_service.generate_conversation_id(comment.id, comment.parent_id)
-        comment.conversation_id = conversation_id
+            # 6. Generate conversation ID
+            conversation_id = self.classification_service.generate_conversation_id(comment.id, comment.parent_id)
+            comment.conversation_id = conversation_id
 
-        # 7. Build media context
-        media_context = self._build_media_context(media)
+            # 7. Build media context
+            media_context = self._build_media_context(media)
 
-        # 8. Classify comment
-        result = await self.classification_service.classify_comment(comment.text, conversation_id, media_context)
+            # 8. Classify comment
+            result = await self.classification_service.classify_comment(comment.text, conversation_id, media_context)
 
-        # 9. Save results
-        classification.classification = result.classification
-        classification.confidence = result.confidence
-        classification.reasoning = result.reasoning
-        classification.input_tokens = result.input_tokens
-        classification.output_tokens = result.output_tokens
+            # 9. Save results
+            classification.classification = result.classification
+            classification.confidence = result.confidence
+            classification.reasoning = result.reasoning
+            classification.input_tokens = result.input_tokens
+            classification.output_tokens = result.output_tokens
 
-        if result.error:
-            logger.error(f"Classification failed | comment_id={comment_id} | error={result.error}")
-            await self.classification_repo.mark_failed(classification, result.error)
-        else:
-            await self.classification_repo.mark_completed(classification)
+            if result.error:
+                logger.error(f"Classification failed | comment_id={comment_id} | error={result.error}")
+                await self.classification_repo.mark_failed(classification, result.error)
+            else:
+                await self.classification_repo.mark_completed(classification)
 
-        await self.session.commit()
+            await self.session.commit()
+        except Exception as commit_exc:
+            setattr(commit_exc, "should_reraise", True)
+            await self.session.rollback()
+            raise
 
         logger.info(
             f"Classification completed | comment_id={comment_id} | "

@@ -59,12 +59,11 @@ class GenerateAnswerUseCase:
             logger.info(f"Creating new answer record | comment_id={comment_id}")
             answer_record = await self.answer_repo.create_for_comment(comment_id)
 
-        # 3. Update processing status
+        # 3. Update processing status (no commit yet)
         logger.debug(f"Marking answer as processing | comment_id={comment_id} | retry_count={retry_count}")
         answer_record.processing_status = AnswerStatus.PROCESSING
         answer_record.processing_started_at = now_db_utc()
         answer_record.retry_count = retry_count
-        await self.session.commit()
 
         # 4. Generate answer using service
         try:
@@ -80,18 +79,27 @@ class GenerateAnswerUseCase:
             )
             answer_record.processing_status = AnswerStatus.FAILED
             answer_record.last_error = str(exc)
-            await self.session.commit()
 
             if retry_count < answer_record.max_retries:
                 logger.info(
                     f"Scheduling retry | comment_id={comment_id} | retry_count={retry_count} | "
                     f"max_retries={answer_record.max_retries}"
                 )
-                return {"status": "retry", "reason": str(exc)}
-            logger.warning(
-                f"Max retries exceeded | comment_id={comment_id} | retry_count={retry_count}"
-            )
-            return {"status": "error", "reason": str(exc)}
+                result_payload = {"status": "retry", "reason": str(exc)}
+            else:
+                logger.warning(
+                    f"Max retries exceeded | comment_id={comment_id} | retry_count={retry_count}"
+                )
+                result_payload = {"status": "error", "reason": str(exc)}
+
+            try:
+                await self.session.commit()
+            except Exception as commit_exc:
+                setattr(commit_exc, "should_reraise", True)
+                await self.session.rollback()
+                raise
+
+            return result_payload
 
         # 5. Update answer record with results
         answer_record.answer = answer_result.answer
@@ -105,7 +113,12 @@ class GenerateAnswerUseCase:
         answer_record.processing_status = AnswerStatus.COMPLETED
         answer_record.processing_completed_at = now_db_utc()
 
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except Exception as commit_exc:
+            setattr(commit_exc, "should_reraise", True)
+            await self.session.rollback()
+            raise
 
         logger.info(
             f"Answer generation completed | comment_id={comment_id} | "

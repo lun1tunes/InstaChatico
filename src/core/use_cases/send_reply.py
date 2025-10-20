@@ -74,65 +74,72 @@ class SendReplyUseCase:
         else:
             logger.info(f"Using custom reply text | comment_id={comment_id} | text_length={len(reply_text)}")
 
-        # 3. Get answer record for tracking
-        answer_record = await self.answer_repo.get_by_comment_id(comment_id)
-        if not answer_record:
-            answer_record = await self.answer_repo.create_for_comment(comment_id)
+        try:
+            # 3. Get answer record for tracking
+            answer_record = await self.answer_repo.get_by_comment_id(comment_id)
+            if not answer_record:
+                answer_record = await self.answer_repo.create_for_comment(comment_id)
 
-        # 4. Check if already sent
-        if answer_record.reply_sent:
-            logger.info(
-                f"Reply already sent | comment_id={comment_id} | reply_id={answer_record.reply_id} | "
-                f"sent_at={answer_record.reply_sent_at.isoformat() if answer_record.reply_sent_at else None}"
+            # 4. Check if already sent
+            if answer_record.reply_sent:
+                logger.info(
+                    f"Reply already sent | comment_id={comment_id} | reply_id={answer_record.reply_id} | "
+                    f"sent_at={answer_record.reply_sent_at.isoformat() if answer_record.reply_sent_at else None}"
+                )
+                await self.session.rollback()
+                return {
+                    "status": "skipped",
+                    "reason": "Reply already sent",
+                    "reply_id": answer_record.reply_id,
+                    "reply_sent_at": answer_record.reply_sent_at.isoformat() if answer_record.reply_sent_at else None,
+                }
+
+            # 5. Send reply via Instagram API
+            logger.info(f"Sending reply to Instagram | comment_id={comment_id} | reply_length={len(reply_text)}")
+            result = await self.instagram_service.send_reply_to_comment(
+                comment_id=comment_id,
+                message=reply_text
             )
-            return {
-                "status": "skipped",
-                "reason": "Reply already sent",
-                "reply_id": answer_record.reply_id,
-                "reply_sent_at": answer_record.reply_sent_at.isoformat() if answer_record.reply_sent_at else None,
-            }
 
-        # 5. Send reply via Instagram API
-        logger.info(f"Sending reply to Instagram | comment_id={comment_id} | reply_length={len(reply_text)}")
-        result = await self.instagram_service.send_reply_to_comment(
-            comment_id=comment_id,
-            message=reply_text
-        )
+            if result.get("status") == "rate_limited":
+                retry_after = float(result.get("retry_after", 10.0))
+                logger.warning(
+                    f"Reply deferred due to Instagram rate limit | comment_id={comment_id} | retry_after={retry_after:.2f}s"
+                )
+                await self.session.rollback()
+                return {
+                    "status": "retry",
+                    "reason": "rate_limited",
+                    "retry_after": retry_after,
+                }
 
-        if result.get("status") == "rate_limited":
-            retry_after = float(result.get("retry_after", 10.0))
-            logger.warning(
-                f"Reply deferred due to Instagram rate limit | comment_id={comment_id} | retry_after={retry_after:.2f}s"
-            )
-            return {
-                "status": "retry",
-                "reason": "rate_limited",
-                "retry_after": retry_after,
-            }
+            # 6. Update tracking
+            if result.get("success"):
+                logger.info(
+                    f"Reply sent successfully | comment_id={comment_id} | "
+                    f"reply_id={result.get('reply_id') or result.get('response', {}).get('id')}"
+                )
+                answer_record.reply_sent = True
+                answer_record.reply_sent_at = now_db_utc()
+                answer_record.reply_status = "sent"
+                answer_record.reply_response = result.get("response", {})
+                answer_record.reply_id = result.get("reply_id") or result.get("response", {}).get("id")
+            else:
+                logger.error(
+                    f"Reply send failed | comment_id={comment_id} | "
+                    f"error={result.get('error', 'Unknown error')}"
+                )
+                answer_record.reply_status = "failed"
+                # Convert error to string if it's a dict
+                error = result.get("error", "Unknown error")
+                answer_record.reply_error = str(error) if isinstance(error, dict) else error
+                answer_record.reply_response = result
 
-        # 6. Update tracking
-        if result.get("success"):
-            logger.info(
-                f"Reply sent successfully | comment_id={comment_id} | "
-                f"reply_id={result.get('reply_id') or result.get('response', {}).get('id')}"
-            )
-            answer_record.reply_sent = True
-            answer_record.reply_sent_at = now_db_utc()
-            answer_record.reply_status = "sent"
-            answer_record.reply_response = result.get("response", {})
-            answer_record.reply_id = result.get("reply_id") or result.get("response", {}).get("id")
-        else:
-            logger.error(
-                f"Reply send failed | comment_id={comment_id} | "
-                f"error={result.get('error', 'Unknown error')}"
-            )
-            answer_record.reply_status = "failed"
-            # Convert error to string if it's a dict
-            error = result.get("error", "Unknown error")
-            answer_record.reply_error = str(error) if isinstance(error, dict) else error
-            answer_record.reply_response = result
-
-        await self.session.commit()
+            await self.session.commit()
+        except Exception as commit_exc:
+            setattr(commit_exc, "should_reraise", True)
+            await self.session.rollback()
+            raise
 
         return {
             "status": "success" if result.get("success") else "error",

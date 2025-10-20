@@ -52,15 +52,15 @@ class ProcessDocumentUseCase:
             logger.error(f"Document not found | document_id={document_id} | operation=process_document")
             return {"status": "error", "reason": f"Document {document_id} not found"}
 
-        # 2. Update status to processing using repository method
         logger.info(
             f"Marking document as processing | document_id={document_id} | "
             f"document_name={document.document_name} | document_type={document.document_type}"
         )
-        await self.document_repo.mark_processing(document)
-        await self.session.commit()
 
         try:
+            await self.document_repo.mark_processing(document)
+            await self.session.flush()
+
             # 3. Download from S3
             logger.info(f"Downloading document from S3 | document_id={document_id} | s3_key={document.s3_key}")
             success, file_content, error = self.s3_service.download_file(document.s3_key)
@@ -88,7 +88,12 @@ class ProcessDocumentUseCase:
             # 5. Update document with results using repository method
             await self.document_repo.mark_completed(document, markdown)
             document.content_hash = content_hash
-            await self.session.commit()
+            try:
+                await self.session.commit()
+            except Exception as commit_exc:
+                setattr(commit_exc, "should_reraise", True)
+                await self.session.rollback()
+                raise
 
             logger.info(
                 f"Document processing completed | document_id={document_id} | "
@@ -108,5 +113,10 @@ class ProcessDocumentUseCase:
             )
             # Update document with error using repository method
             await self.document_repo.mark_failed(document, str(exc))
-            await self.session.commit()
+            try:
+                await self.session.commit()
+            except Exception as commit_exc:
+                setattr(commit_exc, "should_reraise", True)
+                await self.session.rollback()
+                raise
             raise exc

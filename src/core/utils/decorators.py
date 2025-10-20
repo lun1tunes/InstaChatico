@@ -23,6 +23,8 @@ def handle_task_errors(error_status: str = "error"):
             try:
                 return await func(*args, **kwargs)
             except Exception as exc:
+                if getattr(exc, "should_reraise", False):
+                    raise
                 logger.exception(f"Error in {func.__name__}: {exc}")
                 return {"status": error_status, "reason": str(exc)}
 
