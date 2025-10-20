@@ -16,6 +16,7 @@ import core.tasks.instagram_reply_tasks
 import core.tasks.document_tasks
 import core.tasks.media_tasks
 import core.tasks.health_tasks
+import core.tasks.instagram_token_tasks
 
 # Import the celery app
 from core.celery_app import celery_app
