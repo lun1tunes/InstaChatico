@@ -33,6 +33,8 @@ async def test_telegram_bot_connection(
                 status_code=400,
                 detail=f"Telegram connection failed: {result.get('error')}",
             )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error testing Telegram connection: {e}")
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
@@ -73,6 +75,8 @@ async def test_telegram_notification(
                 status_code=400,
                 detail=f"Failed to send test notification: {result.get('error')}",
             )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error sending test notification: {e}")
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
