@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from httpx import AsyncClient
 
@@ -43,4 +45,5 @@ async def test_telegram_test_log_alert_success(integration_environment):
     telegram_service = integration_environment["telegram_service"]
     response = await client.post("/api/v1/telegram/test-log-alert", params={"level": "error"})
     assert response.status_code == 200
+    await asyncio.sleep(0)  # allow background log task to complete
     assert telegram_service.log_alerts
