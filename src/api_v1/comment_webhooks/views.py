@@ -95,6 +95,15 @@ async def process_webhook(
                     raw_data=comment_data.get("raw_data"),
                 )
 
+                status = result.get("status", "error")
+                if status == "forbidden":
+                    logger.warning(
+                        "Rejecting webhook due to media owner validation | comment_id=%s | reason=%s",
+                        comment_id,
+                        result.get("reason"),
+                    )
+                    raise HTTPException(status_code=403, detail=result.get("reason", "Invalid media owner"))
+
                 # Queue classification if needed
                 if result.get("should_classify"):
                     task_queue.enqueue(
@@ -103,12 +112,13 @@ async def process_webhook(
                     )
                     logger.info(f"Comment {comment_id} queued for classification")
 
-                status = result.get("status", "error")
                 if status == "created":
                     processed_count += 1
                 else:
                     skipped_count += 1
 
+            except HTTPException:
+                raise
             except Exception:
                 logger.exception(f"Error processing comment {comment_id}")
                 skipped_count += 1
@@ -119,6 +129,8 @@ async def process_webhook(
             message=f"Processed {processed_count} new comments, skipped {skipped_count}",
         )
 
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Unexpected error processing webhook")
         raise HTTPException(status_code=500, detail="Internal server error")
