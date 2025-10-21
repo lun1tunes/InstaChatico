@@ -19,6 +19,7 @@ from core.models import (
     db_helper,
 )
 from core.utils.time import now_db_utc
+from core.logging_config import configure_logging
 from main import app
 
 
@@ -245,6 +246,7 @@ async def integration_environment(test_engine):
     container.db_engine.override(providers.Callable(lambda: test_engine))
 
     try:
+        configure_logging()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             yield {
                 "client": client,

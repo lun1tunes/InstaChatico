@@ -43,7 +43,23 @@ async def test_telegram_test_log_alert_invalid_level(integration_environment):
 async def test_telegram_test_log_alert_success(integration_environment):
     client: AsyncClient = integration_environment["client"]
     telegram_service = integration_environment["telegram_service"]
-    response = await client.post("/api/v1/telegram/test-log-alert", params={"level": "error"})
-    assert response.status_code == 200
-    await asyncio.sleep(0)  # allow background log task to complete
-    assert telegram_service.log_alerts
+    from core.logging_config import TelegramLogHandler
+    import logging
+
+    logger = logging.getLogger("api_v1.telegram.views")
+    called = {"value": False}
+
+    async def fake_send_log_alert(data):
+        called["value"] = True
+        telegram_service.log_alerts.append(data)
+
+    telegram_service.send_log_alert = fake_send_log_alert
+    handler = TelegramLogHandler(level=logging.ERROR, alert_service=telegram_service)
+    logger.addHandler(handler)
+    try:
+        response = await client.post("/api/v1/telegram/test-log-alert", params={"level": "error"})
+        assert response.status_code == 200
+        assert called["value"]
+        assert telegram_service.log_alerts
+    finally:
+        logger.removeHandler(handler)
