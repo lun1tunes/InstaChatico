@@ -438,3 +438,318 @@ class TestProcessDocumentUseCase:
         # Assert
         assert result["status"] == "success"
         assert result["markdown_length"] == 0
+
+    async def test_execute_db_commit_fails_after_success_re_raises(self, document_factory):
+        """Test that DB commit failures after success are re-raised (have should_reraise attribute)."""
+        # Arrange
+        document = await document_factory(
+            filename="test.pdf",
+            document_type="pdf",
+        )
+
+        # Mock services - all succeed
+        mock_s3_service = MagicMock()
+        mock_s3_service.download_file = MagicMock(
+            return_value=(True, b"content", None)
+        )
+
+        mock_doc_processing = MagicMock()
+        mock_doc_processing.process_document = MagicMock(
+            return_value=(True, "# Markdown", "hash123", None)
+        )
+
+        # Mock repository
+        mock_document_repo = MagicMock()
+        mock_document_repo.get_by_id = AsyncMock(return_value=document)
+        mock_document_repo.mark_processing = AsyncMock()
+        mock_document_repo.mark_completed = AsyncMock()
+        mock_document_repo.mark_failed = AsyncMock()  # For error recovery path
+
+        # Mock session to fail on ALL commits
+        mock_session = MagicMock()
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock(side_effect=Exception("DB connection lost"))
+        mock_session.rollback = AsyncMock()
+
+        # Create use case
+        use_case = ProcessDocumentUseCase(
+            session=mock_session,
+            s3_service=mock_s3_service,
+            doc_processing_service=mock_doc_processing,
+            document_repository_factory=lambda session: mock_document_repo,
+        )
+
+        # Act & Assert - should raise because of should_reraise attribute
+        with pytest.raises(Exception) as exc_info:
+            await use_case.execute(document_id=str(document.id))
+
+        # The second commit (in error handler) fails and that exception is raised
+        assert "DB connection lost" in str(exc_info.value)
+        # Rollback should be called twice (once for each commit failure)
+        assert mock_session.rollback.await_count == 2
+        # Exception should have should_reraise attribute (set on line 94/119)
+        assert hasattr(exc_info.value, "should_reraise")
+
+    async def test_execute_db_commit_fails_after_mark_failed_re_raises(self, document_factory):
+        """Test that DB commit failures after mark_failed are re-raised (have should_reraise attribute)."""
+        # Arrange
+        document = await document_factory()
+
+        # Mock S3 service - fails
+        mock_s3_service = MagicMock()
+        mock_s3_service.download_file = MagicMock(
+            return_value=(False, None, "S3 timeout")
+        )
+
+        # Mock repository
+        mock_document_repo = MagicMock()
+        mock_document_repo.get_by_id = AsyncMock(return_value=document)
+        mock_document_repo.mark_processing = AsyncMock()
+        mock_document_repo.mark_failed = AsyncMock()
+
+        # Mock session to fail on commit
+        mock_session = MagicMock()
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock(side_effect=Exception("DB commit failed"))
+        mock_session.rollback = AsyncMock()
+
+        # Create use case
+        use_case = ProcessDocumentUseCase(
+            session=mock_session,
+            s3_service=mock_s3_service,
+            doc_processing_service=MagicMock(),
+            document_repository_factory=lambda session: mock_document_repo,
+        )
+
+        # Act & Assert - should raise because of should_reraise attribute
+        with pytest.raises(Exception) as exc_info:
+            await use_case.execute(document_id=str(document.id))
+
+        assert "DB commit failed" in str(exc_info.value)
+        # Rollback should be called
+        mock_session.rollback.assert_awaited()
+        # Exception should have should_reraise attribute
+        assert hasattr(exc_info.value, "should_reraise")
+
+    async def test_execute_s3_download_returns_none_content(self, db_session, document_factory):
+        """Test handling when S3 download returns None for content."""
+        # Arrange
+        document = await document_factory()
+
+        # Mock S3 service - returns None content
+        mock_s3_service = MagicMock()
+        mock_s3_service.download_file = MagicMock(
+            return_value=(False, None, "Object not found")
+        )
+
+        # Mock repository
+        mock_document_repo = MagicMock()
+        mock_document_repo.get_by_id = AsyncMock(return_value=document)
+        mock_document_repo.mark_processing = AsyncMock()
+        mock_document_repo.mark_failed = AsyncMock()
+
+        # Create use case
+        use_case = ProcessDocumentUseCase(
+            session=db_session,
+            s3_service=mock_s3_service,
+            doc_processing_service=MagicMock(),
+            document_repository_factory=lambda session: mock_document_repo,
+        )
+
+        # Act
+        result = await use_case.execute(document_id=str(document.id))
+
+        # Assert
+        assert result["status"] == "error"
+        assert "Failed to download from S3" in result["reason"]
+
+    async def test_execute_processing_returns_none_markdown(self, db_session, document_factory):
+        """Test handling when processing returns None for markdown."""
+        # Arrange
+        document = await document_factory()
+
+        # Mock services
+        mock_s3_service = MagicMock()
+        mock_s3_service.download_file = MagicMock(
+            return_value=(True, b"content", None)
+        )
+
+        # Mock doc processing - returns None markdown
+        mock_doc_processing = MagicMock()
+        mock_doc_processing.process_document = MagicMock(
+            return_value=(False, None, None, "Unsupported format")
+        )
+
+        # Mock repository
+        mock_document_repo = MagicMock()
+        mock_document_repo.get_by_id = AsyncMock(return_value=document)
+        mock_document_repo.mark_processing = AsyncMock()
+        mock_document_repo.mark_failed = AsyncMock()
+
+        # Create use case
+        use_case = ProcessDocumentUseCase(
+            session=db_session,
+            s3_service=mock_s3_service,
+            doc_processing_service=mock_doc_processing,
+            document_repository_factory=lambda session: mock_document_repo,
+        )
+
+        # Act
+        result = await use_case.execute(document_id=str(document.id))
+
+        # Assert
+        assert result["status"] == "error"
+        assert "Failed to process document" in result["reason"]
+
+    async def test_execute_content_hash_is_set(self, db_session, document_factory):
+        """Test that content_hash is correctly set on document."""
+        # Arrange
+        document = await document_factory()
+
+        # Mock services
+        mock_s3_service = MagicMock()
+        mock_s3_service.download_file = MagicMock(
+            return_value=(True, b"content", None)
+        )
+
+        expected_hash = "abc123def456"
+        mock_doc_processing = MagicMock()
+        mock_doc_processing.process_document = MagicMock(
+            return_value=(True, "# Markdown", expected_hash, None)
+        )
+
+        # Mock repository
+        mock_document_repo = MagicMock()
+        mock_document_repo.get_by_id = AsyncMock(return_value=document)
+        mock_document_repo.mark_processing = AsyncMock()
+        mock_document_repo.mark_completed = AsyncMock()
+
+        # Create use case
+        use_case = ProcessDocumentUseCase(
+            session=db_session,
+            s3_service=mock_s3_service,
+            doc_processing_service=mock_doc_processing,
+            document_repository_factory=lambda session: mock_document_repo,
+        )
+
+        # Act
+        await use_case.execute(document_id=str(document.id))
+
+        # Assert
+        assert document.content_hash == expected_hash
+
+    async def test_execute_session_flush_called(self, db_session, document_factory):
+        """Test that session.flush() is called after mark_processing."""
+        # Arrange
+        document = await document_factory()
+
+        # Mock services
+        mock_s3_service = MagicMock()
+        mock_s3_service.download_file = MagicMock(
+            return_value=(True, b"content", None)
+        )
+
+        mock_doc_processing = MagicMock()
+        mock_doc_processing.process_document = MagicMock(
+            return_value=(True, "# Markdown", "hash", None)
+        )
+
+        # Mock repository
+        mock_document_repo = MagicMock()
+        mock_document_repo.get_by_id = AsyncMock(return_value=document)
+        mock_document_repo.mark_processing = AsyncMock()
+        mock_document_repo.mark_completed = AsyncMock()
+
+        # Mock session with flush tracking
+        mock_session = MagicMock()
+        mock_session.flush = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+
+        # Create use case
+        use_case = ProcessDocumentUseCase(
+            session=mock_session,
+            s3_service=mock_s3_service,
+            doc_processing_service=mock_doc_processing,
+            document_repository_factory=lambda session: mock_document_repo,
+        )
+
+        # Act
+        await use_case.execute(document_id=str(document.id))
+
+        # Assert
+        mock_session.flush.assert_awaited_once()
+
+    async def test_execute_mark_completed_with_correct_markdown(self, db_session, document_factory):
+        """Test that mark_completed is called with correct markdown content."""
+        # Arrange
+        document = await document_factory()
+
+        expected_markdown = "# Test Document\n\nThis is the processed content."
+
+        # Mock services
+        mock_s3_service = MagicMock()
+        mock_s3_service.download_file = MagicMock(
+            return_value=(True, b"content", None)
+        )
+
+        mock_doc_processing = MagicMock()
+        mock_doc_processing.process_document = MagicMock(
+            return_value=(True, expected_markdown, "hash", None)
+        )
+
+        # Mock repository
+        mock_document_repo = MagicMock()
+        mock_document_repo.get_by_id = AsyncMock(return_value=document)
+        mock_document_repo.mark_processing = AsyncMock()
+        mock_document_repo.mark_completed = AsyncMock()
+
+        # Create use case
+        use_case = ProcessDocumentUseCase(
+            session=db_session,
+            s3_service=mock_s3_service,
+            doc_processing_service=mock_doc_processing,
+            document_repository_factory=lambda session: mock_document_repo,
+        )
+
+        # Act
+        await use_case.execute(document_id=str(document.id))
+
+        # Assert
+        mock_document_repo.mark_completed.assert_awaited_once_with(document, expected_markdown)
+
+    async def test_execute_mark_failed_with_error_message(self, db_session, document_factory):
+        """Test that mark_failed is called with correct error message."""
+        # Arrange
+        document = await document_factory()
+
+        # Mock services - S3 fails with specific error
+        error_message = "Access denied: Insufficient permissions"
+        mock_s3_service = MagicMock()
+        mock_s3_service.download_file = MagicMock(
+            return_value=(False, None, error_message)
+        )
+
+        # Mock repository
+        mock_document_repo = MagicMock()
+        mock_document_repo.get_by_id = AsyncMock(return_value=document)
+        mock_document_repo.mark_processing = AsyncMock()
+        mock_document_repo.mark_failed = AsyncMock()
+
+        # Create use case
+        use_case = ProcessDocumentUseCase(
+            session=db_session,
+            s3_service=mock_s3_service,
+            doc_processing_service=MagicMock(),
+            document_repository_factory=lambda session: mock_document_repo,
+        )
+
+        # Act
+        await use_case.execute(document_id=str(document.id))
+
+        # Assert
+        # mark_failed should be called with error message containing the S3 error
+        mock_document_repo.mark_failed.assert_awaited_once()
+        call_args = mock_document_repo.mark_failed.call_args
+        assert "Failed to download from S3" in call_args[0][1]
+        assert error_message in call_args[0][1]
