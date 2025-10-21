@@ -3,6 +3,7 @@ import json
 import pytest
 from httpx import AsyncClient
 
+from core.models import Media
 from core.utils.time import now_db_utc
 
 from tests.integration.helpers import fetch_classification, fetch_comment
@@ -153,3 +154,54 @@ async def test_webhook_invalid_signature(integration_environment):
         headers={"X-Hub-Signature-256": "sha256=deadbeef", "Content-Type": "application/json"},
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_webhook_media_owner_mismatch(integration_environment, sign_payload):
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+
+    async with session_factory() as session:
+        media = Media(
+            id="media_mismatch",
+            permalink="https://instagram.com/p/media_mismatch",
+            media_type="IMAGE",
+            media_url="https://cdn.test/media_mismatch.jpg",
+            owner="other_account",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.merge(media)
+        await session.commit()
+
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "acct",
+                "time": int(now_db_utc().timestamp()),
+                "changes": [
+                    {
+                        "field": "comments",
+                        "value": {
+                            "id": "comment_forbidden",
+                            "media": {"id": "media_mismatch"},
+                            "text": "Should be rejected",
+                            "from": {"id": "user_1", "username": "tester"},
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    body = json.dumps(payload).encode()
+    signature = sign_payload(body)
+    response = await client.post(
+        "/api/v1/webhook/",
+        content=body,
+        headers={"X-Hub-Signature-256": signature, "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Invalid media owner"

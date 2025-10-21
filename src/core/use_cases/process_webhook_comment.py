@@ -6,6 +6,7 @@ from typing import Callable, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
+from ..config import settings
 from ..models.instagram_comment import InstagramComment
 from ..models.comment_classification import CommentClassification, ProcessingStatus
 from ..interfaces.services import IMediaService, ITaskQueue
@@ -78,6 +79,8 @@ class ProcessWebhookCommentUseCase:
             f"username={username} | has_parent={bool(parent_id)} | text_length={len(text)}"
         )
 
+        expected_owner_id = settings.instagram.base_account_id
+
         try:
             # Check if comment already exists
             existing = await self.comment_repo.get_by_id(comment_id)
@@ -111,6 +114,24 @@ class ProcessWebhookCommentUseCase:
                     "should_classify": False,
                     "reason": "Failed to create media record",
                 }
+
+            # Validate media owner when available
+            if expected_owner_id:
+                media_owner = getattr(media, "owner", None)
+                if media_owner and media_owner != expected_owner_id:
+                    logger.warning(
+                        "Media owner mismatch detected | comment_id=%s | media_id=%s | media_owner=%s | expected_owner=%s",
+                        comment_id,
+                        media_id,
+                        media_owner,
+                        expected_owner_id,
+                    )
+                    return {
+                        "status": "forbidden",
+                        "comment_id": comment_id,
+                        "should_classify": False,
+                        "reason": "Invalid media owner",
+                    }
 
             # Create comment record
             logger.info(
