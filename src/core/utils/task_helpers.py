@@ -48,7 +48,15 @@ def async_task(celery_task_func: Callable):
             current = None
 
         if current is not loop:
-            asyncio.set_event_loop(loop)
+            policy_loop = None
+            if current is None:
+                try:
+                    policy_loop = asyncio.get_event_loop_policy().get_event_loop()
+                except RuntimeError:
+                    policy_loop = None
+
+            if policy_loop is not loop:
+                asyncio.set_event_loop(loop)
         return loop.run_until_complete(celery_task_func(*args, **kwargs))
 
     return wrapper
