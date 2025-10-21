@@ -215,12 +215,14 @@ async def integration_environment(test_engine):
     original_development_mode = os.environ.get("DEVELOPMENT_MODE")
     original_bucket = settings.s3.bucket_name
     original_s3_url = settings.s3.s3_url
+    original_base_account_id = settings.instagram.base_account_id
 
     settings.app_secret = "test_app_secret"
     settings.app_webhook_verify_token = "verify_token"
     os.environ["DEVELOPMENT_MODE"] = "false"
     settings.s3.bucket_name = "test-bucket"
     settings.s3.s3_url = "s3.test.local"
+    settings.instagram.base_account_id = "acct"
 
     reset_container()
     container = get_container()
@@ -272,6 +274,7 @@ async def integration_environment(test_engine):
         settings.app_webhook_verify_token = original_verify_token
         settings.s3.bucket_name = original_bucket
         settings.s3.s3_url = original_s3_url
+        settings.instagram.base_account_id = original_base_account_id
 
         if original_development_mode is None:
             os.environ.pop("DEVELOPMENT_MODE", None)
