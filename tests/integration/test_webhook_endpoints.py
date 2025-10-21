@@ -171,8 +171,14 @@ async def test_webhook_media_owner_mismatch(integration_environment, sign_payloa
             created_at=now_db_utc(),
             updated_at=now_db_utc(),
         )
-        session.merge(media)
+        await session.merge(media)
         await session.commit()
+    async with session_factory() as session:
+        stored = await session.get(Media, "media_mismatch")
+        assert stored is not None
+        assert stored.owner == "other_account"
+    from core.config import settings
+    assert settings.instagram.base_account_id == "acct"
 
     payload = {
         "object": "instagram",
