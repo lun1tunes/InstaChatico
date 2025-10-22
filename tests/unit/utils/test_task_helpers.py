@@ -9,7 +9,6 @@ from core.utils.task_helpers import (
     _get_worker_event_loop,
     async_task,
     get_db_session,
-    retry_with_backoff,
     get_retry_delay,
     DEFAULT_RETRY_SCHEDULE,
 )
