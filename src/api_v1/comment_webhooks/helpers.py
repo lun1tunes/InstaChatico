@@ -49,23 +49,6 @@ async def should_skip_comment(
     return False, ""
 
 
-async def get_existing_comment(
-    comment_id: str,
-    comment_repo: CommentRepository,
-) -> Optional[InstagramComment]:
-    """
-    Get existing comment from database if it exists.
-
-    Args:
-        comment_id: ID of the comment to retrieve
-        comment_repo: Comment repository
-
-    Returns:
-        Comment if found, None otherwise
-    """
-    return await comment_repo.get_by_id(comment_id)
-
-
 def extract_comment_data(comment: CommentValue, entry_timestamp: int) -> dict:
     """Extract comment data for database insertion."""
     from datetime import datetime
