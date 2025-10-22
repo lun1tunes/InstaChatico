@@ -1,7 +1,7 @@
 """Instagram comment management endpoints."""
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
@@ -34,6 +34,93 @@ from core.interfaces.services import ITaskQueue
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Comments"], prefix="/comments")
+
+
+# =========================================================================
+# Serialization helpers
+# =========================================================================
+
+
+def _serialize_comment_base(comment: InstagramComment) -> dict[str, Any]:
+    """Serialize common comment details using Pydantic v2 model validation."""
+    return CommentDetailResponse.model_validate(comment).model_dump()
+
+
+def _serialize_classification_section(classification: CommentClassification | None) -> dict[str, Any]:
+    """Serialize classification details for classification-focused responses."""
+    if not classification:
+        return {}
+
+    return {
+        "classification": classification.classification,
+        "confidence": classification.confidence,
+        "reasoning": classification.reasoning,
+        "input_tokens": classification.input_tokens,
+        "output_tokens": classification.output_tokens,
+        "processing_status": (
+            classification.processing_status.value if classification.processing_status else None
+        ),
+        "processing_started_at": classification.processing_started_at,
+        "processing_completed_at": classification.processing_completed_at,
+    }
+
+
+def _serialize_classification_full_section(classification: CommentClassification | None) -> dict[str, Any]:
+    """Serialize classification details for the full comment response."""
+    if not classification:
+        return {}
+
+    return {
+        "classification": classification.classification,
+        "confidence": classification.confidence,
+        "reasoning": classification.reasoning,
+        "classification_status": (
+            classification.processing_status.value if classification.processing_status else None
+        ),
+        "classification_started_at": classification.processing_started_at,
+        "classification_completed_at": classification.processing_completed_at,
+        "classification_input_tokens": classification.input_tokens,
+        "classification_output_tokens": classification.output_tokens,
+    }
+
+
+def _serialize_answer_section(answer: QuestionAnswer | None) -> dict[str, Any]:
+    """Serialize answer details for answer-focused responses."""
+    if not answer:
+        return {}
+
+    return {
+        "answer": answer.answer,
+        "answer_confidence": answer.answer_confidence,
+        "answer_quality_score": answer.answer_quality_score,
+        "input_tokens": answer.input_tokens,
+        "output_tokens": answer.output_tokens,
+        "processing_status": (answer.processing_status.value if answer.processing_status else None),
+        "processing_started_at": answer.processing_started_at,
+        "processing_completed_at": answer.processing_completed_at,
+    }
+
+
+def _serialize_answer_full_section(answer: QuestionAnswer | None) -> dict[str, Any]:
+    """Serialize answer and reply details for the full comment response."""
+    if not answer:
+        return {}
+
+    return {
+        "answer": answer.answer,
+        "answer_confidence": answer.answer_confidence,
+        "answer_quality_score": answer.answer_quality_score,
+        "answer_status": (answer.processing_status.value if answer.processing_status else None),
+        "answer_started_at": answer.processing_started_at,
+        "answer_completed_at": answer.processing_completed_at,
+        "answer_input_tokens": answer.input_tokens,
+        "answer_output_tokens": answer.output_tokens,
+        "answer_processing_time_ms": answer.processing_time_ms,
+        "reply_sent": answer.reply_sent,
+        "reply_sent_at": answer.reply_sent_at,
+        "reply_status": answer.reply_status,
+        "reply_id": answer.reply_id,
+    }
 
 
 # ============================================================================
@@ -76,26 +163,8 @@ async def get_comment_with_classification(
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
 
-    # Build response from comment and classification
-    response_data = {
-        **CommentDetailResponse.model_validate(comment).model_dump(),
-    }
-
-    if comment.classification:
-        response_data.update(
-            {
-                "classification": comment.classification.classification,
-                "confidence": comment.classification.confidence,
-                "reasoning": comment.classification.reasoning,
-                "input_tokens": comment.classification.input_tokens,
-                "output_tokens": comment.classification.output_tokens,
-                "processing_status": (
-                    comment.classification.processing_status.value if comment.classification.processing_status else None
-                ),
-                "processing_started_at": comment.classification.processing_started_at,
-                "processing_completed_at": comment.classification.processing_completed_at,
-            }
-        )
+    response_data = _serialize_comment_base(comment)
+    response_data.update(_serialize_classification_section(comment.classification))
 
     return CommentWithClassificationResponse(**response_data)
 
@@ -116,28 +185,8 @@ async def get_comment_with_answer(
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
 
-    # Build response
-    response_data = {
-        **CommentDetailResponse.model_validate(comment).model_dump(),
-    }
-
-    if comment.question_answer:
-        response_data.update(
-            {
-                "answer": comment.question_answer.answer,
-                "answer_confidence": comment.question_answer.answer_confidence,
-                "answer_quality_score": comment.question_answer.answer_quality_score,
-                "input_tokens": comment.question_answer.input_tokens,
-                "output_tokens": comment.question_answer.output_tokens,
-                "processing_status": (
-                    comment.question_answer.processing_status.value
-                    if comment.question_answer.processing_status
-                    else None
-                ),
-                "processing_started_at": comment.question_answer.processing_started_at,
-                "processing_completed_at": comment.question_answer.processing_completed_at,
-            }
-        )
+    response_data = _serialize_comment_base(comment)
+    response_data.update(_serialize_answer_section(comment.question_answer))
 
     return CommentWithAnswerResponse(**response_data)
 
@@ -158,51 +207,9 @@ async def get_comment_full(
     if not comment:
         raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
 
-    # Build comprehensive response
-    response_data = {
-        **CommentDetailResponse.model_validate(comment).model_dump(),
-    }
-
-    # Add classification data
-    if comment.classification:
-        response_data.update(
-            {
-                "classification": comment.classification.classification,
-                "confidence": comment.classification.confidence,
-                "reasoning": comment.classification.reasoning,
-                "classification_status": (
-                    comment.classification.processing_status.value if comment.classification.processing_status else None
-                ),
-                "classification_started_at": comment.classification.processing_started_at,
-                "classification_completed_at": comment.classification.processing_completed_at,
-                "classification_input_tokens": comment.classification.input_tokens,
-                "classification_output_tokens": comment.classification.output_tokens,
-            }
-        )
-
-    # Add answer and reply data
-    if comment.question_answer:
-        response_data.update(
-            {
-                "answer": comment.question_answer.answer,
-                "answer_confidence": comment.question_answer.answer_confidence,
-                "answer_quality_score": comment.question_answer.answer_quality_score,
-                "answer_status": (
-                    comment.question_answer.processing_status.value
-                    if comment.question_answer.processing_status
-                    else None
-                ),
-                "answer_started_at": comment.question_answer.processing_started_at,
-                "answer_completed_at": comment.question_answer.processing_completed_at,
-                "answer_input_tokens": comment.question_answer.input_tokens,
-                "answer_output_tokens": comment.question_answer.output_tokens,
-                "answer_processing_time_ms": comment.question_answer.processing_time_ms,
-                "reply_sent": comment.question_answer.reply_sent,
-                "reply_sent_at": comment.question_answer.reply_sent_at,
-                "reply_status": comment.question_answer.reply_status,
-                "reply_id": comment.question_answer.reply_id,
-            }
-        )
+    response_data = _serialize_comment_base(comment)
+    response_data.update(_serialize_classification_full_section(comment.classification))
+    response_data.update(_serialize_answer_full_section(comment.question_answer))
 
     return CommentFullResponse(**response_data)
 
