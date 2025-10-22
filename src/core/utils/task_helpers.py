@@ -80,13 +80,3 @@ def get_retry_delay(retry_index: int, schedule: Sequence[int] | None = None) -> 
     if retry_index < 0:
         retry_index = 0
     return delays[min(retry_index, len(delays) - 1)]
-
-
-def retry_with_backoff(task_instance, exc: Exception, schedule: Sequence[int] | None = None):
-    """Handle retry logic with shared backoff schedule."""
-    delays = schedule or DEFAULT_RETRY_SCHEDULE
-    if task_instance and task_instance.request.retries < len(delays):
-        delay = get_retry_delay(task_instance.request.retries, delays)
-        task_instance.retry(countdown=delay, exc=exc)
-        return {"status": "retry_scheduled", "delay": delay}
-    return {"status": "error", "reason": str(exc)}

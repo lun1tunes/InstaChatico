@@ -22,8 +22,8 @@ class TestGetWorkerEventLoop:
     def test_get_worker_event_loop_creates_new_loop(self):
         """Test that _get_worker_event_loop creates a new event loop on first call."""
         # Arrange - Clear any cached loop
-        if hasattr(_get_worker_event_loop, '_loop'):
-            delattr(_get_worker_event_loop, '_loop')
+        if hasattr(_get_worker_event_loop, "_loop"):
+            delattr(_get_worker_event_loop, "_loop")
 
         # Act
         loop = _get_worker_event_loop()
@@ -34,8 +34,8 @@ class TestGetWorkerEventLoop:
     def test_get_worker_event_loop_returns_same_loop(self):
         """Test that _get_worker_event_loop returns the same loop on subsequent calls."""
         # Arrange - Clear any cached loop
-        if hasattr(_get_worker_event_loop, '_loop'):
-            delattr(_get_worker_event_loop, '_loop')
+        if hasattr(_get_worker_event_loop, "_loop"):
+            delattr(_get_worker_event_loop, "_loop")
 
         # Act
         loop1 = _get_worker_event_loop()
@@ -47,14 +47,14 @@ class TestGetWorkerEventLoop:
     def test_get_worker_event_loop_caches_loop(self):
         """Test that the loop is cached on the function object."""
         # Arrange - Clear any cached loop
-        if hasattr(_get_worker_event_loop, '_loop'):
-            delattr(_get_worker_event_loop, '_loop')
+        if hasattr(_get_worker_event_loop, "_loop"):
+            delattr(_get_worker_event_loop, "_loop")
 
         # Act
         loop = _get_worker_event_loop()
 
         # Assert
-        assert hasattr(_get_worker_event_loop, '_loop')
+        assert hasattr(_get_worker_event_loop, "_loop")
         assert _get_worker_event_loop._loop is loop
 
 
@@ -64,6 +64,7 @@ class TestAsyncTask:
 
     def test_async_task_decorator_runs_async_function(self):
         """Test that async_task decorator runs an async function."""
+
         # Arrange
         async def my_async_function(x, y):
             await asyncio.sleep(0.001)
@@ -80,6 +81,7 @@ class TestAsyncTask:
 
     def test_async_task_sets_event_loop(self):
         """Test that async_task sets the event loop."""
+
         # Arrange
         async def my_task():
             return "done"
@@ -94,9 +96,11 @@ class TestAsyncTask:
                 return current_loop
 
         try:
-            with patch.object(_get_worker_event_loop, '_loop', new=worker_loop, create=True):
-                with patch('asyncio.set_event_loop') as mock_set_loop, \
-                     patch('asyncio.get_event_loop_policy', return_value=DummyPolicy()):
+            with patch.object(_get_worker_event_loop, "_loop", new=worker_loop, create=True):
+                with (
+                    patch("asyncio.set_event_loop") as mock_set_loop,
+                    patch("asyncio.get_event_loop_policy", return_value=DummyPolicy()),
+                ):
                     result = decorated()
 
             assert result == "done"
@@ -109,6 +113,7 @@ class TestAsyncTask:
 
     def test_async_task_skips_setting_loop_when_already_current(self):
         """async_task should not reset the loop if it is already current."""
+
         async def my_task():
             return "done"
 
@@ -123,8 +128,10 @@ class TestAsyncTask:
 
         try:
             _get_worker_event_loop._loop = loop
-            with patch('asyncio.get_event_loop_policy', return_value=DummyPolicy()) as mock_policy, \
-                 patch('asyncio.set_event_loop') as mock_set_loop:
+            with (
+                patch("asyncio.get_event_loop_policy", return_value=DummyPolicy()) as mock_policy,
+                patch("asyncio.set_event_loop") as mock_set_loop,
+            ):
                 result = decorated()
 
             assert result == "done"
@@ -140,6 +147,7 @@ class TestAsyncTask:
 
     def test_async_task_preserves_function_metadata(self):
         """Test that async_task preserves the original function's metadata."""
+
         # Arrange
         async def my_documented_task():
             """This is my task documentation."""
@@ -154,6 +162,7 @@ class TestAsyncTask:
 
     def test_async_task_with_args_and_kwargs(self):
         """Test async_task with positional and keyword arguments."""
+
         # Arrange
         async def my_task(pos1, pos2, kwarg1=None, kwarg2="default"):
             return f"{pos1}-{pos2}-{kwarg1}-{kwarg2}"
@@ -168,6 +177,7 @@ class TestAsyncTask:
 
     def test_async_task_handles_exceptions(self):
         """Test that async_task propagates exceptions from async function."""
+
         # Arrange
         async def failing_task():
             raise ValueError("Task failed")
@@ -201,7 +211,7 @@ class TestGetDbSession:
         mock_container.db_session_factory.return_value = mock_session_factory
 
         # Act
-        with patch('core.utils.task_helpers.get_container', return_value=mock_container):
+        with patch("core.utils.task_helpers.get_container", return_value=mock_container):
             async with get_db_session() as session:
                 result_session = session
 
@@ -221,7 +231,7 @@ class TestGetDbSession:
         mock_container.db_session_factory.return_value = mock_session_factory
 
         # Act
-        with patch('core.utils.task_helpers.get_container') as mock_get_container:
+        with patch("core.utils.task_helpers.get_container") as mock_get_container:
             mock_get_container.return_value = mock_container
 
             async with get_db_session() as session:
@@ -230,109 +240,3 @@ class TestGetDbSession:
         # Assert
         mock_get_container.assert_called_once()
         mock_container.db_session_factory.assert_called_once()
-
-
-@pytest.mark.unit
-class TestRetryWithBackoff:
-    """Test retry_with_backoff function."""
-
-    def test_retry_with_backoff_first_attempt(self):
-        """Test retry with backoff on first attempt (retry count 0)."""
-        # Arrange
-        mock_task = MagicMock()
-        mock_task.request.retries = 0
-        mock_task.retry = MagicMock(side_effect=Exception("Retry scheduled"))
-        exc = ValueError("Test error")
-
-        # Act & Assert
-        with pytest.raises(Exception, match="Retry scheduled"):
-            retry_with_backoff(mock_task, exc)
-
-        # Assert - countdown should match schedule[0]
-        mock_task.retry.assert_called_once_with(countdown=DEFAULT_RETRY_SCHEDULE[0], exc=exc)
-
-    def test_retry_with_backoff_second_attempt(self):
-        """Test retry with backoff on second attempt (retry count 1)."""
-        # Arrange
-        mock_task = MagicMock()
-        mock_task.request.retries = 1
-        mock_task.retry = MagicMock(side_effect=Exception("Retry scheduled"))
-        exc = RuntimeError("Test error")
-
-        # Act & Assert
-        with pytest.raises(Exception, match="Retry scheduled"):
-            retry_with_backoff(mock_task, exc)
-
-        mock_task.retry.assert_called_once_with(countdown=DEFAULT_RETRY_SCHEDULE[1], exc=exc)
-
-    def test_retry_with_backoff_max_retries_reached(self):
-        """Test retry with backoff when max retries is reached."""
-        # Arrange
-        mock_task = MagicMock()
-        mock_task.request.retries = len(DEFAULT_RETRY_SCHEDULE)
-        exc = ValueError("Final error")
-
-        # Act
-        result = retry_with_backoff(mock_task, exc)
-
-        # Assert
-        assert result["status"] == "error"
-        assert "Final error" in result["reason"]
-        mock_task.retry.assert_not_called()
-
-    def test_retry_with_backoff_none_task_instance(self):
-        """Test retry with backoff when task_instance is None."""
-        # Arrange
-        exc = ValueError("Error with no task")
-
-        # Act
-        result = retry_with_backoff(None, exc)
-
-        # Assert
-        assert result["status"] == "error"
-        assert "Error with no task" in result["reason"]
-
-    def test_retry_with_backoff_exponential_backoff(self):
-        """Test that retry countdown follows exponential backoff pattern."""
-        # Arrange
-        exc = Exception("Test")
-
-        # Test different retry counts
-        for retry_count in range(len(DEFAULT_RETRY_SCHEDULE)):
-            mock_task = MagicMock()
-            mock_task.request.retries = retry_count
-            mock_task.retry = MagicMock(side_effect=Exception("Retry"))
-
-            expected_countdown = get_retry_delay(retry_count)
-
-            try:
-                retry_with_backoff(mock_task, exc)
-            except Exception:
-                pass
-
-            # Assert
-            mock_task.retry.assert_called_once_with(countdown=expected_countdown, exc=exc)
-
-    def test_retry_with_backoff_custom_max_retries(self):
-        """Test retry with custom max_retries value."""
-        # Arrange
-        mock_task = MagicMock()
-        mock_task.request.retries = 4
-        mock_task.retry = MagicMock(side_effect=Exception("Retry scheduled"))
-        exc = ValueError("Test error")
-
-        # Act & Assert - Should retry since 4 < 5
-        schedule = (10, 20, 30, 40, 50)
-
-        with pytest.raises(Exception, match="Retry scheduled"):
-            retry_with_backoff(mock_task, exc, schedule=schedule)
-
-        mock_task.retry.assert_called_once()
-
-        # Test when max is reached
-        mock_task2 = MagicMock()
-        mock_task2.request.retries = 5
-        result2 = retry_with_backoff(mock_task2, exc, schedule=schedule)
-
-        # Assert - Should not retry
-        assert result2["status"] == "error"
