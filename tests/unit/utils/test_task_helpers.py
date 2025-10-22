@@ -9,7 +9,9 @@ from core.utils.task_helpers import (
     _get_worker_event_loop,
     async_task,
     get_db_session,
-    retry_with_backoff
+    retry_with_backoff,
+    get_retry_delay,
+    DEFAULT_RETRY_SCHEDULE,
 )
 
 
@@ -244,10 +246,10 @@ class TestRetryWithBackoff:
 
         # Act & Assert
         with pytest.raises(Exception, match="Retry scheduled"):
-            retry_with_backoff(mock_task, exc, max_retries=3)
+            retry_with_backoff(mock_task, exc)
 
-        # Assert - countdown should be 2^0 * 60 = 60 seconds
-        mock_task.retry.assert_called_once_with(countdown=60, exc=exc)
+        # Assert - countdown should match schedule[0]
+        mock_task.retry.assert_called_once_with(countdown=DEFAULT_RETRY_SCHEDULE[0], exc=exc)
 
     def test_retry_with_backoff_second_attempt(self):
         """Test retry with backoff on second attempt (retry count 1)."""
@@ -259,20 +261,19 @@ class TestRetryWithBackoff:
 
         # Act & Assert
         with pytest.raises(Exception, match="Retry scheduled"):
-            retry_with_backoff(mock_task, exc, max_retries=3)
+            retry_with_backoff(mock_task, exc)
 
-        # Assert - countdown should be 2^1 * 60 = 120 seconds
-        mock_task.retry.assert_called_once_with(countdown=120, exc=exc)
+        mock_task.retry.assert_called_once_with(countdown=DEFAULT_RETRY_SCHEDULE[1], exc=exc)
 
     def test_retry_with_backoff_max_retries_reached(self):
         """Test retry with backoff when max retries is reached."""
         # Arrange
         mock_task = MagicMock()
-        mock_task.request.retries = 3
+        mock_task.request.retries = len(DEFAULT_RETRY_SCHEDULE)
         exc = ValueError("Final error")
 
         # Act
-        result = retry_with_backoff(mock_task, exc, max_retries=3)
+        result = retry_with_backoff(mock_task, exc)
 
         # Assert
         assert result["status"] == "error"
@@ -285,7 +286,7 @@ class TestRetryWithBackoff:
         exc = ValueError("Error with no task")
 
         # Act
-        result = retry_with_backoff(None, exc, max_retries=3)
+        result = retry_with_backoff(None, exc)
 
         # Assert
         assert result["status"] == "error"
@@ -297,22 +298,20 @@ class TestRetryWithBackoff:
         exc = Exception("Test")
 
         # Test different retry counts
-        for retry_count in range(5):
+        for retry_count in range(len(DEFAULT_RETRY_SCHEDULE)):
             mock_task = MagicMock()
             mock_task.request.retries = retry_count
             mock_task.retry = MagicMock(side_effect=Exception("Retry"))
 
-            expected_countdown = (2 ** retry_count) * 60
+            expected_countdown = get_retry_delay(retry_count)
 
-            # Act & Assert
             try:
-                retry_with_backoff(mock_task, exc, max_retries=10)
+                retry_with_backoff(mock_task, exc)
             except Exception:
                 pass
 
             # Assert
-            if retry_count < 10:
-                mock_task.retry.assert_called_once_with(countdown=expected_countdown, exc=exc)
+            mock_task.retry.assert_called_once_with(countdown=expected_countdown, exc=exc)
 
     def test_retry_with_backoff_custom_max_retries(self):
         """Test retry with custom max_retries value."""
@@ -323,15 +322,17 @@ class TestRetryWithBackoff:
         exc = ValueError("Test error")
 
         # Act & Assert - Should retry since 4 < 5
+        schedule = (10, 20, 30, 40, 50)
+
         with pytest.raises(Exception, match="Retry scheduled"):
-            retry_with_backoff(mock_task, exc, max_retries=5)
+            retry_with_backoff(mock_task, exc, schedule=schedule)
 
         mock_task.retry.assert_called_once()
 
         # Test when max is reached
         mock_task2 = MagicMock()
         mock_task2.request.retries = 5
-        result2 = retry_with_backoff(mock_task2, exc, max_retries=5)
+        result2 = retry_with_backoff(mock_task2, exc, schedule=schedule)
 
         # Assert - Should not retry
         assert result2["status"] == "error"

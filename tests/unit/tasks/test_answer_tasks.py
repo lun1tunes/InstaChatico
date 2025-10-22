@@ -12,11 +12,14 @@ import pytest
 from celery.exceptions import Retry
 
 from core.tasks import answer_tasks as tasks
-from core.utils.task_helpers import _close_worker_event_loop
+from core.utils.task_helpers import _close_worker_event_loop, DEFAULT_RETRY_SCHEDULE, get_retry_delay
+
+
+MAX_RETRIES = len(DEFAULT_RETRY_SCHEDULE)
 
 
 class DummyTask:
-    def __init__(self, *, retries: int = 0, max_retries: int = 3):
+    def __init__(self, *, retries: int = 0, max_retries: int = MAX_RETRIES):
         self.request = SimpleNamespace(id="task-1", retries=retries)
         self.max_retries = max_retries
         self.retry_calls: List[dict[str, Any]] = []
@@ -141,7 +144,8 @@ def test_generate_answer_retry(monkeypatch):
     with pytest.raises(Retry):
         _run_answer_task(task, "c1")
 
-    assert task.retry_calls[0]["kwargs"]["countdown"] == 10
+    expected_delay = get_retry_delay(1)
+    assert task.retry_calls[0]["kwargs"]["countdown"] == expected_delay
 
 
 def test_generate_answer_retry_limit(monkeypatch):
@@ -152,7 +156,7 @@ def test_generate_answer_retry_limit(monkeypatch):
     session = object()
     _patch_common(monkeypatch, container, session)
 
-    task = DummyTask(retries=3, max_retries=3)
+    task = DummyTask(retries=MAX_RETRIES, max_retries=MAX_RETRIES)
     result = _run_answer_task(task, "c1")
 
     assert result is retry_result

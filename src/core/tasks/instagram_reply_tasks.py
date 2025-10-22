@@ -4,7 +4,7 @@ import logging
 import math
 
 from ..celery_app import celery_app
-from ..utils.task_helpers import async_task, get_db_session
+from ..utils.task_helpers import async_task, get_db_session, DEFAULT_RETRY_SCHEDULE, get_retry_delay
 from ..utils.lock_manager import LockManager
 from ..config import settings
 from ..container import get_container
@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 lock_manager = LockManager(settings.celery.broker_url)
 
 
-@celery_app.task(bind=True, max_retries=3)
+MAX_RETRIES = len(DEFAULT_RETRY_SCHEDULE)
+
+
+@celery_app.task(bind=True, max_retries=MAX_RETRIES)
 @async_task
 async def send_instagram_reply_task(self, comment_id: str, answer_text: str = None):
     """Send Instagram reply - orchestration only."""
@@ -43,8 +46,11 @@ async def send_instagram_reply_task(self, comment_id: str, answer_text: str = No
                 )
 
                 if result["status"] == "retry" and self.request.retries < self.max_retries:
-                    retry_after = result.get("retry_after", 10)
-                    countdown = max(int(math.ceil(retry_after)), 1)
+                    fallback_delay = get_retry_delay(self.request.retries)
+                    retry_after = result.get("retry_after")
+                    countdown = fallback_delay
+                    if retry_after is not None:
+                        countdown = max(int(math.ceil(retry_after)), fallback_delay)
                     logger.warning(
                         f"Task retry scheduled: send_instagram_reply_task | task_id={task_id} | "
                         f"comment_id={comment_id} | retry={self.request.retries + 1}/{self.max_retries} | countdown={countdown}s"
@@ -65,7 +71,7 @@ async def send_instagram_reply_task(self, comment_id: str, answer_text: str = No
             raise
 
 
-@celery_app.task(bind=True, max_retries=3)
+@celery_app.task(bind=True, max_retries=MAX_RETRIES)
 @async_task
 async def hide_instagram_comment_task(self, comment_id: str):
     """Hide Instagram comment - orchestration only."""
@@ -90,11 +96,12 @@ async def hide_instagram_comment_task(self, comment_id: str):
                 result = await use_case.execute(comment_id, hide=True)
 
                 if result["status"] == "retry" and self.request.retries < self.max_retries:
+                    delay = get_retry_delay(self.request.retries)
                     logger.warning(
                         f"Task retry scheduled: hide_instagram_comment_task | task_id={task_id} | "
-                        f"comment_id={comment_id} | retry={self.request.retries + 1}/{self.max_retries} | countdown=10s"
+                        f"comment_id={comment_id} | retry={self.request.retries + 1}/{self.max_retries} | countdown={delay}s"
                     )
-                    raise self.retry(countdown=10)
+                    raise self.retry(countdown=delay)
 
                 logger.info(
                     f"Task completed: hide_instagram_comment_task | task_id={task_id} | "

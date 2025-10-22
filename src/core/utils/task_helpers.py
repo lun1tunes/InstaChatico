@@ -4,11 +4,13 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from functools import wraps
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 from ..container import get_container
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_RETRY_SCHEDULE: tuple[int, ...] = (15, 60, 300, 900, 3600)
 
 
 def _get_worker_event_loop() -> asyncio.AbstractEventLoop:
@@ -72,9 +74,19 @@ async def get_db_session():
         yield session
 
 
-def retry_with_backoff(task_instance, exc: Exception, max_retries: int = 3):
-    """Handle retry logic with exponential backoff."""
-    if task_instance and task_instance.request.retries < max_retries:
-        retry_countdown = 2**task_instance.request.retries * 60
-        raise task_instance.retry(countdown=retry_countdown, exc=exc)
+def get_retry_delay(retry_index: int, schedule: Sequence[int] | None = None) -> int:
+    """Return the delay for the given retry index using the provided schedule."""
+    delays = schedule or DEFAULT_RETRY_SCHEDULE
+    if retry_index < 0:
+        retry_index = 0
+    return delays[min(retry_index, len(delays) - 1)]
+
+
+def retry_with_backoff(task_instance, exc: Exception, schedule: Sequence[int] | None = None):
+    """Handle retry logic with shared backoff schedule."""
+    delays = schedule or DEFAULT_RETRY_SCHEDULE
+    if task_instance and task_instance.request.retries < len(delays):
+        delay = get_retry_delay(task_instance.request.retries, delays)
+        task_instance.retry(countdown=delay, exc=exc)
+        return {"status": "retry_scheduled", "delay": delay}
     return {"status": "error", "reason": str(exc)}

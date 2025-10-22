@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import math
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, List, Optional
@@ -12,13 +13,16 @@ import pytest
 from celery.exceptions import Retry
 
 from core.tasks import instagram_reply_tasks as tasks
-from core.utils.task_helpers import _close_worker_event_loop
+from core.utils.task_helpers import _close_worker_event_loop, DEFAULT_RETRY_SCHEDULE, get_retry_delay
+
+
+MAX_RETRIES = len(DEFAULT_RETRY_SCHEDULE)
 
 
 class DummyTask:
     """Lightweight stand-in for the bound Celery task instance."""
 
-    def __init__(self, *, retries: int = 0, max_retries: int = 3, task_id: str = "task-1"):
+    def __init__(self, *, retries: int = 0, max_retries: int = MAX_RETRIES, task_id: str = "task-1"):
         self.request = SimpleNamespace(id=task_id, retries=retries)
         self.max_retries = max_retries
         self.retry_calls: List[tuple[tuple[Any, ...], dict[str, Any]]] = []
@@ -133,13 +137,14 @@ def test_send_reply_retries_with_countdown(monkeypatch):
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
-    task = DummyTask(retries=1, max_retries=3)
+    task = DummyTask(retries=1, max_retries=MAX_RETRIES)
 
     with pytest.raises(Retry):
         _run_send_task(task, "c1")
 
     assert use_case.execute.await_count == 1
-    assert task.retry_calls[0][1]["countdown"] == 13  # ceil(12.3)
+    expected_delay = max(int(math.ceil(12.3)), get_retry_delay(1))
+    assert task.retry_calls[0][1]["countdown"] == expected_delay  # fallback schedule if longer
 
 
 def test_send_reply_returns_when_max_retries_reached(monkeypatch):
@@ -149,7 +154,7 @@ def test_send_reply_returns_when_max_retries_reached(monkeypatch):
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
-    task = DummyTask(retries=3, max_retries=3)
+    task = DummyTask(retries=MAX_RETRIES, max_retries=MAX_RETRIES)
     result = _run_send_task(task, "c1")
 
     assert result == retry_result
@@ -200,12 +205,12 @@ def test_hide_comment_retries_with_fixed_delay(monkeypatch):
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
-    task = DummyTask(retries=0, max_retries=2)
+    task = DummyTask(retries=0, max_retries=MAX_RETRIES)
 
     with pytest.raises(Retry):
         _run_hide_task(task, "c1")
 
-    assert task.retry_calls[0][1]["countdown"] == 10
+    assert task.retry_calls[0][1]["countdown"] == get_retry_delay(0)
 
 
 def test_hide_comment_returns_when_retry_limit_hit(monkeypatch):
@@ -215,7 +220,7 @@ def test_hide_comment_returns_when_retry_limit_hit(monkeypatch):
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
-    task = DummyTask(retries=3, max_retries=3)
+    task = DummyTask(retries=MAX_RETRIES, max_retries=MAX_RETRIES)
     result = _run_hide_task(task, "c1")
 
     assert result == result_payload
@@ -231,4 +236,3 @@ def test_hide_comment_propagates_exceptions(monkeypatch):
     task = DummyTask()
     with pytest.raises(RuntimeError):
         _run_hide_task(task, "c1")
-

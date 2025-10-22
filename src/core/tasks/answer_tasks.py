@@ -3,13 +3,16 @@
 import logging
 
 from ..celery_app import celery_app
-from ..utils.task_helpers import async_task, get_db_session
+from ..utils.task_helpers import async_task, get_db_session, DEFAULT_RETRY_SCHEDULE, get_retry_delay
 from ..container import get_container
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, max_retries=3)
+MAX_RETRIES = len(DEFAULT_RETRY_SCHEDULE)
+
+
+@celery_app.task(bind=True, max_retries=MAX_RETRIES)
 @async_task
 async def generate_answer_task(self, comment_id: str):
     """Generate answer for Instagram comment question - orchestration only."""
@@ -22,11 +25,12 @@ async def generate_answer_task(self, comment_id: str):
 
         # Handle retry logic
         if result["status"] == "retry" and self.request.retries < self.max_retries:
+            delay = get_retry_delay(self.request.retries)
             logger.warning(
                 f"Retrying task | comment_id={comment_id} | retry={self.request.retries} | "
-                f"reason={result.get('reason', 'unknown')}"
+                f"reason={result.get('reason', 'unknown')} | next_delay={delay}s"
             )
-            raise self.retry(countdown=10)
+            raise self.retry(countdown=delay)
 
         # Trigger reply if answer generated successfully
         if result["status"] == "success" and result.get("answer"):
