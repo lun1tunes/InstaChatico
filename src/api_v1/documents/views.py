@@ -30,6 +30,43 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
+async def _create_document_record(
+    session: AsyncSession,
+    *,
+    document_name: str,
+    document_type: str,
+    description: Optional[str],
+    s3_bucket: str,
+    s3_key: str,
+    s3_url: str,
+    file_size_bytes: int,
+    task_queue: ITaskQueue,
+) -> Document:
+    """Persist document metadata and enqueue background processing task."""
+
+    document = Document(
+        document_name=document_name,
+        document_type=document_type,
+        description=description,
+        s3_bucket=s3_bucket,
+        s3_key=s3_key,
+        s3_url=s3_url,
+        file_size_bytes=file_size_bytes,
+        processing_status="pending",
+    )
+
+    session.add(document)
+    await session.commit()
+    await session.refresh(document)
+
+    task_queue.enqueue(
+        "core.tasks.document_tasks.process_document_task",
+        str(document.id),
+    )
+
+    return document
+
+
 @router.post("/register", response_model=DocumentUploadResponse)
 async def register_document(
     s3_url: str = Form(...),
@@ -123,8 +160,8 @@ async def register_document(
 
         file_size = len(file_content) if file_content else 0
 
-        # Create database record
-        document = Document(
+        document = await _create_document_record(
+            session,
             document_name=document_name,
             document_type=document_type,
             description=description,
@@ -132,17 +169,7 @@ async def register_document(
             s3_key=s3_key,
             s3_url=s3_url,
             file_size_bytes=file_size,
-            processing_status="pending",
-        )
-
-        session.add(document)
-        await session.commit()
-        await session.refresh(document)
-
-        # Queue processing task (download from S3, process to markdown)
-        task_queue.enqueue(
-            "core.tasks.document_tasks.process_document_task",
-            str(document.id),
+            task_queue=task_queue,
         )
 
         logger.info(f"Document registered from S3: {document.id} - {document_name} - {s3_url}")
@@ -203,8 +230,8 @@ async def upload_document(
         if not success:
             raise HTTPException(status_code=500, detail=f"Failed to upload to S3: {s3_url_or_error}")
 
-        # Create database record
-        document = Document(
+        document = await _create_document_record(
+            session,
             document_name=file.filename,
             document_type=document_type,
             description=description,
@@ -212,17 +239,7 @@ async def upload_document(
             s3_key=s3_key,
             s3_url=s3_url_or_error,
             file_size_bytes=file_size,
-            processing_status="pending",
-        )
-
-        session.add(document)
-        await session.commit()
-        await session.refresh(document)
-
-        # Queue processing task
-        task_queue.enqueue(
-            "core.tasks.document_tasks.process_document_task",
-            str(document.id),
+            task_queue=task_queue,
         )
 
         logger.info(f"Document uploaded: {document.id} - {file.filename}")
