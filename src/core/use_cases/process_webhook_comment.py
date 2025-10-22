@@ -1,10 +1,11 @@
 """Process webhook comment use case - handles comment ingestion from Instagram webhooks."""
 
+import inspect
 import logging
 from typing import Callable, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, MissingGreenlet
 
 from ..config import settings
 from ..models.instagram_comment import InstagramComment
@@ -83,18 +84,29 @@ class ProcessWebhookCommentUseCase:
 
         try:
             # Check if comment already exists
-            existing = await self.comment_repo.get_with_classification(comment_id)
+            existing = await self.comment_repo.get_by_id(comment_id)
+
             if existing:
+                classification = None
+                try:
+                    classification = existing.classification
+                except MissingGreenlet:
+                    fetch_with_relationship = getattr(self.comment_repo, "get_with_classification", None)
+                    if fetch_with_relationship:
+                        fetched = fetch_with_relationship(comment_id)
+                        existing = await fetched if inspect.isawaitable(fetched) else fetched
+                        classification = existing.classification if existing else None
+
                 # Check if needs re-classification
                 should_classify = (
-                    not existing.classification
-                    or existing.classification.processing_status != ProcessingStatus.COMPLETED
+                    not classification
+                    or classification.processing_status != ProcessingStatus.COMPLETED
                 )
 
                 logger.info(
                     f"Comment already exists | comment_id={comment_id} | should_classify={should_classify} | "
-                    f"has_classification={bool(existing.classification)} | "
-                    f"classification_status={existing.classification.processing_status if existing.classification else 'N/A'}"
+                    f"has_classification={bool(classification)} | "
+                    f"classification_status={classification.processing_status if classification else 'N/A'}"
                 )
 
                 return {
