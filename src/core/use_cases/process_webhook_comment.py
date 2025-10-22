@@ -83,7 +83,7 @@ class ProcessWebhookCommentUseCase:
 
         try:
             # Check if comment already exists
-            existing = await self.comment_repo.get_by_id(comment_id)
+            existing = await self.comment_repo.get_with_classification(comment_id)
             if existing:
                 # Check if needs re-classification
                 should_classify = (
