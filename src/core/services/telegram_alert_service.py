@@ -2,7 +2,7 @@
 
 import html
 import logging
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import aiohttp
 
@@ -35,89 +35,59 @@ class TelegramAlertService:
         """Escape HTML special characters for Telegram."""
         return html.escape(text or "", quote=True)
 
-    async def send_urgent_issue_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Send urgent issue notification to Telegram
+    async def _send_comment_notification(
+        self,
+        comment_data: Dict[str, Any],
+        *,
+        formatter: Callable[[Dict[str, Any]], str],
+        notification_label: str,
+    ) -> Dict[str, Any]:
+        """Shared notification sender with consistent logging and error handling."""
 
-        Args:
-            comment_data: Dictionary containing comment information
-
-        Returns:
-            Dictionary with success status and response details
-        """
         try:
             if not self.bot_token or not self.chat_id:
                 logger.error("Telegram bot token or chat ID not configured")
                 return {"success": False, "error": "Telegram configuration missing"}
 
-            # Format the message
-            message = self._format_urgent_message(comment_data)
-
-            # Send message to Telegram
+            message = formatter(comment_data)
             response = await self._send_message(message)
 
             if response.get("ok"):
                 logger.info(
-                    f"Urgent issue notification sent successfully for comment {comment_data.get('comment_id', 'unknown')}"
+                    f"{notification_label} notification sent successfully for comment {comment_data.get('comment_id', 'unknown')}"
                 )
                 return {
                     "success": True,
                     "message_id": response.get("result", {}).get("message_id"),
                     "response": response,
                 }
-            else:
-                logger.error(f"Failed to send Telegram notification: {response}")
-                return {
-                    "success": False,
-                    "error": response.get("description", "Unknown error"),
-                    "response": response,
-                }
+
+            logger.error(f"Failed to send Telegram notification: {response}")
+            return {
+                "success": False,
+                "error": response.get("description", "Unknown error"),
+                "response": response,
+            }
 
         except Exception as e:
             logger.exception("Error sending Telegram notification")
             return {"success": False, "error": str(e)}
+
+    async def send_urgent_issue_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Send urgent issue notification to Telegram."""
+        return await self._send_comment_notification(
+            comment_data,
+            formatter=self._format_urgent_message,
+            notification_label="Urgent issue",
+        )
 
     async def send_critical_feedback_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Send critical feedback notification to Telegram
-
-        Args:
-            comment_data: Dictionary containing comment information
-
-        Returns:
-            Dictionary with success status and response details
-        """
-        try:
-            if not self.bot_token or not self.chat_id:
-                logger.error("Telegram bot token or chat ID not configured")
-                return {"success": False, "error": "Telegram configuration missing"}
-
-            # Format the message
-            message = self._format_critical_message(comment_data)
-
-            # Send message to Telegram
-            response = await self._send_message(message)
-
-            if response.get("ok"):
-                logger.info(
-                    f"Critical feedback notification sent successfully for comment {comment_data.get('comment_id', 'unknown')}"
-                )
-                return {
-                    "success": True,
-                    "message_id": response.get("result", {}).get("message_id"),
-                    "response": response,
-                }
-            else:
-                logger.error(f"Failed to send Telegram notification: {response}")
-                return {
-                    "success": False,
-                    "error": response.get("description", "Unknown error"),
-                    "response": response,
-                }
-
-        except Exception as e:
-            logger.exception("Error sending Telegram notification")
-            return {"success": False, "error": str(e)}
+        """Send critical feedback notification to Telegram."""
+        return await self._send_comment_notification(
+            comment_data,
+            formatter=self._format_critical_message,
+            notification_label="Critical feedback",
+        )
 
     def _prepare_message_data(self, comment_data: Dict[str, Any]) -> Dict[str, str]:
         """Extract and escape comment data for Telegram message."""
@@ -247,88 +217,20 @@ class TelegramAlertService:
 #toxic #abusive #moderation #violation #instagram"""
 
     async def send_partnership_proposal_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Send partnership proposal notification to Telegram
-
-        Args:
-            comment_data: Dictionary containing comment information
-
-        Returns:
-            Dictionary with success status and response details
-        """
-        try:
-            if not self.bot_token or not self.chat_id:
-                logger.error("Telegram bot token or chat ID not configured")
-                return {"success": False, "error": "Telegram configuration missing"}
-
-            # Format the message
-            message = self._format_partnership_message(comment_data)
-
-            # Send message to Telegram
-            response = await self._send_message(message)
-
-            if response.get("ok"):
-                logger.info(
-                    f"Partnership proposal notification sent successfully for comment {comment_data.get('comment_id', 'unknown')}"
-                )
-                return {
-                    "success": True,
-                    "message_id": response.get("result", {}).get("message_id"),
-                    "response": response,
-                }
-            else:
-                logger.error(f"Failed to send Telegram notification: {response}")
-                return {
-                    "success": False,
-                    "error": response.get("description", "Unknown error"),
-                    "response": response,
-                }
-
-        except Exception as e:
-            logger.exception("Error sending Telegram notification")
-            return {"success": False, "error": str(e)}
+        """Send partnership proposal notification to Telegram."""
+        return await self._send_comment_notification(
+            comment_data,
+            formatter=self._format_partnership_message,
+            notification_label="Partnership proposal",
+        )
 
     async def send_toxic_abusive_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Send toxic/abusive comment notification to Telegram
-
-        Args:
-            comment_data: Dictionary containing comment information
-
-        Returns:
-            Dictionary with success status and response details
-        """
-        try:
-            if not self.bot_token or not self.chat_id:
-                logger.error("Telegram bot token or chat ID not configured")
-                return {"success": False, "error": "Telegram configuration missing"}
-
-            # Format the message
-            message = self._format_toxic_message(comment_data)
-
-            # Send message to Telegram
-            response = await self._send_message(message)
-
-            if response.get("ok"):
-                logger.info(
-                    f"Toxic/abusive comment notification sent successfully for comment {comment_data.get('comment_id', 'unknown')}"
-                )
-                return {
-                    "success": True,
-                    "message_id": response.get("result", {}).get("message_id"),
-                    "response": response,
-                }
-            else:
-                logger.error(f"Failed to send Telegram notification: {response}")
-                return {
-                    "success": False,
-                    "error": response.get("description", "Unknown error"),
-                    "response": response,
-                }
-
-        except Exception as e:
-            logger.exception("Error sending Telegram notification")
-            return {"success": False, "error": str(e)}
+        """Send toxic/abusive comment notification to Telegram."""
+        return await self._send_comment_notification(
+            comment_data,
+            formatter=self._format_toxic_message,
+            notification_label="Toxic/abusive",
+        )
 
     async def send_notification(self, comment_data: Dict[str, Any]) -> Dict[str, Any]:
         """
