@@ -207,8 +207,6 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Other 
-
 # Security: Signature calculator with sensitive data (if contains secrets)
 # scripts/signature_calculator.py
 
@@ -221,4 +219,6 @@ src/core/agents/instructions/
 # Claude
 .claude/
 
+# Other 
+description.md
 conversations/
