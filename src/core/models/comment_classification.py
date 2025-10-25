@@ -36,7 +36,7 @@ class CommentClassification(Base):
     max_retries: Mapped[int] = mapped_column(default=3)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    classification: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     confidence: Mapped[int | None] = mapped_column(nullable=True)
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     llm_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)

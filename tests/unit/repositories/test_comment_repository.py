@@ -132,7 +132,7 @@ class TestCommentRepository:
         assert result is not None
         assert result.id == comment.id
         assert result.classification is not None
-        assert result.classification.classification == "positive"
+        assert result.classification.type == "positive"
 
     async def test_get_with_answer(self, db_session, instagram_comment_factory, answer_factory):
         """Test getting comment with answer eagerly loaded."""
@@ -166,7 +166,7 @@ class TestCommentRepository:
         assert result is not None
         assert result.id == comment.id
         assert result.classification is not None
-        assert result.classification.classification == "question / inquiry"
+        assert result.classification.type == "question / inquiry"
         assert result.question_answer is not None
         assert result.question_answer.answer == "Full test answer"
         assert result.media is not None

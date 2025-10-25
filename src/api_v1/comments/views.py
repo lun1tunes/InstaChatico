@@ -52,7 +52,7 @@ def _serialize_classification_section(classification: CommentClassification | No
         return {}
 
     return {
-        "classification": classification.classification,
+        "classification": classification.type,
         "confidence": classification.confidence,
         "reasoning": classification.reasoning,
         "input_tokens": classification.input_tokens,
@@ -71,7 +71,7 @@ def _serialize_classification_full_section(classification: CommentClassification
         return {}
 
     return {
-        "classification": classification.classification,
+        "classification": classification.type,
         "confidence": classification.confidence,
         "reasoning": classification.reasoning,
         "classification_status": (

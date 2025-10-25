@@ -44,7 +44,7 @@ class TestClassifyCommentUseCase:
         # Mock services
         mock_classification_service = MagicMock()
         mock_classification_result = SimpleNamespace(
-            classification="question / inquiry",
+            type="question / inquiry",
             confidence=95,
             reasoning="User asking about pricing",
             input_tokens=100,
@@ -209,7 +209,7 @@ class TestClassifyCommentUseCase:
         # Mock services
         mock_classification_service = MagicMock()
         mock_classification_result = SimpleNamespace(
-            classification="spam",
+            type="spam",
             confidence=99,
             reasoning="Spam detected",
             input_tokens=50,
@@ -261,7 +261,7 @@ class TestClassifyCommentUseCase:
         # Mock services
         mock_classification_service = MagicMock()
         mock_classification_result = SimpleNamespace(
-            classification=None,
+            type=None,
             confidence=0,
             reasoning=None,
             input_tokens=100,
@@ -320,7 +320,7 @@ class TestClassifyCommentUseCase:
         # Mock services
         mock_classification_service = MagicMock()
         mock_classification_result = SimpleNamespace(
-            classification="positive feedback / appreciation",
+            type="positive feedback / appreciation",
             confidence=98,
             reasoning="Positive sentiment",
             input_tokens=150,
@@ -379,7 +379,7 @@ class TestClassifyCommentUseCase:
         # Mock services
         mock_classification_service = MagicMock()
         mock_classification_result = SimpleNamespace(
-            classification="positive feedback / appreciation",
+            type="positive feedback / appreciation",
             confidence=97,
             reasoning="Positive feedback on video",
             input_tokens=80,
@@ -429,7 +429,7 @@ class TestClassifyCommentUseCase:
         # Mock services
         mock_classification_service = MagicMock()
         mock_classification_result = SimpleNamespace(
-            classification="question / inquiry",
+            type="question / inquiry",
             confidence=90,
             reasoning="Question detected",
             input_tokens=100,
@@ -496,7 +496,7 @@ class TestClassifyCommentUseCase:
         # Mock services
         mock_classification_service = MagicMock()
         mock_classification_result = SimpleNamespace(
-            classification="test",
+            type="test",
             confidence=50,
             reasoning="test",
             input_tokens=100,

@@ -32,7 +32,7 @@ async def test_get_comment_and_details(integration_environment):
         session.add(comment)
         classification = CommentClassification(
             comment_id=comment.id,
-            classification="positive feedback",
+            type="positive feedback",
             confidence=90,
         )
         session.add(classification)

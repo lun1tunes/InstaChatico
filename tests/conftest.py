@@ -205,7 +205,7 @@ def classification_factory(db_session):
     ) -> CommentClassification:
         clf = CommentClassification(
             comment_id=comment_id,
-            classification=classification,
+            type=classification,
             confidence=confidence,
             reasoning=kwargs.get("reasoning", "Test reasoning"),
             retry_count=kwargs.get("retry_count", 0),

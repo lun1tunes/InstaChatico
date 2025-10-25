@@ -43,7 +43,7 @@ def make_service(executor=None, session_service=None):
         class NoOpExecutor:
             async def run(self, *args, **kwargs):
                 mock = MagicMock()
-                mock.final_output = MagicMock(classification="", confidence=0, reasoning="")
+                mock.final_output = MagicMock(type="", confidence=0, reasoning="")
                 mock.raw_responses = []
                 return mock
 
@@ -65,7 +65,7 @@ class TestCommentClassificationService:
         """Test successful comment classification."""
         # Arrange
         mock_result = MagicMock()
-        mock_result.final_output.classification = "question / inquiry"
+        mock_result.final_output.type = "question / inquiry"
         mock_result.final_output.confidence = 95
         mock_result.final_output.reasoning = "Contains question mark"
         mock_result.raw_responses = [MagicMock()]
@@ -84,7 +84,7 @@ class TestCommentClassificationService:
 
         # Assert
         assert result.status == "success"
-        assert result.classification == "question / inquiry"
+        assert result.type == "question / inquiry"
         assert result.confidence == 95
         assert result.input_tokens == 100
         assert result.output_tokens == 50
@@ -95,7 +95,7 @@ class TestCommentClassificationService:
         """Test classification with media context."""
         # Arrange
         mock_result = MagicMock()
-        mock_result.final_output.classification = "positive"
+        mock_result.final_output.type = "positive"
         mock_result.final_output.confidence = 90
         mock_result.final_output.reasoning = "Positive feedback"
         mock_result.raw_responses = []
@@ -118,14 +118,14 @@ class TestCommentClassificationService:
 
         # Assert
         assert result.status == "success"
-        assert result.classification == "positive"
+        assert result.type == "positive"
         executor.run.assert_called_once()
         assert session_service.ensure_context_calls.await_count == 1
 
     @pytest.mark.asyncio
     async def test_classify_comment_uses_default_executor(self):
         mock_result = MagicMock()
-        mock_result.final_output.classification = "neutral"
+        mock_result.final_output.type = "neutral"
         mock_result.final_output.confidence = 50
         mock_result.final_output.reasoning = ""
         mock_result.raw_responses = []
@@ -143,7 +143,7 @@ class TestCommentClassificationService:
     @pytest.mark.asyncio
     async def test_classify_comment_stateless(self):
         mock_result = MagicMock()
-        mock_result.final_output.classification = "positive"
+        mock_result.final_output.type = "positive"
         mock_result.final_output.confidence = 90
         mock_result.final_output.reasoning = ""
         mock_result.raw_responses = []
@@ -162,7 +162,7 @@ class TestCommentClassificationService:
     async def test_classify_comment_truncates_long_input(self):
         long_text = "a" * 2100
         mock_result = MagicMock()
-        mock_result.final_output.classification = "neutral"
+        mock_result.final_output.type = "neutral"
         mock_result.final_output.confidence = 10
         mock_result.final_output.reasoning = ""
         mock_result.raw_responses = []
@@ -185,7 +185,7 @@ class TestCommentClassificationService:
         result = await service.classify_comment("text", conversation_id="conv")
 
         assert result.status == "error"
-        assert result.classification == "spam / irrelevant"
+        assert result.type == "spam / irrelevant"
         assert result.error == "boom"
 
     def test_create_media_description_handles_missing_fields(self):
@@ -253,7 +253,7 @@ class TestCommentClassificationService:
     @pytest.mark.asyncio
     async def test_classify_comment_no_usage_data(self):
         mock_result = MagicMock()
-        mock_result.final_output.classification = "neutral"
+        mock_result.final_output.type = "neutral"
         mock_result.final_output.confidence = 42
         mock_result.final_output.reasoning = ""
         mock_result.raw_responses = [SimpleNamespace(usage=None)]
@@ -278,7 +278,7 @@ class TestCommentClassificationService:
 
         # Assert
         assert result.status == "error"
-        assert result.classification == "spam / irrelevant"  # Fallback
+        assert result.type == "spam / irrelevant"  # Fallback
         assert result.confidence == 0
 
     def test_generate_conversation_id_top_level(self):

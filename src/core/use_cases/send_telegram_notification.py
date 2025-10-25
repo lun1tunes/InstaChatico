@@ -53,7 +53,7 @@ class SendTelegramNotificationUseCase:
             return {"status": "error", "reason": "no_classification"}
 
         # 2. Check if notification is needed
-        classification = comment.classification.classification.lower()
+        classification = comment.classification.type.lower()
         notify_classifications = [
             "urgent issue / complaint",
             "critical feedback",
@@ -79,12 +79,12 @@ class SendTelegramNotificationUseCase:
         # 3. Prepare notification data
         logger.info(
             f"Preparing Telegram notification | comment_id={comment_id} | "
-            f"classification={comment.classification.classification} | username={comment.username}"
+            f"classification={comment.classification.type} | username={comment.username}"
         )
         comment_data = {
             "comment_id": comment.id,
             "comment_text": comment.text,
-            "classification": comment.classification.classification,
+            "classification": comment.classification.type,
             "confidence": comment.classification.confidence,
             "reasoning": comment.classification.reasoning,
             "media_id": comment.media_id,

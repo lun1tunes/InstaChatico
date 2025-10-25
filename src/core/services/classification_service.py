@@ -172,13 +172,13 @@ class CommentClassificationService(BaseService):
                 logger.debug("No raw_responses available for token extraction")
 
             logger.info(
-                f"Classification result: {classification_result.classification} (confidence: {classification_result.confidence})"
+                f"Classification result: {classification_result.type} (confidence: {classification_result.confidence})"
             )
 
             return ClassificationResponse(
                 status="success",
                 comment_id=conversation_id or "unknown",
-                classification=classification_result.classification,
+                type=classification_result.type,
                 confidence=classification_result.confidence,
                 reasoning=classification_result.reasoning,
                 input_tokens=input_tokens,
@@ -245,7 +245,7 @@ class CommentClassificationService(BaseService):
         return ClassificationResponse(
             status="error",
             comment_id="unknown",
-            classification="spam / irrelevant",  # Safe fallback
+            type="spam / irrelevant",  # Safe fallback
             confidence=0,
             reasoning=f"Classification failed: {error_message}",
             error=error_message,

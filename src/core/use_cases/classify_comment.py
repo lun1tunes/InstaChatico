@@ -96,7 +96,7 @@ class ClassifyCommentUseCase:
             result = await self.classification_service.classify_comment(comment.text, conversation_id, media_context)
 
             # 9. Save results
-            classification.classification = result.classification
+            classification.type = result.type
             classification.confidence = result.confidence
             classification.reasoning = result.reasoning
             classification.input_tokens = result.input_tokens
@@ -116,7 +116,7 @@ class ClassifyCommentUseCase:
 
         logger.info(
             f"Classification completed | comment_id={comment_id} | "
-            f"classification={result.classification} | confidence={result.confidence} | "
+            f"classification={result.type} | confidence={result.confidence} | "
             f"input_tokens={result.input_tokens} | output_tokens={result.output_tokens} | "
             f"has_error={bool(result.error)}"
         )
@@ -124,7 +124,7 @@ class ClassifyCommentUseCase:
         return {
             "status": "success",
             "comment_id": comment_id,
-            "classification": result.classification,
+            "classification": result.type,
             "confidence": result.confidence,
         }
 

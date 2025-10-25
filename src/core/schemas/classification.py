@@ -9,7 +9,7 @@ class ClassificationResultData(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    classification: str = Field(..., description="Classification category")
+    type: str = Field(..., description="Classification category")
     confidence: int = Field(..., ge=0, le=100, description="Confidence score 0-100")
     reasoning: str | None = Field(None, description="AI reasoning for classification")
     input_tokens: int | None = Field(None, description="Input tokens used")
@@ -34,7 +34,7 @@ class ClassificationResponse(BaseModel):
 
     status: str = Field(..., description="Processing status")
     comment_id: str = Field(..., description="Instagram comment ID")
-    classification: str | None = Field(None, description="Classification category")
+    type: str | None = Field(None, description="Classification category")
     confidence: int | None = Field(None, ge=0, le=100, description="Confidence score 0-100")
     reasoning: str | None = Field(None, description="AI reasoning")
     input_tokens: int | None = Field(None, description="Input tokens used")

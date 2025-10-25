@@ -18,7 +18,7 @@ from .instructions.instruction_classification import CLASSIFICATION_INSTRUCTIONS
 class ClassificationResult(BaseModel):
     """Pydantic model for structured classification output using OpenAI Agents SDK"""
 
-    classification: Literal[
+    type: Literal[
         "positive feedback",
         "critical feedback",
         "urgent issue / complaint",

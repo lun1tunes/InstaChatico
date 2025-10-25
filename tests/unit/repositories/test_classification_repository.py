@@ -17,7 +17,7 @@ class TestClassificationRepository:
         repo = ClassificationRepository(db_session)
         clf_entity = CommentClassification(
             comment_id=comment.id,
-            classification="question / inquiry",
+            type="question / inquiry",
             confidence=95,
             reasoning="Contains question mark",
             input_tokens=100,
@@ -29,7 +29,7 @@ class TestClassificationRepository:
 
         # Assert
         assert classification.comment_id == comment.id
-        assert classification.classification == "question / inquiry"
+        assert classification.type == "question / inquiry"
         assert classification.confidence == 95
         assert classification.reasoning == "Contains question mark"
         assert classification.input_tokens == 100
@@ -48,7 +48,7 @@ class TestClassificationRepository:
         # Assert
         assert classification is not None
         assert classification.comment_id == comment.id
-        assert classification.classification == "positive"
+        assert classification.type == "positive"
 
     async def test_get_by_comment_id_nonexistent(self, db_session):
         """Test getting classification for non-existent comment returns None."""
@@ -228,8 +228,8 @@ class TestClassificationRepository:
         clf2 = await repo.get_by_comment_id(comment2.id)
 
         # Assert
-        assert clf1.classification == "positive"
-        assert clf2.classification == "question / inquiry"
+        assert clf1.type == "positive"
+        assert clf2.type == "question / inquiry"
 
     async def test_get_pending_retries_empty_result(self, db_session):
         """Test get_pending_retries returns empty list when no retries pending."""
@@ -325,7 +325,7 @@ class TestClassificationRepository:
         repo = ClassificationRepository(db_session)
         clf_entity = CommentClassification(
             comment_id=comment.id,
-            classification="positive",
+            type="positive",
         )
 
         # Act
@@ -334,6 +334,6 @@ class TestClassificationRepository:
 
         # Assert
         assert clf.comment_id == comment.id
-        assert clf.classification == "positive"
+        assert clf.type == "positive"
         assert clf.confidence is None
         assert clf.reasoning is None
