@@ -566,3 +566,41 @@ class TestMediaService:
 
         # Assert
         assert owner_id is None
+
+    async def test_set_comment_status_generic_exception(
+        self, media_service, mock_instagram_service, db_session
+    ):
+        """Test set_comment_status handles generic exceptions properly."""
+        # Arrange
+        media_id = "media_exception"
+
+        # Mock Instagram service to succeed
+        mock_instagram_service.set_media_comment_status.return_value = {
+            "success": True
+        }
+
+        # Create existing media
+        existing_media = Media(
+            id=media_id,
+            permalink="https://instagram.com/p/TEST",
+            media_type="IMAGE",
+            is_comment_enabled=True
+        )
+        db_session.add(existing_media)
+        await db_session.commit()
+
+        # Mock session.commit to raise an exception
+        original_commit = db_session.commit
+        async def mock_commit():
+            raise RuntimeError("Database commit failed")
+        db_session.commit = mock_commit
+
+        # Act
+        result = await media_service.set_comment_status(media_id, False, db_session)
+
+        # Restore original commit
+        db_session.commit = original_commit
+
+        # Assert
+        assert result["success"] is False
+        assert "Database commit failed" in result["error"]

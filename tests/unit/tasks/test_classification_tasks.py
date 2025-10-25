@@ -171,6 +171,52 @@ def test_classify_comment_success_handles_enqueue_errors(monkeypatch):
     assert result["status"] == "success"
 
 
+def test_classify_comment_urgent_handles_hide_enqueue_error(monkeypatch):
+    """Test that hide task enqueue errors are handled gracefully for urgent issues."""
+    queue = DummyQueue(raise_error=RuntimeError("Redis connection failed"))
+    use_case = _make_use_case(
+        {"status": "success", "comment_id": "c_urgent", "classification": "Urgent Issue / Complaint"}
+    )
+    container = DummyContainer(classify_use_case=use_case, queue=queue)
+    session = object()
+    _patch_common(monkeypatch, container, session)
+
+    task = DummyTask()
+    result = _run_classify_task(task, "c_urgent")
+
+    # Task should still succeed even if hide enqueue fails
+    assert result["status"] == "success"
+
+
+def test_classify_comment_urgent_handles_telegram_enqueue_error(monkeypatch):
+    """Test that telegram task enqueue errors are handled gracefully for urgent issues."""
+
+    class SelectiveFailQueue:
+        """Queue that fails only on telegram task enqueue."""
+        def __init__(self):
+            self.calls = []
+
+        def enqueue(self, task_name, *args):
+            if "telegram" in task_name:
+                raise ConnectionError("Telegram queue unavailable")
+            self.calls.append((task_name, *args))
+            return f"task-{len(self.calls)}"
+
+    queue = SelectiveFailQueue()
+    use_case = _make_use_case(
+        {"status": "success", "comment_id": "c_telegram", "classification": "Critical Feedback"}
+    )
+    container = DummyContainer(classify_use_case=use_case, queue=queue)
+    session = object()
+    _patch_common(monkeypatch, container, session)
+
+    task = DummyTask()
+    result = _run_classify_task(task, "c_telegram")
+
+    # Task should still succeed even if telegram enqueue fails
+    assert result["status"] == "success"
+
+
 def test_classify_comment_retry(monkeypatch):
     queue = DummyQueue()
     use_case = _make_use_case({"status": "retry", "reason": "rate_limited"})

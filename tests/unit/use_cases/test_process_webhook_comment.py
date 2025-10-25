@@ -673,3 +673,72 @@ class TestProcessWebhookCommentUseCase:
         assert result["should_classify"] is False
         assert "unexpected error" in result["reason"].lower()
         mock_session.rollback.assert_awaited_once()
+
+    async def test_execute_existing_comment_lazy_load_error(self, db_session, comment_factory, media_factory):
+        """Test MissingGreenlet exception when accessing classification relationship."""
+        from sqlalchemy.exc import MissingGreenlet
+        from core.models.comment_classification import CommentClassification
+        
+        # Arrange
+        media = await media_factory(media_id="media_1", owner="acct_1")
+        comment = await comment_factory(comment_id="comment_existing", media_id=media.id)
+        
+        # Create classification for the comment
+        existing_classification = CommentClassification(
+            comment_id="comment_existing",
+            processing_status=ProcessingStatus.COMPLETED
+        )
+        
+        # Mock services
+        mock_media_service = MagicMock()
+        mock_media_service.get_or_create_media = AsyncMock(return_value=media)
+        
+        mock_task_queue = MagicMock()
+        
+        # Mock comment that raises MissingGreenlet when accessing classification
+        mock_existing_comment = MagicMock()
+        mock_existing_comment.id = "comment_existing"
+        mock_existing_comment.media_id = "media_1"
+        
+        # When accessing .classification, raise MissingGreenlet
+        def raise_missing_greenlet():
+            raise MissingGreenlet("greenlet_error")
+        
+        type(mock_existing_comment).classification = property(lambda self: raise_missing_greenlet())
+        
+        # Mock the fetched comment with classification loaded
+        mock_fetched_comment = MagicMock()
+        mock_fetched_comment.classification = existing_classification
+        
+        # Mock repositories
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_by_id = AsyncMock(return_value=mock_existing_comment)
+        mock_comment_repo.get_with_classification = AsyncMock(return_value=mock_fetched_comment)
+        
+        mock_media_repo = MagicMock()
+        
+        # Create use case
+        use_case = ProcessWebhookCommentUseCase(
+            session=db_session,
+            media_service=mock_media_service,
+            task_queue=mock_task_queue,
+            comment_repository_factory=lambda session: mock_comment_repo,
+            media_repository_factory=lambda session: mock_media_repo,
+        )
+        
+        # Act
+        result = await use_case.execute(
+            comment_id="comment_existing",
+            media_id="media_1",
+            user_id="user_123",
+            username="testuser",
+            text="Test comment",
+            entry_timestamp=1234567890,
+        )
+        
+        # Assert
+        assert result["status"] == "exists"
+        assert result["comment_id"] == "comment_existing"
+        assert result["should_classify"] is False  # Classification is completed
+        # Verify fallback to get_with_classification was called
+        mock_comment_repo.get_with_classification.assert_awaited_once_with("comment_existing")
