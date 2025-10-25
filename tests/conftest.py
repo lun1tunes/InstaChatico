@@ -182,6 +182,7 @@ def media_factory(db_session):
             shortcode=kwargs.get("shortcode"),
             timestamp=kwargs.get("timestamp"),
             is_comment_enabled=kwargs.get("is_comment_enabled"),
+            is_processing_enabled=kwargs.get("is_processing_enabled", True),
             username=kwargs.get("username"),
             owner=kwargs.get("owner"),
             raw_data=kwargs.get("raw_data"),

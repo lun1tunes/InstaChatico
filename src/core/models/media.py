@@ -33,6 +33,12 @@ class Media(Base):
     is_comment_enabled: Mapped[bool | None] = mapped_column(
         Boolean, nullable=True, comment="Whether comments are enabled"
     )
+    is_processing_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="Whether automated processing/classification is enabled",
+    )
     username: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Username of the media owner")
     owner: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Owner account ID")
 

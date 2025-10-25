@@ -61,6 +61,7 @@ class StubMediaService:
             comments_count=0,
             like_count=0,
             shortcode=f"short_{media_id[-5:]}",
+             is_processing_enabled=True,
             created_at=now_db_utc(),
             updated_at=now_db_utc(),
         )

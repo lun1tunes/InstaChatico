@@ -25,6 +25,7 @@ class MediaBase(BaseModel):
     shortcode: Optional[str] = Field(None, description="Instagram shortcode")
     timestamp: Optional[datetime] = Field(None, description="When the media was posted")
     is_comment_enabled: Optional[bool] = Field(None, description="Whether comments are enabled")
+    is_processing_enabled: Optional[bool] = Field(None, description="Whether automated processing is enabled")
     username: Optional[str] = Field(None, description="Username of the media owner")
     owner: Optional[str] = Field(None, description="Owner account ID")
 
@@ -67,6 +68,7 @@ class InstagramMediaAPIResponse(BaseModel):
     shortcode: Optional[str] = None
     timestamp: Optional[str] = None
     is_comment_enabled: Optional[bool] = None
+    is_processing_enabled: Optional[bool] = None
     username: Optional[str] = None
     owner: Optional[dict] = None
     children: Optional[dict] = None  # Contains {"data": [CarouselChild, ...]}

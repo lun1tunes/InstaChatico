@@ -92,6 +92,7 @@ class MediaService:
                 shortcode=media_info.get("shortcode"),
                 timestamp=self._parse_timestamp(media_info.get("timestamp")),
                 is_comment_enabled=media_info.get("is_comment_enabled"),
+                is_processing_enabled=media_info.get("is_processing_enabled", True),
                 username=media_info.get("username"),
                 owner=self._parse_owner(media_info.get("owner")),
                 raw_data=media_info,

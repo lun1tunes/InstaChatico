@@ -69,6 +69,13 @@ class ClassifyCommentUseCase:
             )
             return {"status": "error", "reason": "media_unavailable"}
 
+        if media.is_processing_enabled is False:
+            logger.info(
+                f"Media processing disabled | comment_id={comment_id} | media_id={media.id} | "
+                f"operation=classify_comment"
+            )
+            return {"status": "skipped", "reason": "media_processing_disabled"}
+
         # 3. Wait for media context if needed
         if await self._should_wait_for_media_context(media):
             logger.info(
