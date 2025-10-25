@@ -168,11 +168,11 @@ async def patch_media(
     updated_comment_status = False
 
     if body.is_comment_enabled is not None and body.is_comment_enabled != media.is_comment_enabled:
-            media_service = container.media_service()
-            result = await media_service.set_comment_status(media_id, bool(body.is_comment_enabled), session)
-            if not result.get("success"):
-                raise JsonApiError(502, 5002, "Failed to update Instagram comment status")
-            updated_comment_status = True
+        media_service = container.media_service()
+        result = await media_service.set_comment_status(media_id, bool(body.is_comment_enabled), session)
+        if not result.get("success"):
+            raise JsonApiError(502, 5002, "Failed to update Instagram comment status")
+        updated_comment_status = True
 
     if body.context is not None:
         media.media_context = str(body.context)
@@ -199,7 +199,7 @@ async def list_media_comments(
 ):
     await _get_media_or_404(session, media_id)
     per_page = _clamp_per_page(per_page, COMMENTS_DEFAULT_PER_PAGE, COMMENTS_MAX_PER_PAGE)
-    offsets = (page - 1) * per_page
+    offset = (page - 1) * per_page
     status_values: List[int] = []
     if status_multi:
         status_values.extend(status_multi)
@@ -218,7 +218,7 @@ async def list_media_comments(
 
     repo = CommentRepository(session)
     total = await repo.count_for_media(media_id, statuses=statuses)
-    items = await repo.list_for_media(media_id, offset=offsets, limit=per_page, statuses=statuses)
+    items = await repo.list_for_media(media_id, offset=offset, limit=per_page, statuses=statuses)
     payload = [serialize_comment(comment) for comment in items]
     response = CommentListResponse(
         meta=PaginationMeta(page=page, per_page=per_page, total=total),

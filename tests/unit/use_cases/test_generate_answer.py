@@ -15,6 +15,9 @@ from types import SimpleNamespace
 
 from core.use_cases.generate_answer import GenerateAnswerUseCase
 from core.models.question_answer import AnswerStatus
+from core.utils.task_helpers import DEFAULT_RETRY_SCHEDULE
+
+TASK_MAX_RETRIES = len(DEFAULT_RETRY_SCHEDULE)
 
 
 @pytest.mark.unit
@@ -174,7 +177,7 @@ class TestGenerateAnswerUseCase:
         comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
 
         from core.models.question_answer import QuestionAnswer
-        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=3)
+        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=TASK_MAX_RETRIES)
 
         # Mock services
         mock_qa_service = MagicMock()
@@ -213,7 +216,7 @@ class TestGenerateAnswerUseCase:
         comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
 
         from core.models.question_answer import QuestionAnswer
-        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=3)
+        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=TASK_MAX_RETRIES)
 
         # Mock services
         mock_qa_service = MagicMock()
@@ -235,8 +238,8 @@ class TestGenerateAnswerUseCase:
             answer_repository_factory=lambda session: mock_answer_repo,
         )
 
-        # Act - retry_count = 3, equals max_retries
-        result = await use_case.execute(comment_id="comment_1", retry_count=3)
+        # Act - retry_count = TASK_MAX_RETRIES, equals max_retries
+        result = await use_case.execute(comment_id="comment_1", retry_count=TASK_MAX_RETRIES)
 
         # Assert
         assert result["status"] == "error"
@@ -487,7 +490,7 @@ class TestGenerateAnswerUseCase:
         comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
 
         from core.models.question_answer import QuestionAnswer
-        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=3)
+        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=TASK_MAX_RETRIES)
 
         # Mock services - raises exception
         mock_qa_service = MagicMock()
@@ -573,7 +576,7 @@ class TestGenerateAnswerUseCase:
         comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
 
         from core.models.question_answer import QuestionAnswer
-        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=3)
+        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=TASK_MAX_RETRIES)
 
         # Mock services - raises exception
         mock_qa_service = MagicMock()
@@ -595,8 +598,8 @@ class TestGenerateAnswerUseCase:
             answer_repository_factory=lambda session: mock_answer_repo,
         )
 
-        # Act - retry_count = 3, which equals max_retries
-        result = await use_case.execute(comment_id="comment_1", retry_count=3)
+        # Act - retry_count = TASK_MAX_RETRIES, which equals max_retries
+        result = await use_case.execute(comment_id="comment_1", retry_count=TASK_MAX_RETRIES)
 
         # Assert - should return error, not retry
         assert result["status"] == "error"
@@ -611,7 +614,7 @@ class TestGenerateAnswerUseCase:
         comment = await comment_factory(comment_id="comment_1", conversation_id="conv_1")
 
         from core.models.question_answer import QuestionAnswer
-        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=3)
+        answer_record = QuestionAnswer(comment_id="comment_1", max_retries=TASK_MAX_RETRIES)
 
         # Mock services - raises exception
         mock_qa_service = MagicMock()
@@ -633,8 +636,8 @@ class TestGenerateAnswerUseCase:
             answer_repository_factory=lambda session: mock_answer_repo,
         )
 
-        # Act - retry_count = 2, which is less than max_retries = 3
-        result = await use_case.execute(comment_id="comment_1", retry_count=2)
+        # Act - retry_count = TASK_MAX_RETRIES - 1, which is less than max_retries
+        result = await use_case.execute(comment_id="comment_1", retry_count=TASK_MAX_RETRIES - 1)
 
         # Assert - should return retry
         assert result["status"] == "retry"

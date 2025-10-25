@@ -224,7 +224,7 @@ def test_classify_comment_retry(monkeypatch):
     session = object()
     _patch_common(monkeypatch, container, session)
 
-    task = DummyTask(retries=1, max_retries=3)
+    task = DummyTask(retries=1, max_retries=MAX_RETRIES)
     with pytest.raises(Retry):
         _run_classify_task(task, "c1")
 

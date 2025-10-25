@@ -210,7 +210,7 @@ def classification_factory(db_session):
             confidence=confidence,
             reasoning=kwargs.get("reasoning", "Test reasoning"),
             retry_count=kwargs.get("retry_count", 0),
-            max_retries=kwargs.get("max_retries", 3),
+            max_retries=kwargs.get("max_retries", 5),
             input_tokens=kwargs.get("input_tokens", 100),
             output_tokens=kwargs.get("output_tokens", 50),
             processing_status=kwargs.get("processing_status", ProcessingStatus.COMPLETED),
@@ -240,6 +240,7 @@ def answer_factory(db_session):
             input_tokens=kwargs.get("input_tokens", 200),
             output_tokens=kwargs.get("output_tokens", 150),
             processing_status=kwargs.get("processing_status", AnswerStatus.COMPLETED),
+            max_retries=kwargs.get("max_retries", 5),
             reply_id=kwargs.get("reply_id"),
             reply_sent=kwargs.get("reply_sent", False),
         )

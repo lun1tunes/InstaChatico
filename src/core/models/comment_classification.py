@@ -33,7 +33,7 @@ class CommentClassification(Base):
     processing_completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     retry_count: Mapped[int] = mapped_column(default=0)
-    max_retries: Mapped[int] = mapped_column(default=3)
+    max_retries: Mapped[int] = mapped_column(default=5)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     type: Mapped[str | None] = mapped_column(String(50), nullable=True)

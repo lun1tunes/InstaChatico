@@ -248,8 +248,8 @@ class TestClassificationRepository:
         comment = await instagram_comment_factory()
         clf = await classification_factory(
             comment_id=comment.id,
-            retry_count=3,
-            max_retries=3,
+            retry_count=5,
+            max_retries=5,
             processing_status=ProcessingStatus.RETRY
         )
         repo = ClassificationRepository(db_session)
