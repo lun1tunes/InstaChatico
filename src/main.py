@@ -5,11 +5,13 @@ import logging
 import os
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 import uvicorn
 
 from api_v1 import router as router_v1
 from api_v1.docs.views import create_docs_router
+from api_v1.comments.views import JsonApiError, json_api_error_handler, validation_error_handler
 from core.config import settings
 from core.logging_config import configure_logging, trace_id_ctx
 import uuid
@@ -37,6 +39,8 @@ app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
 app.include_router(router=router_v1, prefix=settings.api_v1_prefix)
 docs_router = create_docs_router(app)
 app.include_router(router=docs_router)
+app.add_exception_handler(JsonApiError, json_api_error_handler)
+app.add_exception_handler(RequestValidationError, validation_error_handler)
 
 
 # Middleware для проверки X-Hub подписи

@@ -134,6 +134,15 @@ class IInstagramService(Protocol):
         """
         ...
 
+    async def delete_comment_reply(self, reply_id: str) -> Dict[str, Any]:
+        """
+        Delete an Instagram reply/comment by ID.
+
+        Args:
+            reply_id: ID of the reply to delete
+        """
+        ...
+
     async def set_media_comment_status(self, media_id: str, enabled: bool) -> Dict[str, Any]:
         """
         Enable or disable comments on an Instagram media post.

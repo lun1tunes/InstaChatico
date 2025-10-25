@@ -2,7 +2,7 @@
 
 import logging
 from typing import Optional
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,3 +52,17 @@ class MediaRepository(BaseRepository[Media]):
         """Check if media exists by ID."""
         media = await self.get_by_id(media_id)
         return media is not None
+
+    async def count_all(self) -> int:
+        result = await self.session.execute(select(func.count()).select_from(Media))
+        return result.scalar() or 0
+
+    async def list_paginated(self, *, offset: int, limit: int) -> list[Media]:
+        stmt = (
+            select(Media)
+            .order_by(Media.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

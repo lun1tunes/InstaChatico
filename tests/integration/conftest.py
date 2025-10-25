@@ -61,7 +61,7 @@ class StubMediaService:
             comments_count=0,
             like_count=0,
             shortcode=f"short_{media_id[-5:]}",
-             is_processing_enabled=True,
+            is_processing_enabled=True,
             created_at=now_db_utc(),
             updated_at=now_db_utc(),
         )
@@ -85,8 +85,9 @@ class StubInstagramService:
         self.closed = False
 
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
-        self.replies.append({"comment_id": comment_id, "message": message})
-        return {"success": True, "reply_id": f"reply-{comment_id}"}
+        reply_id = f"reply-{comment_id}"
+        self.replies.append({"comment_id": comment_id, "message": message, "reply_id": reply_id})
+        return {"success": True, "reply_id": reply_id}
 
     async def hide_comment(self, comment_id: str, hide: bool = True) -> Dict[str, Any]:
         if hide:
@@ -113,6 +114,10 @@ class StubInstagramService:
 
     async def set_media_comment_status(self, media_id: str, enabled: bool) -> Dict[str, Any]:
         return {"success": True, "media_id": media_id, "is_comment_enabled": enabled}
+
+    async def delete_comment_reply(self, reply_id: str) -> Dict[str, Any]:
+        self.replies = [r for r in self.replies if r.get("reply_id") != reply_id]
+        return {"success": True, "reply_id": reply_id}
 
 
 class StubS3Service:
@@ -227,6 +232,7 @@ async def integration_environment(test_engine):
     original_bucket = settings.s3.bucket_name
     original_s3_url = settings.s3.s3_url
     original_base_account_id = settings.instagram.base_account_id
+    original_json_api_token = settings.json_api.token
 
     settings.app_secret = "test_app_secret"
     settings.app_webhook_verify_token = "verify_token"
@@ -234,6 +240,7 @@ async def integration_environment(test_engine):
     settings.s3.bucket_name = "test-bucket"
     settings.s3.s3_url = "s3.test.local"
     settings.instagram.base_account_id = "acct"
+    settings.json_api.token = "test-json-token"
 
     reset_container()
     container = get_container()
@@ -267,6 +274,7 @@ async def integration_environment(test_engine):
                 "s3_service": s3_service,
                 "document_processor": document_processor,
                 "telegram_service": telegram_service,
+                "json_api_token": settings.json_api.token,
             }
     finally:
         container.task_queue.reset_override()
@@ -287,6 +295,7 @@ async def integration_environment(test_engine):
         settings.s3.bucket_name = original_bucket
         settings.s3.s3_url = original_s3_url
         settings.instagram.base_account_id = original_base_account_id
+        settings.json_api.token = original_json_api_token
 
         if original_development_mode is None:
             os.environ.pop("DEVELOPMENT_MODE", None)

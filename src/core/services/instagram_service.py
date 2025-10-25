@@ -501,3 +501,27 @@ class InstagramGraphAPIService:
         async with session.get(url, params=params) as response:
             response_data = await response.json()
             return response.status, response_data
+
+    async def delete_comment_reply(self, reply_id: str) -> Dict[str, Any]:
+        """Delete an Instagram reply/comment by ID."""
+        url = f"{self.base_url}/{reply_id}"
+        params = {"access_token": self.access_token}
+
+        logger.info(f"Deleting Instagram reply | reply_id={reply_id}")
+
+        try:
+            session = await self._get_session()
+            async with session.delete(url, params=params) as response:
+                response_data = await response.json()
+
+                if response.status == 200:
+                    logger.info(f"Instagram reply deleted | reply_id={reply_id}")
+                    return {"success": True, "status_code": response.status, "response": response_data}
+
+                logger.error(
+                    f"Failed to delete Instagram reply | reply_id={reply_id} | status_code={response.status} | error={response_data}"
+                )
+                return {"success": False, "status_code": response.status, "error": response_data}
+        except Exception as exc:
+            logger.exception(f"Exception while deleting reply {reply_id}")
+            return {"success": False, "error": str(exc), "status_code": None}

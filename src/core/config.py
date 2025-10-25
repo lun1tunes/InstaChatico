@@ -98,6 +98,10 @@ class DocsSettings(BaseModel):
     password: str = os.getenv("DOCS_PASSWORD", "")
 
 
+class JsonApiSettings(BaseModel):
+    token: str = Field(default_factory=lambda: os.getenv("JSON_API_TOKEN", "").strip())
+
+
 class S3Settings(BaseSettings):
     """S3 storage settings for SelectCloud."""
 
@@ -136,6 +140,7 @@ class Settings(BaseSettings):
     telegram: TelegramSettings = TelegramSettings()
     health: HealthSettings = HealthSettings()
     docs: DocsSettings = DocsSettings()
+    json_api: JsonApiSettings = JsonApiSettings()
     s3: S3Settings = S3Settings()
 
     @model_validator(mode="after")

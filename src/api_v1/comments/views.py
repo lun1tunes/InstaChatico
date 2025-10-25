@@ -1,425 +1,343 @@
-"""Instagram comment management endpoints."""
+"""JSON API endpoints for media, comments, and answers."""
 
-import logging
-from typing import Any, Literal
+from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from typing import Any, List, Optional
+
+from fastapi import APIRouter, Body, Depends, Header, Path, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
+from core.config import settings
 from core.models import db_helper
-from core.models.instagram_comment import InstagramComment
-from core.models.comment_classification import CommentClassification
-from core.models.question_answer import QuestionAnswer
+from core.repositories.answer import AnswerRepository
 from core.repositories.comment import CommentRepository
-from core.schemas.comment import (
-    CommentDetailResponse,
-    CommentWithClassificationResponse,
-    CommentWithAnswerResponse,
-    CommentFullResponse,
-    HideCommentResponse,
-    UnhideCommentResponse,
-    SendReplyResponse,
-    CommentListResponse,
-    CommentListItem,
-)
+from core.repositories.media import MediaRepository
+from core.repositories.classification import ClassificationRepository
+from core.models.comment_classification import CommentClassification, ProcessingStatus
 from core.use_cases.hide_comment import HideCommentUseCase
-from core.dependencies import (
-    get_hide_comment_use_case,
-    get_comment_repository,
-    get_task_queue,
+from core.dependencies import get_container
+from api_v1.comments.serializers import (
+    AnswerListResponse,
+    AnswerResponse,
+    CommentListResponse,
+    CommentResponse,
+    EmptyResponse,
+    ErrorDetail,
+    ErrorResponse,
+    MediaListResponse,
+    MediaResponse,
+    PaginationMeta,
+    SimpleMeta,
+    normalize_classification_label,
+    parse_status_filters,
+    serialize_answer,
+    serialize_comment,
+    serialize_media,
 )
-from core.interfaces.services import ITaskQueue
+from core.utils.time import now_db_utc
+from .schemas import (
+    AnswerUpdateRequest,
+    ClassificationUpdateRequest,
+    CommentVisibilityRequest,
+    MediaUpdateRequest,
+)
 
-logger = logging.getLogger(__name__)
-router = APIRouter(tags=["Comments"], prefix="/comments")
+router = APIRouter(tags=["JSON API"])
 
-
-# =========================================================================
-# Serialization helpers
-# =========================================================================
-
-
-def _serialize_comment_base(comment: InstagramComment) -> dict[str, Any]:
-    """Serialize common comment details using Pydantic v2 model validation."""
-    return CommentDetailResponse.model_validate(comment).model_dump()
-
-
-def _serialize_classification_section(classification: CommentClassification | None) -> dict[str, Any]:
-    """Serialize classification details for classification-focused responses."""
-    if not classification:
-        return {}
-
-    return {
-        "classification": classification.type,
-        "confidence": classification.confidence,
-        "reasoning": classification.reasoning,
-        "input_tokens": classification.input_tokens,
-        "output_tokens": classification.output_tokens,
-        "processing_status": (
-            classification.processing_status.value if classification.processing_status else None
-        ),
-        "processing_started_at": classification.processing_started_at,
-        "processing_completed_at": classification.processing_completed_at,
-    }
+MEDIA_DEFAULT_PER_PAGE = 10
+MEDIA_MAX_PER_PAGE = 30
+COMMENTS_DEFAULT_PER_PAGE = 30
+COMMENTS_MAX_PER_PAGE = 100
 
 
-def _serialize_classification_full_section(classification: CommentClassification | None) -> dict[str, Any]:
-    """Serialize classification details for the full comment response."""
-    if not classification:
-        return {}
-
-    return {
-        "classification": classification.type,
-        "confidence": classification.confidence,
-        "reasoning": classification.reasoning,
-        "classification_status": (
-            classification.processing_status.value if classification.processing_status else None
-        ),
-        "classification_started_at": classification.processing_started_at,
-        "classification_completed_at": classification.processing_completed_at,
-        "classification_input_tokens": classification.input_tokens,
-        "classification_output_tokens": classification.output_tokens,
-    }
+JSON_API_PATH_PREFIXES = (
+    f"{settings.api_v1_prefix}/media",
+    f"{settings.api_v1_prefix}/comments",
+    f"{settings.api_v1_prefix}/answers",
+)
 
 
-def _serialize_answer_section(answer: QuestionAnswer | None) -> dict[str, Any]:
-    """Serialize answer details for answer-focused responses."""
+class JsonApiError(Exception):
+    def __init__(self, status_code: int, code: int, message: str) -> None:
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+
+
+def require_service_token(authorization: Optional[str] = Header(default=None)) -> None:
+    token = settings.json_api.token
+    if not token:
+        raise JsonApiError(503, 5001, "JSON API token is not configured")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise JsonApiError(401, 4001, "Missing or invalid Authorization header")
+    provided = authorization.split(" ", 1)[1].strip()
+    if provided != token:
+        raise JsonApiError(401, 4002, "Unauthorized")
+
+
+def _is_json_api_path(path: str) -> bool:
+    return any(path.startswith(prefix) for prefix in JSON_API_PATH_PREFIXES)
+
+
+async def json_api_error_handler(_: Request, exc: JsonApiError):
+    error = ErrorDetail(code=exc.code, message=exc.message)
+    body = ErrorResponse(meta=SimpleMeta(error=error))
+    return JSONResponse(status_code=exc.status_code, content=body.model_dump())
+
+
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    if not _is_json_api_path(request.url.path):
+        return await request_validation_exception_handler(request, exc)
+    error = ErrorDetail(code=4000, message="Validation error", details=exc.errors())
+    body = ErrorResponse(meta=SimpleMeta(error=error))
+    return JSONResponse(status_code=422, content=body.model_dump())
+
+
+async def _get_media_or_404(session: AsyncSession, media_id: str) -> Any:
+    repo = MediaRepository(session)
+    media = await repo.get_by_id(media_id)
+    if not media:
+        raise JsonApiError(404, 4040, "Media not found")
+    return media
+
+
+async def _get_comment_or_404(session: AsyncSession, comment_id: str) -> Any:
+    repo = CommentRepository(session)
+    comment = await repo.get_full(comment_id)
+    if not comment:
+        raise JsonApiError(404, 4041, "Comment not found")
+    return comment
+
+
+async def _get_answer_or_404(session: AsyncSession, answer_id: int) -> Any:
+    repo = AnswerRepository(session)
+    answer = await repo.get_by_id(answer_id)
     if not answer:
-        return {}
-
-    return {
-        "answer": answer.answer,
-        "answer_confidence": answer.answer_confidence,
-        "answer_quality_score": answer.answer_quality_score,
-        "input_tokens": answer.input_tokens,
-        "output_tokens": answer.output_tokens,
-        "processing_status": (answer.processing_status.value if answer.processing_status else None),
-        "processing_started_at": answer.processing_started_at,
-        "processing_completed_at": answer.processing_completed_at,
-    }
+        raise JsonApiError(404, 4042, "Answer not found")
+    return answer
 
 
-def _serialize_answer_full_section(answer: QuestionAnswer | None) -> dict[str, Any]:
-    """Serialize answer and reply details for the full comment response."""
-    if not answer:
-        return {}
-
-    return {
-        "answer": answer.answer,
-        "answer_confidence": answer.answer_confidence,
-        "answer_quality_score": answer.answer_quality_score,
-        "answer_status": (answer.processing_status.value if answer.processing_status else None),
-        "answer_started_at": answer.processing_started_at,
-        "answer_completed_at": answer.processing_completed_at,
-        "answer_input_tokens": answer.input_tokens,
-        "answer_output_tokens": answer.output_tokens,
-        "answer_processing_time_ms": answer.processing_time_ms,
-        "reply_sent": answer.reply_sent,
-        "reply_sent_at": answer.reply_sent_at,
-        "reply_status": answer.reply_status,
-        "reply_id": answer.reply_id,
-    }
+def _clamp_per_page(value: int, default: int, max_value: int) -> int:
+    if value is None:
+        return default
+    return min(max(value, 1), max_value)
 
 
-# ============================================================================
-# Comment Retrieval Endpoints
-# ============================================================================
-
-
-@router.get("/{comment_id}", response_model=CommentDetailResponse)
-async def get_comment(
-    comment_id: str,
-    comment_repo: CommentRepository = Depends(get_comment_repository),
-):
-    """
-    Get basic comment information with hiding status.
-
-    Returns:
-        CommentDetailResponse with id, text, username, hiding status, etc.
-    """
-    comment = await comment_repo.get_by_id(comment_id)
-
-    if not comment:
-        raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
-
-    return CommentDetailResponse.model_validate(comment)
-
-
-@router.get("/{comment_id}/classification", response_model=CommentWithClassificationResponse)
-async def get_comment_with_classification(
-    comment_id: str,
-    comment_repo: CommentRepository = Depends(get_comment_repository),
-):
-    """
-    Get comment with classification details.
-
-    Returns:
-        CommentWithClassificationResponse including classification, confidence, reasoning, tokens
-    """
-    comment = await comment_repo.get_with_classification(comment_id)
-
-    if not comment:
-        raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
-
-    response_data = _serialize_comment_base(comment)
-    response_data.update(_serialize_classification_section(comment.classification))
-
-    return CommentWithClassificationResponse(**response_data)
-
-
-@router.get("/{comment_id}/answer", response_model=CommentWithAnswerResponse)
-async def get_comment_with_answer(
-    comment_id: str,
-    comment_repo: CommentRepository = Depends(get_comment_repository),
-):
-    """
-    Get comment with answer details.
-
-    Returns:
-        CommentWithAnswerResponse including answer, confidence, quality score, tokens
-    """
-    comment = await comment_repo.get_with_answer(comment_id)
-
-    if not comment:
-        raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
-
-    response_data = _serialize_comment_base(comment)
-    response_data.update(_serialize_answer_section(comment.question_answer))
-
-    return CommentWithAnswerResponse(**response_data)
-
-
-@router.get("/{comment_id}/full", response_model=CommentFullResponse)
-async def get_comment_full(
-    comment_id: str,
-    comment_repo: CommentRepository = Depends(get_comment_repository),
-):
-    """
-    Get complete comment information with classification, answer, and reply status.
-
-    Returns:
-        CommentFullResponse with all available data about the comment
-    """
-    comment = await comment_repo.get_full(comment_id)
-
-    if not comment:
-        raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
-
-    response_data = _serialize_comment_base(comment)
-    response_data.update(_serialize_classification_full_section(comment.classification))
-    response_data.update(_serialize_answer_full_section(comment.question_answer))
-
-    return CommentFullResponse(**response_data)
-
-
-@router.get("/", response_model=CommentListResponse)
-async def list_comments(
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    classification: str | None = Query(None, description="Filter by classification"),
-    is_hidden: bool | None = Query(None, description="Filter by hidden status"),
-    has_reply: bool | None = Query(None, description="Filter by reply status"),
+@router.get("/media")
+async def list_media(
+    _: None = Depends(require_service_token),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(MEDIA_DEFAULT_PER_PAGE, ge=1),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
-    """
-    List comments with pagination and filters.
-
-    Args:
-        page: Page number (1-indexed)
-        page_size: Number of items per page (max 100)
-        classification: Filter by classification category
-        is_hidden: Filter by hidden status
-        has_reply: Filter by whether reply was sent
-
-    Returns:
-        CommentListResponse with paginated comments
-    """
-    # Build query with filters
-    query = select(InstagramComment).options(
-        selectinload(InstagramComment.classification), selectinload(InstagramComment.question_answer)
+    per_page = _clamp_per_page(per_page, MEDIA_DEFAULT_PER_PAGE, MEDIA_MAX_PER_PAGE)
+    offset = (page - 1) * per_page
+    repo = MediaRepository(session)
+    total = await repo.count_all()
+    items = await repo.list_paginated(offset=offset, limit=per_page)
+    payload = [serialize_media(media) for media in items]
+    response = MediaListResponse(
+        meta=PaginationMeta(page=page, per_page=per_page, total=total),
+        payload=payload,
     )
-
-    if is_hidden is not None:
-        query = query.where(InstagramComment.is_hidden == is_hidden)
-
-    if classification is not None:
-        query = query.join(InstagramComment.classification).where(
-            CommentClassification.classification == classification
-        )
-
-    if has_reply is not None:
-        query = query.join(InstagramComment.question_answer).where(QuestionAnswer.reply_sent == has_reply)
-
-    # Order by created_at descending (newest first)
-    query = query.order_by(InstagramComment.created_at.desc())
-
-    # Count total
-    count_query = select(func.count()).select_from(query.subquery())
-    total_result = await session.execute(count_query)
-    total = total_result.scalar()
-
-    # Paginate
-    offset = (page - 1) * page_size
-    query = query.offset(offset).limit(page_size)
-
-    result = await session.execute(query)
-    comments = result.scalars().all()
-
-    # Build response items
-    comment_items = []
-    for comment in comments:
-        item_data = {
-            **CommentDetailResponse.model_validate(comment).model_dump(),
-        }
-
-        if comment.classification:
-            item_data.update(
-                {
-                    "classification": comment.classification.classification,
-                    "confidence": comment.classification.confidence,
-                }
-            )
-
-        if comment.question_answer:
-            item_data["reply_sent"] = comment.question_answer.reply_sent
-
-        comment_items.append(CommentListItem(**item_data))
-
-    total_pages = (total + page_size - 1) // page_size
-
-    return CommentListResponse(
-        comments=comment_items,
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
-    )
+    return response
 
 
-# ============================================================================
-# Comment Action Endpoints
-# ============================================================================
-
-
-@router.post("/{comment_id}/hide", response_model=HideCommentResponse)
-async def hide_comment(
-    comment_id: str,
-    comment_repo: CommentRepository = Depends(get_comment_repository),
-    task_queue: ITaskQueue = Depends(get_task_queue),
+@router.get("/media/{id}")
+async def get_media(
+    _: None = Depends(require_service_token),
+    media_id: str = Path(..., alias="id"),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
-    """
-    Hide an Instagram comment (queues Celery task).
-
-    Returns:
-        HideCommentResponse with task ID or error
-    """
-    comment = await comment_repo.get_by_id(comment_id)
-
-    if not comment:
-        raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
-
-    if comment.is_hidden:
-        return HideCommentResponse(
-            status="already_hidden",
-            message=f"Comment {comment_id} is already hidden",
-            comment_id=comment_id,
-            hidden_at=comment.hidden_at,
-        )
-
-    # Queue hide task
-    task_id = task_queue.enqueue(
-        "core.tasks.instagram_reply_tasks.hide_instagram_comment_task",
-        comment_id,
-    )
-
-    logger.info(f"Hide task queued for comment {comment_id} (task_id={task_id})")
-
-    return HideCommentResponse(
-        status="queued",
-        message=f"Hide task queued for comment {comment_id}",
-        comment_id=comment_id,
-        task_id=task_id,
-    )
+    media = await _get_media_or_404(session, media_id)
+    return MediaResponse(meta=SimpleMeta(), payload=serialize_media(media))
 
 
-@router.post("/{comment_id}/unhide", response_model=UnhideCommentResponse)
-async def unhide_comment(
-    comment_id: str,
-    use_case: HideCommentUseCase = Depends(get_hide_comment_use_case),
+@router.patch("/media/{id}")
+async def patch_media(
+    _: None = Depends(require_service_token),
+    media_id: str = Path(..., alias="id"),
+    body: MediaUpdateRequest = Body(...),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
-    """
-    Unhide an Instagram comment (executes immediately using use case).
+    media = await _get_media_or_404(session, media_id)
+    container = get_container()
+    updated_comment_status = False
 
-    This endpoint demonstrates the new DI pattern:
-    - Dependencies injected via FastAPI Depends
-    - Use case provided by DI container
-    - All services injected through protocols (IInstagramService)
+    if body.is_comment_enabled is not None and body.is_comment_enabled != media.is_comment_enabled:
+            media_service = container.media_service()
+            result = await media_service.set_comment_status(media_id, bool(body.is_comment_enabled), session)
+            if not result.get("success"):
+                raise JsonApiError(502, 5002, "Failed to update Instagram comment status")
+            updated_comment_status = True
 
-    Returns:
-        UnhideCommentResponse with success/error status
-    """
-    # Use Clean Architecture with Dependency Injection
-    result = await use_case.execute(comment_id, hide=False)
+    if body.context is not None:
+        media.media_context = str(body.context)
 
-    if result["status"] == "error":
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to unhide comment: {result.get('reason', 'Unknown error')}",
-        )
+    if body.is_processing_enabled is not None:
+        media.is_processing_enabled = bool(body.is_processing_enabled)
 
-    if result["status"] == "not_hidden":
-        return UnhideCommentResponse(
-            status="not_hidden",
-            message=f"Comment {comment_id} is not hidden",
-            comment_id=comment_id,
-        )
+    await session.commit()
+    if updated_comment_status:
+        await session.refresh(media)
 
-    logger.info(f"Successfully unhid comment {comment_id}")
-
-    return UnhideCommentResponse(
-        status="success",
-        message=f"Comment {comment_id} unhidden successfully",
-        comment_id=comment_id,
-    )
+    return MediaResponse(meta=SimpleMeta(), payload=serialize_media(media))
 
 
-@router.post("/{comment_id}/reply", response_model=SendReplyResponse)
-async def send_manual_reply(
-    comment_id: str,
-    message: str = Query(..., min_length=1, max_length=500, description="Reply message"),
-    comment_repo: CommentRepository = Depends(get_comment_repository),
-    task_queue: ITaskQueue = Depends(get_task_queue),
+@router.get("/media/{id}/comments")
+async def list_media_comments(
+    _: None = Depends(require_service_token),
+    media_id: str = Path(..., alias="id"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(COMMENTS_DEFAULT_PER_PAGE, ge=1),
+    status_multi: Optional[List[int]] = Query(default=None, alias="status[]"),
+    status_csv: Optional[str] = Query(default=None, alias="status"),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
-    """
-    Send a manual reply to a comment (queues Celery task).
+    await _get_media_or_404(session, media_id)
+    per_page = _clamp_per_page(per_page, COMMENTS_DEFAULT_PER_PAGE, COMMENTS_MAX_PER_PAGE)
+    offsets = (page - 1) * per_page
+    status_values: List[int] = []
+    if status_multi:
+        status_values.extend(status_multi)
+    if status_csv:
+        for part in status_csv.split(","):
+            part = part.strip()
+            if part:
+                try:
+                    status_values.append(int(part))
+                except ValueError:
+                    raise JsonApiError(400, 4006, "Invalid status filter")
 
-    Args:
-        comment_id: Instagram comment ID
-        message: Reply text (1-500 characters)
+    statuses = parse_status_filters(status_values) if status_values else None
+    if status_values and statuses is None:
+        raise JsonApiError(400, 4006, "Invalid status filter")
 
-    Returns:
-        SendReplyResponse with task ID or error
-    """
-    comment = await comment_repo.get_by_id(comment_id)
-
-    if not comment:
-        raise HTTPException(status_code=404, detail=f"Comment {comment_id} not found")
-
-    # Queue reply task
-    task_id = task_queue.enqueue(
-        "core.tasks.instagram_reply_tasks.send_instagram_reply_task",
-        comment_id,
-        message,
+    repo = CommentRepository(session)
+    total = await repo.count_for_media(media_id, statuses=statuses)
+    items = await repo.list_for_media(media_id, offset=offsets, limit=per_page, statuses=statuses)
+    payload = [serialize_comment(comment) for comment in items]
+    response = CommentListResponse(
+        meta=PaginationMeta(page=page, per_page=per_page, total=total),
+        payload=payload,
     )
+    return response
 
-    logger.info(f"Manual reply task queued for comment {comment_id} (task_id={task_id})")
 
-    return SendReplyResponse(
-        status="queued",
-        message=f"Reply task queued for comment {comment_id}",
-        comment_id=comment_id,
-        task_id=task_id,
-        reply_text=message,
-    )
+@router.delete("/comments/{id}")
+async def delete_comment(
+    _: None = Depends(require_service_token),
+    comment_id: str = Path(..., alias="id"),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+):
+    comment = await _get_comment_or_404(session, comment_id)
+    await session.delete(comment)
+    await session.commit()
+    return EmptyResponse(meta=SimpleMeta())
+
+
+@router.patch("/comments/{id}")
+async def patch_comment_visibility(
+    _: None = Depends(require_service_token),
+    comment_id: str = Path(..., alias="id"),
+    body: CommentVisibilityRequest = Body(...),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+):
+    hide = bool(body.is_hidden)
+    container = get_container()
+    use_case: HideCommentUseCase = container.hide_comment_use_case(session=session)
+    result = await use_case.execute(comment_id, hide=hide)
+    if result.get("status") == "error":
+        raise JsonApiError(502, 5003, "Failed to update comment visibility")
+
+    comment = await _get_comment_or_404(session, comment_id)
+    return CommentResponse(meta=SimpleMeta(), payload=serialize_comment(comment))
+
+
+@router.patch("/comments/{id}/classification")
+async def patch_comment_classification(
+    _: None = Depends(require_service_token),
+    comment_id: str = Path(..., alias="id"),
+    body: ClassificationUpdateRequest = Body(...),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+):
+    normalized_label = normalize_classification_label(str(body.type))
+    if not normalized_label:
+        raise JsonApiError(400, 4009, "Unknown classification type")
+    reasoning = str(body.reasoning).strip()
+
+    repo = ClassificationRepository(session)
+    classification: Optional[CommentClassification] = await repo.get_by_comment_id(comment_id)
+    if not classification:
+        classification = CommentClassification(comment_id=comment_id)
+        session.add(classification)
+
+    classification.type = normalized_label
+    classification.reasoning = reasoning
+    classification.confidence = None
+    classification.processing_status = ProcessingStatus.COMPLETED
+    classification.processing_completed_at = now_db_utc()
+    classification.last_error = None
+    await session.commit()
+
+    comment = await _get_comment_or_404(session, comment_id)
+    return CommentResponse(meta=SimpleMeta(), payload=serialize_comment(comment))
+
+
+@router.get("/comments/{id}/answers")
+async def list_answers_for_comment(
+    _: None = Depends(require_service_token),
+    comment_id: str = Path(..., alias="id"),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+):
+    comment = await _get_comment_or_404(session, comment_id)
+    answers = []
+    if comment.question_answer:
+        answers.append(serialize_answer(comment.question_answer))
+    return AnswerListResponse(meta=SimpleMeta(), payload=answers)
+
+
+@router.patch("/answers/{id}")
+async def patch_answer(
+    _: None = Depends(require_service_token),
+    answer_id: int = Path(..., alias="id"),
+    body: AnswerUpdateRequest = Body(...),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+):
+    answer = await _get_answer_or_404(session, answer_id)
+    answer.answer = str(body.answer)
+
+    if body.quality_score is not None:
+        answer.answer_quality_score = int(body.quality_score)
+
+    if body.confidence is not None:
+        answer.answer_confidence = body.confidence / 100
+
+    await session.commit()
+    await session.refresh(answer)
+    return AnswerResponse(meta=SimpleMeta(), payload=serialize_answer(answer))
+
+
+@router.delete("/answers/{id}")
+async def delete_answer(
+    _: None = Depends(require_service_token),
+    answer_id: int = Path(..., alias="id"),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+):
+    answer = await _get_answer_or_404(session, answer_id)
+    if not answer.reply_id:
+        raise JsonApiError(400, 4012, "Answer does not have an Instagram reply")
+
+    instagram_service = get_container().instagram_service()
+    result = await instagram_service.delete_comment_reply(answer.reply_id)
+    if not result.get("success"):
+        raise JsonApiError(502, 5004, "Failed to delete reply on Instagram")
+
+    answer.reply_sent = False
+    answer.reply_status = "deleted"
+    answer.reply_error = None
+    await session.commit()
+    return EmptyResponse(meta=SimpleMeta())
