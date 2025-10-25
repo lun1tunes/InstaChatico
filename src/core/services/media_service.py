@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 from ..utils.time import now_db_utc
 
@@ -201,3 +201,58 @@ class MediaService:
         except Exception as e:
             logger.error(f"Exception while ensuring media {media_id} exists: {e}")
             return False
+
+    async def set_comment_status(
+        self,
+        media_id: str,
+        enabled: bool,
+        session: AsyncSession,
+    ) -> Dict[str, Any]:
+        """Enable or disable comments for a media item and persist the change."""
+        logger.info(
+            f"Setting comment status | media_id={media_id} | enabled={enabled}"
+        )
+
+        try:
+            api_result = await self.instagram_service.set_media_comment_status(media_id, enabled)
+            if not api_result.get("success"):
+                logger.error(
+                    f"Failed to update remote comment status | media_id={media_id} | error={api_result.get('error')}"
+                )
+                return api_result
+
+            media_repo = MediaRepository(session)
+            media = await media_repo.get_by_id(media_id)
+            if not media:
+                logger.debug(f"Media {media_id} missing locally, attempting to create")
+                media = await self.get_or_create_media(media_id, session)
+
+            if not media:
+                logger.error(f"Unable to update comment status; media {media_id} not found")
+                await session.rollback()
+                return {
+                    "success": False,
+                    "error": "media_not_found",
+                }
+
+            media.is_comment_enabled = enabled
+            media.updated_at = now_db_utc()
+            await media_repo.update(media)
+            await session.commit()
+            await session.refresh(media)
+
+            logger.info(
+                f"Media comment status updated | media_id={media_id} | enabled={enabled}"
+            )
+            return {
+                "success": True,
+                "media_id": media_id,
+                "is_comment_enabled": enabled,
+            }
+
+        except Exception as exc:
+            logger.exception(
+                f"Exception while updating media comment status | media_id={media_id} | error={exc}"
+            )
+            await session.rollback()
+            return {"success": False, "error": str(exc)}

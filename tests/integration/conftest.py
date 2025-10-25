@@ -68,6 +68,12 @@ class StubMediaService:
         await session.flush()
         return media
 
+    async def set_comment_status(self, media_id: str, enabled: bool, session: AsyncSession) -> Dict[str, Any]:
+        media = await self.get_or_create_media(media_id, session)
+        media.is_comment_enabled = enabled
+        await session.flush()
+        return {"success": True, "media_id": media_id, "is_comment_enabled": enabled}
+
 
 class StubInstagramService:
     """Instagram API stub covering the methods used in tests."""
@@ -103,6 +109,9 @@ class StubInstagramService:
                 "permalink": f"https://instagram.com/p/{media_id}",
             },
         }
+
+    async def set_media_comment_status(self, media_id: str, enabled: bool) -> Dict[str, Any]:
+        return {"success": True, "media_id": media_id, "is_comment_enabled": enabled}
 
 
 class StubS3Service:

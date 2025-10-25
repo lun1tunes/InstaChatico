@@ -664,6 +664,64 @@ class TestInstagramServiceAPIMethods:
         await service.close()
 
     @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_set_media_comment_status_disable_success(self, mock_session_class):
+        """Disabling comments succeeds and sends correct payload."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"success": True})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=mock_response)
+        mock_session.closed = False
+        mock_session_class.return_value = mock_session
+
+        service = make_service()
+        result = await service.set_media_comment_status("media_1", enabled=False)
+
+        assert result["success"] is True
+        called_params = mock_session.post.call_args.kwargs["params"]
+        assert called_params["comment_enabled"] == "false"
+        await service.close()
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_set_media_comment_status_failure(self, mock_session_class):
+        """API failure returns error payload."""
+        mock_response = AsyncMock()
+        mock_response.status = 400
+        mock_response.json = AsyncMock(return_value={"error": "bad_request"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=mock_response)
+        mock_session.closed = False
+        mock_session_class.return_value = mock_session
+
+        service = make_service()
+        result = await service.set_media_comment_status("media_1", enabled=True)
+
+        assert result["success"] is False
+        assert result["status_code"] == 400
+        await service.close()
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_set_media_comment_status_exception(self, mock_session_class):
+        """Exceptions are captured and surfaced."""
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(side_effect=Exception("boom"))
+        mock_session.closed = False
+        mock_session_class.return_value = mock_session
+
+        service = make_service()
+        result = await service.set_media_comment_status("media_1", enabled=True)
+
+        assert result["success"] is False
+        assert "boom" in result["error"]
+        await service.close()
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
     async def test_hide_comment_success(self, mock_session_class):
         """Test successful comment hiding."""
         mock_response = AsyncMock()

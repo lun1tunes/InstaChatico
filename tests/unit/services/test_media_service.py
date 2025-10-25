@@ -216,6 +216,97 @@ class TestMediaService:
         assert media.media_url == "https://example.com/img1.jpg"  # First child used
         mock_task_queue.enqueue.assert_called_once()
 
+    async def test_set_comment_status_updates_existing_media(
+        self, media_service, mock_instagram_service, db_session
+    ):
+        """set_comment_status updates DB when API succeeds."""
+        mock_instagram_service.set_media_comment_status = AsyncMock(return_value={"success": True})
+
+        media = Media(
+            id="media_toggle",
+            permalink="https://instagram.com/p/toggle",
+            media_type="IMAGE",
+            media_url="https://cdn/img.jpg",
+            caption="caption",
+            is_comment_enabled=True,
+        )
+        db_session.add(media)
+        await db_session.commit()
+
+        result = await media_service.set_comment_status("media_toggle", False, db_session)
+
+        assert result["success"] is True
+        refreshed = await db_session.get(Media, "media_toggle")
+        assert refreshed.is_comment_enabled is False
+        mock_instagram_service.set_media_comment_status.assert_awaited_once_with("media_toggle", False)
+
+    async def test_set_comment_status_returns_api_error(
+        self, media_service, mock_instagram_service, db_session
+    ):
+        """API failure is propagated and DB remains unchanged."""
+        mock_instagram_service.set_media_comment_status = AsyncMock(
+            return_value={"success": False, "error": "bad"}
+        )
+
+        media = Media(
+            id="media_toggle2",
+            permalink="https://instagram.com/p/toggle2",
+            media_type="IMAGE",
+            media_url="https://cdn/img2.jpg",
+            caption="caption",
+            is_comment_enabled=True,
+        )
+        db_session.add(media)
+        await db_session.commit()
+
+        result = await media_service.set_comment_status("media_toggle2", False, db_session)
+
+        assert result["success"] is False
+        refreshed = await db_session.get(Media, "media_toggle2")
+        assert refreshed.is_comment_enabled is True
+
+    async def test_set_comment_status_media_created_when_missing(
+        self, media_service, mock_instagram_service, db_session, monkeypatch
+    ):
+        """Missing media triggers get_or_create_media helper."""
+        mock_instagram_service.set_media_comment_status = AsyncMock(return_value={"success": True})
+
+        new_media = Media(
+            id="media_new",
+            permalink="https://instagram.com/p/new",
+            media_type="IMAGE",
+            media_url="https://cdn/new.jpg",
+            caption="new",
+            is_comment_enabled=True,
+        )
+
+        async def fake_get_or_create(media_id, session):
+            session.add(new_media)
+            await session.flush()
+            return new_media
+
+        mock_get_or_create = AsyncMock(side_effect=fake_get_or_create)
+        monkeypatch.setattr(media_service, "get_or_create_media", mock_get_or_create)
+
+        result = await media_service.set_comment_status("media_new", False, db_session)
+
+        assert result["success"] is True
+        refreshed = await db_session.get(Media, "media_new")
+        assert refreshed.is_comment_enabled is False
+        mock_get_or_create.assert_awaited_once()
+
+    async def test_set_comment_status_media_missing_failure(
+        self, media_service, mock_instagram_service, db_session, monkeypatch
+    ):
+        """If media cannot be created, method returns error."""
+        mock_instagram_service.set_media_comment_status = AsyncMock(return_value={"success": True})
+        monkeypatch.setattr(media_service, "get_or_create_media", AsyncMock(return_value=None))
+
+        result = await media_service.set_comment_status("ghost_media", True, db_session)
+
+        assert result["success"] is False
+        assert result["error"] == "media_not_found"
+
     async def test_get_or_create_media_new_queue_failure(
         self, media_service, mock_instagram_service, mock_task_queue, db_session
     ):

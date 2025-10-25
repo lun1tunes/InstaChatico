@@ -17,6 +17,9 @@ class StubInstagramService:
             raise RuntimeError("network failure")
         return self.result
 
+    async def set_media_comment_status(self, media_id: str, enabled: bool):
+        return {"success": True, "media_id": media_id, "is_comment_enabled": enabled}
+
 
 class StubAlertService:
     def __init__(self):

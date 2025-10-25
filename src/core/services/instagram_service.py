@@ -391,6 +391,48 @@ class InstagramGraphAPIService:
             logger.exception("Exception while getting page info")
             return {"success": False, "error": str(e), "status_code": None}
 
+    async def set_media_comment_status(self, media_id: str, enabled: bool) -> Dict[str, Any]:
+        """Enable or disable comments for a specific media item."""
+        url = f"{self.base_url}/{media_id}"
+        params = {
+            "access_token": self.access_token,
+            "comment_enabled": str(enabled).lower(),
+        }
+
+        action = "Enabling" if enabled else "Disabling"
+        logger.info(f"{action} comments | media_id={media_id} | enabled={enabled}")
+
+        try:
+            session = await self._get_session()
+            async with session.post(url, params=params) as response:
+                response_data = await response.json()
+
+                if response.status == 200:
+                    logger.info(
+                        f"Comment status updated | media_id={media_id} | enabled={enabled} | status_code={response.status}"
+                    )
+                    return {
+                        "success": True,
+                        "status_code": response.status,
+                        "response": response_data,
+                    }
+
+                logger.error(
+                    f"Failed to update comment status | media_id={media_id} | status_code={response.status} | error={response_data}"
+                )
+                return {
+                    "success": False,
+                    "status_code": response.status,
+                    "error": response_data,
+                }
+
+        except Exception as exc:
+            logger.error(
+                f"Comment status update exception | media_id={media_id} | error={str(exc)}",
+                exc_info=True,
+            )
+            return {"success": False, "error": str(exc), "status_code": None}
+
     async def hide_comment(self, comment_id: str, hide: bool = True) -> Dict[str, Any]:
         """
         Hide or unhide an Instagram comment.

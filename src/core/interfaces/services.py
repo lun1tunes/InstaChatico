@@ -134,6 +134,19 @@ class IInstagramService(Protocol):
         """
         ...
 
+    async def set_media_comment_status(self, media_id: str, enabled: bool) -> Dict[str, Any]:
+        """
+        Enable or disable comments on an Instagram media post.
+
+        Args:
+            media_id: ID of the media post
+            enabled: True to enable comments, False to disable
+
+        Returns:
+            Dict with success status and response data
+        """
+        ...
+
     async def validate_token(self) -> Dict[str, Any]:
         """
         Validate the Instagram access token.
@@ -169,6 +182,15 @@ class IMediaService(Protocol):
         Returns:
             Media model instance or None if failed
         """
+        ...
+
+    async def set_comment_status(
+        self,
+        media_id: str,
+        enabled: bool,
+        session: AsyncSession,
+    ) -> Dict[str, Any]:
+        """Enable or disable comments for a media record and persist change."""
         ...
 
 
