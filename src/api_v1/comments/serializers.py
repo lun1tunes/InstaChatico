@@ -35,14 +35,12 @@ MEDIA_TYPE_CODES: dict[str, int] = {
 
 CLASSIFICATION_TYPE_CODES: dict[str, int] = {
     "positive feedback": 1,
-    "positive feedback / appreciation": 1,
     "critical feedback": 2,
     "urgent issue / complaint": 3,
     "question / inquiry": 4,
     "partnership proposal": 5,
     "toxic / abusive": 6,
     "spam / irrelevant": 7,
-    "other": 8,
 }
 
 PROCESSING_STATUS_CODES: dict[ProcessingStatus, int] = {

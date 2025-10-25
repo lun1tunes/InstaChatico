@@ -109,7 +109,7 @@ def test_format_datetime_returns_iso():
 
 def test_classification_type_to_code_handles_synonyms():
     assert classification_type_to_code("positive feedback") == 1
-    assert classification_type_to_code("positive feedback / appreciation") == 1
+    assert classification_type_to_code("positive feedback / appreciation") is None
     assert classification_type_to_code("unknown") is None
 
 
