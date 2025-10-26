@@ -15,6 +15,7 @@ from api_v1.comments.views import JsonApiError, json_api_error_handler, validati
 from core.config import settings
 from core.logging_config import configure_logging, trace_id_ctx
 import uuid
+from fastapi.middleware.cors import CORSMiddleware
 
 
 @asynccontextmanager
@@ -36,6 +37,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins,
+    allow_credentials=settings.cors_allow_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(router=router_v1, prefix=settings.api_v1_prefix)
 docs_router = create_docs_router(app)
 app.include_router(router=docs_router)

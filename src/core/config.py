@@ -1,7 +1,7 @@
 import os
 from typing import Self
-from pydantic import BaseModel, Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field, model_validator, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict, EnvSettingsSource
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -130,11 +130,21 @@ class S3Settings(BaseSettings):
         return self
 
 
+class RelaxedEnvSettingsSource(EnvSettingsSource):
+    def decode_complex_value(self, field_name, field, value):
+        try:
+            return super().decode_complex_value(field_name, field, value)
+        except Exception:
+            return value
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
     api_v1_prefix: str = "/api/v1"
     app_secret: str = Field(default_factory=lambda: os.getenv("APP_SECRET", "").strip())
     app_webhook_verify_token: str = Field(default_factory=lambda: os.getenv("TOKEN", "").strip())
+    cors_allowed_origins: list[str] = Field(default_factory=lambda: ["*"])
+    cors_allow_credentials: bool = Field(default=False)
     db: DbSettings = DbSettings()
     celery: CelerySettings = CelerySettings()
     openai: OpenAISettings = OpenAISettings()
@@ -153,6 +163,39 @@ class Settings(BaseSettings):
         if not self.app_webhook_verify_token:
             raise ValueError("TOKEN environment variable (used as webhook verify token) must be set.")
         return self
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, value):
+        if value is None:
+            return ["*"]
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return ["*"]
+            if stripped == "*":
+                return ["*"]
+            return [item.strip() for item in stripped.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            origins = [str(item).strip() for item in value if str(item).strip()]
+            return origins or ["*"]
+        raise ValueError("Invalid cors_allowed_origins format; provide comma-separated string or list.")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        return (
+            init_settings,
+            RelaxedEnvSettingsSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
 
 
 settings = Settings()

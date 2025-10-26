@@ -467,7 +467,7 @@ class TestInstagramServiceAPIMethods:
         await service.close()
 
     @patch("core.services.instagram_service.aiohttp.ClientSession")
-    async def test_validate_token_success(self, mock_session_class):
+    async def test_validate_token_success(self, mock_session_class, monkeypatch):
         """Test successful token validation."""
         mock_response = AsyncMock()
         mock_response.status = 200
@@ -480,6 +480,8 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
+        monkeypatch.setattr(settings.instagram, "app_access_token", "app-access-token", raising=False)
+
         service = make_service()
         result = await service.validate_token()
 
@@ -487,7 +489,7 @@ class TestInstagramServiceAPIMethods:
         await service.close()
 
     @patch("core.services.instagram_service.aiohttp.ClientSession")
-    async def test_validate_token_failure(self, mock_session_class):
+    async def test_validate_token_failure(self, mock_session_class, monkeypatch):
         """Test failed token validation."""
         mock_response = AsyncMock()
         mock_response.status = 401
@@ -500,6 +502,8 @@ class TestInstagramServiceAPIMethods:
         mock_session.closed = False
         mock_session_class.return_value = mock_session
 
+        monkeypatch.setattr(settings.instagram, "app_access_token", "app-access-token", raising=False)
+
         service = make_service()
         result = await service.validate_token()
 
@@ -508,12 +512,14 @@ class TestInstagramServiceAPIMethods:
         await service.close()
 
     @patch("core.services.instagram_service.aiohttp.ClientSession")
-    async def test_validate_token_exception(self, mock_session_class):
+    async def test_validate_token_exception(self, mock_session_class, monkeypatch):
         """Test token validation exception."""
         mock_session = AsyncMock()
         mock_session.get = MagicMock(side_effect=Exception("network error"))
         mock_session.closed = False
         mock_session_class.return_value = mock_session
+
+        monkeypatch.setattr(settings.instagram, "app_access_token", "app-access-token", raising=False)
 
         service = make_service()
         result = await service.validate_token()
