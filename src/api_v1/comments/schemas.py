@@ -143,6 +143,16 @@ class AnswerResponse(BaseModel):
     payload: AnswerDTO
 
 
+class ClassificationTypeDTO(BaseModel):
+    code: int
+    label: str
+
+
+class ClassificationTypesResponse(BaseModel):
+    meta: SimpleMeta
+    payload: list[ClassificationTypeDTO]
+
+
 class EmptyResponse(BaseModel):
     meta: SimpleMeta
     payload: None = None

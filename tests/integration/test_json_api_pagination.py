@@ -208,3 +208,60 @@ async def test_media_list_page_2(integration_environment):
     assert data["meta"]["page"] == 2
 
 
+@pytest.mark.asyncio
+async def test_media_list_invalid_page_returns_422(integration_environment):
+    """Requesting page=0 should trigger validation error wrapped in JSON API envelope."""
+    client: AsyncClient = integration_environment["client"]
+    response = await client.get("/api/v1/media?page=0", headers=auth_headers(integration_environment))
+    assert response.status_code == 422
+    body = response.json()
+    assert body["meta"]["error"]["code"] == 4000
+    assert body["payload"] is None
+
+
+@pytest.mark.asyncio
+async def test_comment_list_per_page_clamped(integration_environment):
+    """Comments listing should enforce MAX_PER_PAGE of 100."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+
+    media_id = "media_comments_pagination"
+    async with session_factory() as session:
+        media = Media(
+            id=media_id,
+            permalink="https://instagram.com/p/media_comments_pagination",
+            media_type="IMAGE",
+            media_url="https://cdn.test/comments_pag.jpg",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.add(media)
+        # Add a handful of comments to ensure payload is non-empty
+        for idx in range(5):
+            comment = InstagramComment(
+                id=f"comment_pag_{idx}",
+                media_id=media_id,
+                user_id=f"user_{idx}",
+                username=f"user_{idx}",
+                text=f"Comment {idx}",
+                created_at=now_db_utc(),
+                raw_data={},
+            )
+            session.add(comment)
+            session.add(
+                CommentClassification(
+                    comment_id=comment.id,
+                    processing_status=ProcessingStatus.COMPLETED,
+                )
+            )
+        await session.commit()
+
+    response = await client.get(
+        f"/api/v1/media/{media_id}/comments?per_page=500",
+        headers=auth_headers(integration_environment),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["per_page"] == 100  # MAX_PER_PAGE for comments
+    assert len(payload["payload"]) <= 100
+

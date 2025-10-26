@@ -175,3 +175,9 @@ def parse_status_filters(values: Optional[List[int]]) -> Optional[List[Processin
             return None
         statuses.append(status)
     return statuses
+
+
+def list_classification_types() -> List[tuple[int, str]]:
+    """Return classification type options as (code, label) pairs sorted by code."""
+    pairs = [(code, label) for label, code in CLASSIFICATION_TYPE_CODES.items()]
+    return sorted(pairs, key=lambda item: item[0])

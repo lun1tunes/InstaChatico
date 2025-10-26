@@ -37,6 +37,7 @@ from api_v1.comments.serializers import (
     serialize_answer,
     serialize_comment,
     serialize_media,
+    list_classification_types,
 )
 from core.utils.time import now_db_utc
 from .schemas import (
@@ -44,6 +45,8 @@ from .schemas import (
     ClassificationUpdateRequest,
     CommentVisibilityRequest,
     MediaUpdateRequest,
+    ClassificationTypeDTO,
+    ClassificationTypesResponse,
 )
 
 router = APIRouter(tags=["JSON API"])
@@ -58,6 +61,7 @@ JSON_API_PATH_PREFIXES = (
     f"{settings.api_v1_prefix}/media",
     f"{settings.api_v1_prefix}/comments",
     f"{settings.api_v1_prefix}/answers",
+    f"{settings.api_v1_prefix}/meta",
 )
 
 
@@ -365,3 +369,13 @@ async def delete_answer(
     answer.reply_error = None
     await session.commit()
     return EmptyResponse(meta=SimpleMeta())
+@router.get("/meta/classification-types")
+async def get_classification_types(
+    _: None = Depends(require_service_token),
+):
+    items = [
+        ClassificationTypeDTO(code=code, label=label)
+        for code, label in list_classification_types()
+    ]
+    return ClassificationTypesResponse(meta=SimpleMeta(), payload=items)
+
