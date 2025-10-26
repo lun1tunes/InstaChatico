@@ -21,6 +21,21 @@ class AnswerRepository(BaseRepository[QuestionAnswer]):
         )
         return result.scalar_one_or_none()
 
+    async def get_for_update(self, answer_id: int) -> Optional[QuestionAnswer]:
+        """Get answer row with a write lock (FOR UPDATE) to coordinate concurrent mutations."""
+        stmt = (
+            select(QuestionAnswer)
+            .where(QuestionAnswer.id == answer_id)
+            .with_for_update()
+        )
+        try:
+            result = await self.session.execute(stmt)
+        except NotImplementedError:
+            # Dialects like SQLite do not support FOR UPDATE; fall back to a plain select.
+            fallback_stmt = select(QuestionAnswer).where(QuestionAnswer.id == answer_id)
+            result = await self.session.execute(fallback_stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_reply_id(self, reply_id: str) -> Optional[QuestionAnswer]:
         """Get answer by Instagram reply ID (for bot loop detection)."""
         result = await self.session.execute(

@@ -19,6 +19,7 @@ from core.repositories.classification import ClassificationRepository
 from core.models.comment_classification import CommentClassification, ProcessingStatus
 from core.use_cases.hide_comment import HideCommentUseCase
 from core.dependencies import get_container
+from sqlalchemy import update
 from api_v1.comments.serializers import (
     AnswerListResponse,
     AnswerResponse,
@@ -115,6 +116,14 @@ async def _get_comment_or_404(session: AsyncSession, comment_id: str) -> Any:
 async def _get_answer_or_404(session: AsyncSession, answer_id: int) -> Any:
     repo = AnswerRepository(session)
     answer = await repo.get_by_id(answer_id)
+    if not answer:
+        raise JsonApiError(404, 4042, "Answer not found")
+    return answer
+
+
+async def _get_answer_for_update_or_404(session: AsyncSession, answer_id: int) -> Any:
+    repo = AnswerRepository(session)
+    answer = await repo.get_for_update(answer_id)
     if not answer:
         raise JsonApiError(404, 4042, "Answer not found")
     return answer
@@ -275,12 +284,27 @@ async def patch_comment_classification(
         classification = CommentClassification(comment_id=comment_id)
         session.add(classification)
 
-    classification.type = normalized_label
-    classification.reasoning = reasoning
-    classification.confidence = None
-    classification.processing_status = ProcessingStatus.COMPLETED
-    classification.processing_completed_at = now_db_utc()
-    classification.last_error = None
+    completed_at = now_db_utc()
+    if classification.id is None:
+        classification.type = normalized_label
+        classification.reasoning = reasoning
+        classification.confidence = None
+        classification.processing_status = ProcessingStatus.COMPLETED
+        classification.processing_completed_at = completed_at
+        classification.last_error = None
+    else:
+        await session.execute(
+            update(CommentClassification)
+            .where(CommentClassification.id == classification.id)
+            .values(
+                type=normalized_label,
+                reasoning=reasoning,
+                confidence=None,
+                processing_status=ProcessingStatus.COMPLETED,
+                processing_completed_at=completed_at,
+                last_error=None,
+            )
+        )
     await session.commit()
 
     comment = await _get_comment_or_404(session, comment_id)
@@ -327,8 +351,8 @@ async def delete_answer(
     answer_id: int = Path(..., alias="id"),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
-    answer = await _get_answer_or_404(session, answer_id)
-    if not answer.reply_id:
+    answer = await _get_answer_for_update_or_404(session, answer_id)
+    if not answer.reply_id or answer.reply_status == "deleted":
         raise JsonApiError(400, 4012, "Answer does not have an Instagram reply")
 
     instagram_service = get_container().instagram_service()
