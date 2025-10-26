@@ -212,10 +212,10 @@ async def upload_document(
         document_type = document_processing_service.detect_document_type(file.filename)
 
         if document_type == "other":
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported file type. Supported: PDF, Excel, CSV, DOCX, TXT",
-        )
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file type. Supported: PDF, Excel, CSV, DOCX, TXT",
+            )
 
         # Check file size
         file_content = await file.read()
