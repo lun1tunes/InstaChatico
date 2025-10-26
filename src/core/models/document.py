@@ -1,7 +1,7 @@
 """
 Document model for storing business context documents.
 
-Stores metadata and processed content from PDF, Excel, CSV, Word documents
+Stores metadata and processed content from PDF, Excel, CSV, DOCX documents
 uploaded to S3 for enhancing AI agent responses.
 
 Single-tenant: Each app instance serves one client, so no client_id needed.

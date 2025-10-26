@@ -48,6 +48,20 @@ async def test_register_document_invalid_url_format(integration_environment):
 
 
 @pytest.mark.asyncio
+async def test_register_document_rejects_legacy_doc(integration_environment):
+    client: AsyncClient = integration_environment["client"]
+    s3_url = f"https://{settings.s3.s3_url}/{settings.s3.bucket_name}/docs/legacy.doc"
+
+    response = await client.post(
+        "/api/v1/documents/register",
+        data={"s3_url": s3_url, "document_name": "legacy.doc"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unsupported file type. Supported: PDF, Excel, CSV, DOCX, TXT"
+
+
+@pytest.mark.asyncio
 async def test_upload_document_success(integration_environment):
     client: AsyncClient = integration_environment["client"]
     session_factory = integration_environment["session_factory"]
@@ -80,6 +94,17 @@ async def test_upload_document_unsupported_type(integration_environment):
         files={"file": ("malware.exe", b"binary", "application/octet-stream")},
     )
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_upload_document_rejects_legacy_doc(integration_environment):
+    client: AsyncClient = integration_environment["client"]
+    response = await client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("legacy.doc", b"legacy-bytes", "application/msword")},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unsupported file type. Supported: PDF, Excel, CSV, DOCX, TXT"
 
 
 @pytest.mark.asyncio

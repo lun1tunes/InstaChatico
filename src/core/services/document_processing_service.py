@@ -2,7 +2,7 @@
 Document Processing Service
 
 Uses pdfplumber to extract text from PDF and other documents.
-Supports PDF, Excel, CSV, Word documents, and plain text.
+Supports PDF, Excel, CSV, DOCX documents, and plain text.
 """
 
 import logging
@@ -154,7 +154,7 @@ class DocumentProcessingService:
     def _process_word(
         self, file_content: bytes, content_hash: str
     ) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
-        """Process Word document."""
+        """Process Word document (.docx)."""
         try:
             from docx import Document
 
@@ -207,7 +207,7 @@ class DocumentProcessingService:
             ".xls": "excel",
             ".csv": "csv",
             ".docx": "word",
-            ".doc": "word",
+            # Legacy binary .doc files are unsupported – python-docx cannot parse them reliably
             ".txt": "txt",
         }
 

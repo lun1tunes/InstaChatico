@@ -151,7 +151,10 @@ async def register_document(
         document_type = document_processing_service.detect_document_type(document_name)
 
         if document_type == "other":
-            raise HTTPException(status_code=400, detail=f"Unsupported file type. Supported: PDF, Excel, CSV, Word, TXT")
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file type. Supported: PDF, Excel, CSV, DOCX, TXT",
+            )
 
         # Verify file exists in S3
         success, file_content, error = s3_service.download_file(s3_key)
@@ -198,7 +201,7 @@ async def upload_document(
     This endpoint handles the full upload: receives file, uploads to S3, processes to markdown.
     Use /register endpoint if file is already in S3.
 
-    Supports: PDF, Excel, CSV, Word, TXT files
+    Supports: PDF, Excel, CSV, DOCX, TXT files
     """
     try:
         # Validate file
@@ -209,7 +212,10 @@ async def upload_document(
         document_type = document_processing_service.detect_document_type(file.filename)
 
         if document_type == "other":
-            raise HTTPException(status_code=400, detail=f"Unsupported file type. Supported: PDF, Excel, CSV, Word, TXT")
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Supported: PDF, Excel, CSV, DOCX, TXT",
+        )
 
         # Check file size
         file_content = await file.read()
