@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Body, Depends, Header, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -40,6 +40,7 @@ from api_v1.comments.serializers import (
     list_classification_types,
 )
 from core.utils.time import now_db_utc
+from core.use_cases.proxy_media_image import MediaImageProxyError
 from .schemas import (
     AnswerUpdateRequest,
     ClassificationUpdateRequest,
@@ -198,6 +199,22 @@ async def patch_media(
         await session.refresh(media)
 
     return MediaResponse(meta=SimpleMeta(), payload=serialize_media(media))
+@router.get("/media/{id}/image")
+async def proxy_media_image(
+    _: None = Depends(require_service_token),
+    media_id: str = Path(..., alias="id"),
+    child_index: Optional[int] = Query(default=None, ge=0),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+):
+    container = get_container()
+    use_case = container.proxy_media_image_use_case(session=session)
+
+    try:
+        result = await use_case.execute(media_id=media_id, child_index=child_index)
+    except MediaImageProxyError as exc:
+        raise JsonApiError(exc.status_code, exc.code, exc.message)
+
+    return StreamingResponse(result.content_stream, media_type=result.content_type, headers=result.headers)
 
 
 @router.get("/media/{id}/comments")
@@ -378,4 +395,3 @@ async def get_classification_types(
         for code, label in list_classification_types()
     ]
     return ClassificationTypesResponse(meta=SimpleMeta(), payload=items)
-

@@ -6,7 +6,7 @@ allowing use cases to depend on abstractions rather than concrete implementation
 This follows the Dependency Inversion Principle (DIP) from SOLID.
 """
 
-from typing import Any, Dict, List, Optional, Protocol, BinaryIO
+from typing import Any, Dict, List, Optional, Protocol, BinaryIO, AsyncIterator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..schemas.classification import ClassificationResponse
@@ -396,6 +396,25 @@ class IDocumentProcessingService(Protocol):
         Returns:
             Tuple of (success: bool, markdown: str or None, content_hash: str or None, error: str or None)
         """
+        ...
+
+
+class MediaImageFetchResult(Protocol):
+    status: int
+    content_type: Optional[str]
+    cache_control: Optional[str]
+
+    def iter_bytes(self) -> AsyncIterator[bytes]:
+        ...
+
+    async def close(self) -> None:
+        ...
+
+
+class IMediaProxyService(Protocol):
+    """Protocol for media proxy fetch service."""
+
+    async def fetch_image(self, url: str) -> MediaImageFetchResult:
         ...
 
     def detect_document_type(self, filename: str) -> str:

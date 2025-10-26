@@ -24,6 +24,7 @@ from .services.document_context_service import DocumentContextService
 from .services.agent_session_service import AgentSessionService
 from .services.agent_executor import AgentExecutor
 from .services.rate_limiter import RedisRateLimiter
+from .services.media_proxy_service import MediaProxyService
 
 # Infrastructure
 from .infrastructure.task_queue import CeleryTaskQueue
@@ -40,6 +41,7 @@ from .use_cases.send_telegram_notification import SendTelegramNotificationUseCas
 from .use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
 from .use_cases.process_document import ProcessDocumentUseCase
 from .use_cases.test_comment_processing import TestCommentProcessingUseCase
+from .use_cases.proxy_media_image import ProxyMediaImageUseCase
 
 # Repositories
 from .repositories.comment import CommentRepository
@@ -141,6 +143,11 @@ class Container(containers.DeclarativeContainer):
         MediaAnalysisService,
     )
 
+    media_proxy_service = providers.Singleton(
+        MediaProxyService,
+        timeout_seconds=settings.media_proxy.request_timeout_seconds,
+    )
+
     s3_service = providers.Singleton(
         S3Service,
     )
@@ -151,6 +158,13 @@ class Container(containers.DeclarativeContainer):
 
     document_context_service = providers.Singleton(
         DocumentContextService,
+    )
+
+    proxy_media_image_use_case = providers.Factory(
+        ProxyMediaImageUseCase,
+        media_repository_factory=media_repository_factory.provider,
+        proxy_service=media_proxy_service,
+        allowed_host_suffixes=settings.media_proxy.allowed_host_suffixes,
     )
 
     # Use Cases - Factory (new instance per request)

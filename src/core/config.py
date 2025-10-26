@@ -105,6 +105,38 @@ class JsonApiSettings(BaseModel):
     token: str = Field(default_factory=lambda: os.getenv("JSON_API_TOKEN", "").strip())
 
 
+class MediaProxySettings(BaseModel):
+    allowed_host_suffixes: list[str] = Field(
+        default_factory=lambda: [
+            "cdninstagram.com",
+            "fbcdn.net",
+            "instagramcdn.com",
+            "akamaihd.net",
+        ]
+    )
+    request_timeout_seconds: float = Field(default_factory=lambda: float(os.getenv("MEDIA_PROXY_TIMEOUT_SECONDS", "20")))
+
+    @field_validator("allowed_host_suffixes", mode="before")
+    @classmethod
+    def _parse_allowed_hosts(cls, value):
+        default_factory = cls.model_fields["allowed_host_suffixes"].default_factory
+        default_value = default_factory() if callable(default_factory) else [
+            "cdninstagram.com",
+            "fbcdn.net",
+            "instagramcdn.com",
+            "akamaihd.net",
+        ]
+        if value is None:
+            return default_value
+        if isinstance(value, str):
+            stripped = [item.strip().lower() for item in value.split(",") if item.strip()]
+            return stripped or default_value
+        if isinstance(value, (list, tuple, set)):
+            stripped = [str(item).strip().lower() for item in value if str(item).strip()]
+            return stripped or default_value
+        raise ValueError("Invalid MEDIA_PROXY_ALLOWED_HOST_SUFFIXES format; provide comma-separated string or list.")
+
+
 class S3Settings(BaseSettings):
     """S3 storage settings for SelectCloud."""
 
@@ -155,6 +187,7 @@ class Settings(BaseSettings):
     docs: DocsSettings = DocsSettings()
     json_api: JsonApiSettings = JsonApiSettings()
     s3: S3Settings = S3Settings()
+    media_proxy: MediaProxySettings = MediaProxySettings()
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
