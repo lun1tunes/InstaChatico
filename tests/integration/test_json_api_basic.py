@@ -1,5 +1,8 @@
 """Basic CRUD operations tests for JSON API endpoints."""
 
+import re
+from datetime import datetime
+
 import pytest
 from httpx import AsyncClient
 
@@ -78,6 +81,10 @@ async def test_media_comments_with_status_filter(integration_environment):
     payload = response.json()["payload"]
     assert len(payload) == 1
     assert payload[0]["classification"]["type"] == 4
+    ts = payload[0]["classification"]["processing_completed_at"]
+    assert ts and ts.endswith("Z")
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$", ts)
+    datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
 @pytest.mark.asyncio
@@ -172,6 +179,10 @@ async def test_patch_comment_classification(integration_environment):
     payload = response.json()["payload"]
     assert payload["classification"]["type"] == 2
     assert payload["classification"]["confidence"] is None
+    patched_ts = payload["classification"]["processing_completed_at"]
+    assert patched_ts and patched_ts.endswith("Z")
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$", patched_ts)
+    datetime.fromisoformat(patched_ts.replace("Z", "+00:00"))
 
 
 @pytest.mark.asyncio
@@ -225,5 +236,4 @@ async def test_answer_management(integration_environment):
         json={"answer": "New answer"},
     )
     assert update.status_code == 404
-
 

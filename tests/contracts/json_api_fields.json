@@ -1,0 +1,94 @@
+{
+  "MediaDTO": [
+    "id",
+    "permalink",
+    "caption",
+    "url",
+    "type",
+    "context",
+    "children_urls",
+    "comments_count",
+    "like_count",
+    "shortcode",
+    "is_comment_enabled",
+    "is_processing_enabled"
+  ],
+  "ClassificationDTO": [
+    "id",
+    "processing_status",
+    "processing_completed_at",
+    "last_error",
+    "confidence",
+    "type",
+    "reasoning"
+  ],
+  "AnswerDTO": [
+    "id",
+    "processing_status",
+    "processing_completed_at",
+    "last_error",
+    "answer",
+    "confidence",
+    "quality_score",
+    "reply_sent",
+    "reply_status",
+    "reply_error",
+    "author"
+  ],
+  "CommentDTO": [
+    "id",
+    "parent_id",
+    "username",
+    "text",
+    "is_hidden",
+    "last_error",
+    "classification",
+    "answers"
+  ],
+  "SimpleMeta": [
+    "error"
+  ],
+  "PaginationMeta": [
+    "error",
+    "page",
+    "per_page",
+    "total"
+  ],
+  "MediaResponse": [
+    "meta",
+    "payload"
+  ],
+  "MediaListResponse": [
+    "meta",
+    "payload"
+  ],
+  "CommentResponse": [
+    "meta",
+    "payload"
+  ],
+  "CommentListResponse": [
+    "meta",
+    "payload"
+  ],
+  "AnswerResponse": [
+    "meta",
+    "payload"
+  ],
+  "AnswerListResponse": [
+    "meta",
+    "payload"
+  ],
+  "ClassificationTypesResponse": [
+    "meta",
+    "payload"
+  ],
+  "ClassificationTypeDTO": [
+    "code",
+    "label"
+  ],
+  "ErrorDetail": [
+    "code",
+    "message",
+    "details"
+  ]
+}
