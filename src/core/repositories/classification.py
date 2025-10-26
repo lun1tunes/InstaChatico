@@ -54,8 +54,18 @@ class ClassificationRepository(BaseRepository[CommentClassification]):
         classification.last_error = None
         await self.session.flush()
 
+    async def mark_retry(self, classification: CommentClassification, error: str):
+        """Update classification to retry status with error message."""
+        from ..utils.time import now_db_utc
+        classification.processing_status = ProcessingStatus.RETRY
+        classification.processing_completed_at = now_db_utc()
+        classification.last_error = error
+        await self.session.flush()
+
     async def mark_failed(self, classification: CommentClassification, error: str):
         """Update classification to failed status."""
+        from ..utils.time import now_db_utc
         classification.processing_status = ProcessingStatus.FAILED
         classification.last_error = error
+        classification.processing_completed_at = now_db_utc()
         await self.session.flush()

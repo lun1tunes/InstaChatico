@@ -5,7 +5,8 @@ from typing import Any, Callable, Dict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.comment_classification import CommentClassification, ProcessingStatus
+from ..models.comment_classification import CommentClassification
+from ..constants.retry_policy import DEFAULT_RETRY_SCHEDULE
 from ..interfaces.services import IClassificationService, IMediaService
 from ..utils.decorators import handle_task_errors
 from ..interfaces.repositories import ICommentRepository, IClassificationRepository
@@ -101,20 +102,30 @@ class ClassifyCommentUseCase:
 
             # 8. Classify comment
             result = await self.classification_service.classify_comment(comment.text, conversation_id, media_context)
+        except Exception as exc:
+            logger.error(
+                f"Classification exception | comment_id={comment_id} | error={str(exc)} | "
+                f"retry_count={retry_count}"
+            )
+            return await self._handle_failure(classification, str(exc), retry_count)
 
-            # 9. Save results
-            classification.type = result.type
-            classification.confidence = result.confidence
-            classification.reasoning = result.reasoning
-            classification.input_tokens = result.input_tokens
-            classification.output_tokens = result.output_tokens
+        # 9. Save results
+        if result.error:
+            logger.error(
+                f"Classification failed | comment_id={comment_id} | error={result.error} | "
+                f"retry_count={retry_count}"
+            )
+            return await self._handle_failure(classification, result.error, retry_count)
 
-            if result.error:
-                logger.error(f"Classification failed | comment_id={comment_id} | error={result.error}")
-                await self.classification_repo.mark_failed(classification, result.error)
-            else:
-                await self.classification_repo.mark_completed(classification)
+        classification.type = result.type
+        classification.confidence = result.confidence
+        classification.reasoning = result.reasoning
+        classification.input_tokens = result.input_tokens
+        classification.output_tokens = result.output_tokens
 
+        await self.classification_repo.mark_completed(classification)
+
+        try:
             await self.session.commit()
         except Exception as commit_exc:
             setattr(commit_exc, "should_reraise", True)
@@ -134,6 +145,39 @@ class ClassifyCommentUseCase:
             "classification": result.type,
             "confidence": result.confidence,
         }
+
+    def _calculate_max_retries(self, classification: CommentClassification) -> int:
+        """Return configured max retries or fall back to default schedule length."""
+        raw_value = getattr(classification, "max_retries", None)
+        if isinstance(raw_value, int) and raw_value > 0:
+            return raw_value
+        fallback = len(DEFAULT_RETRY_SCHEDULE)
+        classification.max_retries = fallback
+        return fallback
+
+    async def _handle_failure(self, classification: CommentClassification, error: str, retry_count: int) -> Dict[str, Any]:
+        """Handle retry vs failure logic for classification errors."""
+        max_retries = self._calculate_max_retries(classification)
+        classification.retry_count = retry_count
+
+        if retry_count < max_retries:
+            await self.classification_repo.mark_retry(classification, error)
+            try:
+                await self.session.commit()
+            except Exception as commit_exc:
+                setattr(commit_exc, "should_reraise", True)
+                await self.session.rollback()
+                raise
+            return {"status": "retry", "reason": error}
+
+        await self.classification_repo.mark_failed(classification, error)
+        try:
+            await self.session.commit()
+        except Exception as commit_exc:
+            setattr(commit_exc, "should_reraise", True)
+            await self.session.rollback()
+            raise
+        return {"status": "error", "reason": error}
 
     async def _get_or_create_classification(self, comment_id: str) -> CommentClassification:
         """Get existing or create new classification record."""

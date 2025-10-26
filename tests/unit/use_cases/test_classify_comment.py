@@ -288,6 +288,7 @@ class TestClassifyCommentUseCase:
         mock_classification_repo.create = AsyncMock()
         mock_classification_repo.mark_processing = AsyncMock()
         mock_classification_repo.mark_failed = AsyncMock()
+        mock_classification_repo.mark_retry = AsyncMock()
 
         # Create use case
         use_case = ClassifyCommentUseCase(
@@ -302,8 +303,9 @@ class TestClassifyCommentUseCase:
         result = await use_case.execute(comment_id="comment_1", retry_count=0)
 
         # Assert
-        assert result["status"] == "success"  # Use case still succeeds, but classification failed
-        mock_classification_repo.mark_failed.assert_awaited_once()
+        assert result["status"] == "retry"
+        mock_classification_repo.mark_retry.assert_awaited_once()
+        mock_classification_repo.mark_failed.assert_not_called()
 
     async def test_execute_with_carousel_media(
         self, db_session, comment_factory, media_factory
@@ -1075,6 +1077,7 @@ class TestClassifyCommentUseCase:
         mock_classification_repo.get_by_comment_id = AsyncMock(return_value=classification)
         mock_classification_repo.mark_processing = AsyncMock()
         mock_classification_repo.mark_failed = AsyncMock(side_effect=capture_failed)
+        mock_classification_repo.mark_retry = AsyncMock()
 
         use_case = ClassifyCommentUseCase(
             session=db_session,
@@ -1085,10 +1088,13 @@ class TestClassifyCommentUseCase:
         )
 
         # Act
-        result = await use_case.execute(comment_id="comment_1", retry_count=0)
+        classification.max_retries = 2
+        final_retry_count = classification.max_retries
+        result = await use_case.execute(comment_id="comment_1", retry_count=final_retry_count)
 
         # Assert
-        assert result["status"] == "success"
+        assert result["status"] == "error"
         mock_classification_repo.mark_failed.assert_awaited_once()
+        mock_classification_repo.mark_retry.assert_not_called()
         assert captured_error == "OpenAI API timeout after 30 seconds"
         mock_classification_repo.mark_completed.assert_not_called()

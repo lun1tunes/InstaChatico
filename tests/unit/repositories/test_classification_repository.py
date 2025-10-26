@@ -129,6 +129,21 @@ class TestClassificationRepository:
         # Assert
         assert clf.processing_status == ProcessingStatus.FAILED
         assert clf.last_error == error_message
+        assert clf.processing_completed_at is not None
+
+    async def test_mark_retry(self, db_session, instagram_comment_factory, classification_factory):
+        """Test marking classification as retry."""
+        comment = await instagram_comment_factory()
+        clf = await classification_factory(comment_id=comment.id)
+        repo = ClassificationRepository(db_session)
+        error_message = "Temporary upstream error"
+
+        await repo.mark_retry(clf, error_message)
+        await db_session.flush()
+
+        assert clf.processing_status == ProcessingStatus.RETRY
+        assert clf.last_error == error_message
+        assert clf.processing_completed_at is not None
 
     async def test_update_classification(self, db_session, instagram_comment_factory, classification_factory):
         """Test updating a classification."""
@@ -317,6 +332,7 @@ class TestClassificationRepository:
         # Assert
         assert clf.processing_status == ProcessingStatus.FAILED
         assert clf.last_error == error_msg
+        assert clf.processing_completed_at is not None
 
     async def test_classification_with_minimal_fields(self, db_session, instagram_comment_factory):
         """Test creating classification with only required fields."""

@@ -6,12 +6,10 @@ from contextlib import asynccontextmanager
 from functools import wraps
 from typing import Callable, Optional, Sequence
 
+from ..constants.retry_policy import DEFAULT_RETRY_SCHEDULE
 from ..container import get_container
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_RETRY_SCHEDULE: tuple[int, ...] = (15, 60, 300, 900, 3600)
-
 
 def _get_worker_event_loop() -> asyncio.AbstractEventLoop:
     """
