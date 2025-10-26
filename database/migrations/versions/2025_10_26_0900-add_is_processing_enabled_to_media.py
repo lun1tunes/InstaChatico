@@ -1,6 +1,6 @@
 """add is_processing_enabled to media
 
-Revision ID: add_is_processing_enabled_to_media
+Revision ID: 8cd0ae1f2f8d
 Revises: 354c49e45a72
 Create Date: 2025-10-26 09:00:00.000000
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'add_is_processing_enabled_to_media'
+revision: str = '8cd0ae1f2f8d'
 down_revision: Union[str, Sequence[str], None] = '354c49e45a72'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

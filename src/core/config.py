@@ -54,6 +54,9 @@ class InstagramSettings(BaseModel):
     base_url: str = f"https://graph.instagram.com/{os.getenv('INSTAGRAM_API_VERSION', 'v23.0')}"
     bot_username: str = os.getenv("INSTAGRAM_BOT_USERNAME", "")
     base_account_id: str = os.getenv("INSTAGRAM_BASE_ACCOUNT_ID", "")
+    app_id: str = os.getenv("INSTAGRAM_APP_ID", "")
+    app_secret: str = os.getenv("INSTAGRAM_APP_SECRET", "")
+    app_access_token: str = os.getenv("INSTAGRAM_APP_ACCESS_TOKEN", "")
     rate_limit_redis_url: str = os.getenv(
         "INSTAGRAM_RATE_LIMIT_REDIS_URL",
         os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"),

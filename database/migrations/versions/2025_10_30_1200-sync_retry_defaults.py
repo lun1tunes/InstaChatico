@@ -1,7 +1,7 @@
 """sync retry defaults with task policy
 
 Revision ID: sync_retry_defaults
-Revises: add_is_processing_enabled_to_media
+Revises: 8cd0ae1f2f8d
 Create Date: 2025-10-30 12:00:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'sync_retry_defaults'
-down_revision: Union[str, Sequence[str], None] = 'add_is_processing_enabled_to_media'
+down_revision: Union[str, Sequence[str], None] = '8cd0ae1f2f8d'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -489,10 +489,12 @@ class InstagramGraphAPIService:
 
     async def _fetch_debug_token(self) -> Tuple[int, Dict[str, Any]]:
         """Fetch token debug information from Facebook Graph API."""
+        debug_access_token = self._build_debug_access_token()
+
         url = f"https://graph.facebook.com/{settings.instagram.api_version}/debug_token"
         params = {
             "input_token": self.access_token,
-            "access_token": self.access_token,
+            "access_token": debug_access_token,
         }
 
         logger.debug("Fetching token debug info | url=%s", url)
@@ -501,6 +503,31 @@ class InstagramGraphAPIService:
         async with session.get(url, params=params) as response:
             response_data = await response.json()
             return response.status, response_data
+
+    def _build_debug_access_token(self) -> str:
+        """
+        Build the app-level access token used for /debug_token requests.
+
+        Priority:
+            1. Explicit INSTAGRAM_APP_ACCESS_TOKEN
+            2. Derived from INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET
+
+        Raises:
+            ValueError if neither option is configured.
+        """
+        if settings.instagram.app_access_token:
+            return settings.instagram.app_access_token
+
+        app_id = settings.instagram.app_id
+        app_secret = settings.instagram.app_secret
+
+        if app_id and app_secret:
+            return f"{app_id}|{app_secret}"
+
+        raise ValueError(
+            "Instagram app credentials missing. Configure INSTAGRAM_APP_ACCESS_TOKEN or both "
+            "INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET to enable token expiration checks."
+        )
 
     async def delete_comment_reply(self, reply_id: str) -> Dict[str, Any]:
         """Delete an Instagram reply/comment by ID."""
