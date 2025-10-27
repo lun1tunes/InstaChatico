@@ -179,6 +179,59 @@ class MediaService:
             return None
         return owner_data.get("id") if isinstance(owner_data, dict) else (owner_data if isinstance(owner_data, str) else None)
 
+    async def refresh_media_urls(self, media_id: str, session: AsyncSession) -> Optional[Media]:
+        """Refresh media URLs by fetching latest data from Instagram."""
+        logger.debug("Refreshing media URLs | media_id=%s", media_id)
+
+        media_repo = MediaRepository(session)
+        media = await media_repo.get_by_id(media_id)
+        if not media:
+            logger.warning("Cannot refresh media URLs; media not found | media_id=%s", media_id)
+            return None
+
+        try:
+            api_response = await self.instagram_service.get_media_info(media_id)
+            if not api_response.get("success"):
+                logger.error(
+                    "Failed to refresh media info from Instagram | media_id=%s | error=%s",
+                    media_id,
+                    api_response.get("error"),
+                )
+                return None
+
+            media_info = api_response["media_info"]
+            children_media_urls = self._extract_carousel_children_urls(media_info)
+
+            media_url = media_info.get("media_url")
+            if media_info.get("media_type") == "CAROUSEL_ALBUM" and children_media_urls and not media_url:
+                media_url = children_media_urls[0]
+
+            media.media_url = media_url
+            media.children_media_urls = children_media_urls
+            media.media_type = media_info.get("media_type") or media.media_type
+            media.permalink = media_info.get("permalink", media.permalink)
+            media.caption = media_info.get("caption", media.caption)
+            media.comments_count = media_info.get("comments_count", media.comments_count)
+            media.like_count = media_info.get("like_count", media.like_count)
+            media.username = media_info.get("username", media.username)
+            new_owner = self._parse_owner(media_info.get("owner"))
+            if new_owner:
+                media.owner = new_owner
+            if timestamp := self._parse_timestamp(media_info.get("timestamp")):
+                media.timestamp = timestamp
+
+            media.updated_at = now_db_utc()
+
+            await session.commit()
+            await session.refresh(media)
+
+            logger.info("Media URLs refreshed successfully | media_id=%s", media_id)
+            return media
+        except Exception:
+            logger.exception("Error refreshing media URLs | media_id=%s", media_id)
+            await session.rollback()
+            return None
+
     async def ensure_media_exists(self, media_id: str, session: AsyncSession) -> bool:
         """Ensure media exists in DB, queue task if not found."""
         try:

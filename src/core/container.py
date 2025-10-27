@@ -164,6 +164,7 @@ class Container(containers.DeclarativeContainer):
         ProxyMediaImageUseCase,
         media_repository_factory=media_repository_factory.provider,
         proxy_service=media_proxy_service,
+        media_service=media_service,
         allowed_host_suffixes=settings.media_proxy.allowed_host_suffixes,
     )
 

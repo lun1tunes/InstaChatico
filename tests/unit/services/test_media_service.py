@@ -166,6 +166,65 @@ class TestMediaService:
         mock_instagram_service.get_media_info.assert_called_once_with("new_media_123")
         mock_task_queue.enqueue.assert_called_once()
 
+    async def test_refresh_media_urls_success(
+        self, media_service, mock_instagram_service, db_session
+    ):
+        """Refreshing media URLs updates the stored media record."""
+        existing_media = Media(
+            id="media_refresh",
+            permalink="https://instagram.com/p/refresh",
+            media_type="IMAGE",
+            media_url="https://old-url",
+            caption="Old",
+        )
+        db_session.add(existing_media)
+        await db_session.commit()
+
+        mock_instagram_service.get_media_info = AsyncMock(
+            return_value={
+                "success": True,
+                "media_info": {
+                    "id": "media_refresh",
+                    "media_type": "IMAGE",
+                    "media_url": "https://new-url",
+                    "caption": "New caption",
+                    "permalink": "https://instagram.com/p/refresh",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "children": {"data": []},
+                },
+            }
+        )
+
+        refreshed = await media_service.refresh_media_urls("media_refresh", db_session)
+
+        assert refreshed is not None
+        assert refreshed.media_url == "https://new-url"
+        assert refreshed.caption == "New caption"
+        mock_instagram_service.get_media_info.assert_awaited_once_with("media_refresh")
+
+    async def test_refresh_media_urls_failure(
+        self, media_service, mock_instagram_service, db_session
+    ):
+        """When API refresh fails, original media remains unchanged."""
+        existing_media = Media(
+            id="media_refresh_fail",
+            permalink="https://instagram.com/p/refresh",
+            media_type="IMAGE",
+            media_url="https://old-url",
+        )
+        db_session.add(existing_media)
+        await db_session.commit()
+
+        mock_instagram_service.get_media_info = AsyncMock(
+            return_value={"success": False, "error": "invalid"}
+        )
+
+        refreshed = await media_service.refresh_media_urls("media_refresh_fail", db_session)
+
+        assert refreshed is None
+        stored = await db_session.get(Media, "media_refresh_fail")
+        assert stored.media_url == "https://old-url"
+
     async def test_get_or_create_media_api_failure(
         self, media_service, mock_instagram_service, db_session
     ):

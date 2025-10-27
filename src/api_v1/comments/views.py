@@ -224,7 +224,7 @@ async def patch_media(
 async def proxy_media_image(
     _: None = Depends(require_service_token),
     media_id: str = Path(..., alias="id"),
-    child_index: Optional[int] = Query(default=None, ge=0),
+    child_index: Optional[int] = Query(default=0, ge=0),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     container = get_container()

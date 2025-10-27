@@ -202,6 +202,19 @@ class IMediaService(Protocol):
         """Enable or disable comments for a media record and persist change."""
         ...
 
+    async def refresh_media_urls(
+        self,
+        media_id: str,
+        session: AsyncSession,
+    ) -> Optional[Media]:
+        """
+        Refresh media URLs by fetching latest data from Instagram.
+
+        Returns:
+            Updated media record or None if refresh failed
+        """
+        ...
+
 
 class IMediaAnalysisService(Protocol):
     """Protocol for media analysis services (AI vision)."""

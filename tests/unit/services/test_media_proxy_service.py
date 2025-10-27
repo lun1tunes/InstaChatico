@@ -47,7 +47,7 @@ class DummySession:
 
 @pytest.mark.asyncio
 async def test_fetch_image_success(monkeypatch):
-    response = DummyResponse(chunks=[b"a", b"b"])
+    response = DummyResponse(chunks=[b"a", b"b"], headers={"Content-Type": "image/png", "Cache-Control": "public"})
     session = DummySession(response=response)
     monkeypatch.setattr(
         "core.services.media_proxy_service.aiohttp.ClientSession",
@@ -90,7 +90,7 @@ async def test_fetch_image_propagates_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_image_close_idempotent(monkeypatch):
-    response = DummyResponse()
+    response = DummyResponse(chunks=[b"content"])
     session = DummySession(response=response)
     monkeypatch.setattr(
         "core.services.media_proxy_service.aiohttp.ClientSession",
