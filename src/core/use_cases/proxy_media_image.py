@@ -182,10 +182,9 @@ class ProxyMediaImageUseCase:
         if not isinstance(children, list) or not children:
             return getattr(media, "media_url", None)
 
-        index = child_index - 1 if child_index > 0 else child_index
-        if index < 0 or index >= len(children):
+        if child_index < 0 or child_index >= len(children):
             return None
-        return children[index]
+        return children[child_index]
 
     def _is_allowed_host(self, netloc: str) -> bool:
         normalized = netloc.lower()

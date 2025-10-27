@@ -126,6 +126,31 @@ async def test_proxy_media_image_child_index():
 
 
 @pytest.mark.asyncio
+async def test_proxy_media_image_second_child_index():
+    media = FakeMedia(
+        children_media_urls=[
+            "https://cdninstagram.com/child0.jpg",
+            "https://cdninstagram.com/child1.jpg",
+        ]
+    )
+    repository = FakeMediaRepository(media_by_id={"media1": media})
+    fetch_result = FakeFetchResult()
+    proxy_service = FakeMediaProxyService(fetch_result=fetch_result)
+    media_service = FakeMediaService(repository, refreshed_media=None)
+
+    use_case = ProxyMediaImageUseCase(
+        session=None,
+        media_repository_factory=repo_factory_builder(repository),
+        proxy_service=proxy_service,
+        media_service=media_service,
+        allowed_host_suffixes=["cdninstagram.com"],
+    )
+
+    await use_case.execute("media1", child_index=1)
+    assert proxy_service.requested_urls == ["https://cdninstagram.com/child1.jpg"]
+
+
+@pytest.mark.asyncio
 async def test_proxy_media_image_media_not_found():
     repository = FakeMediaRepository(media_by_id={})
     proxy_service = FakeMediaProxyService(fetch_result=FakeFetchResult())
