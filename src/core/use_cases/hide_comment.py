@@ -49,6 +49,14 @@ class HideCommentUseCase:
             logger.error(f"Comment not found | comment_id={comment_id} | operation=hide_comment")
             return {"status": "error", "reason": f"Comment {comment_id} not found"}
 
+        previous_state = bool(comment.is_hidden)
+        logger.debug(
+            "Hide comment request prepared | comment_id=%s | previous_state=%s | target_state=%s",
+            comment_id,
+            previous_state,
+            hide,
+        )
+
         # 2. Check current state
         if comment.is_hidden == hide:
             status = "hidden" if hide else "visible"
@@ -115,7 +123,13 @@ class HideCommentUseCase:
         comment.hidden_at = now_db_utc() if hide else None
         await self.session.commit()
 
-        logger.info(f"Comment hidden status updated | comment_id={comment_id} | is_hidden={hide}")
+        logger.info(
+            "Comment hidden status updated | comment_id=%s | previous_state=%s | target_state=%s | resulting_state=%s",
+            comment_id,
+            previous_state,
+            hide,
+            comment.is_hidden,
+        )
 
         return {
             "status": "success",

@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Body, Depends, Header, Path, Query, Request
+from fastapi import APIRouter, Body, Depends, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.config import settings
 from core.models import db_helper
@@ -53,6 +54,8 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
+_bearer_scheme = HTTPBearer(auto_error=False)
+
 router = APIRouter(tags=["JSON API"])
 
 MEDIA_DEFAULT_PER_PAGE = 10
@@ -76,13 +79,14 @@ class JsonApiError(Exception):
         self.message = message
 
 
-def require_service_token(authorization: Optional[str] = Header(default=None)) -> None:
+# NOTE: using explicit security dependency so Swagger UI sends Authorization header
+def require_service_token(credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme)) -> None:
     token = settings.json_api.token
     if not token:
         raise JsonApiError(503, 5001, "JSON API token is not configured")
-    if not authorization or not authorization.startswith("Bearer "):
+    if not credentials or credentials.scheme.lower() != "bearer":
         raise JsonApiError(401, 4001, "Missing or invalid Authorization header")
-    provided = authorization.split(" ", 1)[1].strip()
+    provided = credentials.credentials.strip()
     if provided != token:
         raise JsonApiError(401, 4002, "Unauthorized")
 

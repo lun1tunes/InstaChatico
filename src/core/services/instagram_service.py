@@ -451,7 +451,12 @@ class InstagramGraphAPIService:
         params = {"access_token": self.access_token, "hide": str(hide).lower()}
 
         action = "Hiding" if hide else "Unhiding"
-        logger.info(f"{action} comment | comment_id={comment_id} | hide={hide}")
+        logger.info(
+            "%s comment | comment_id=%s | hide=%s",
+            action,
+            comment_id,
+            hide,
+        )
 
         try:
             session = await self._get_session()
@@ -461,8 +466,10 @@ class InstagramGraphAPIService:
                 if response.status == 200:
                     action_past = "hidden" if hide else "unhidden"
                     logger.info(
-                        f"Comment {action_past} successfully | comment_id={comment_id} | "
-                        f"status_code={response.status}"
+                        "Comment %s successfully | comment_id=%s | status_code=%s",
+                        action_past,
+                        comment_id,
+                        response.status,
                     )
                     return {
                         "success": True,
@@ -471,8 +478,11 @@ class InstagramGraphAPIService:
                     }
                 else:
                     logger.error(
-                        f"Failed to {action.lower()} comment | comment_id={comment_id} | "
-                        f"status_code={response.status} | error={response_data}"
+                        "Failed to %s comment | comment_id=%s | status_code=%s | error=%s",
+                        action.lower(),
+                        comment_id,
+                        response.status,
+                        response_data,
                     )
                     return {
                         "success": False,
@@ -482,8 +492,11 @@ class InstagramGraphAPIService:
 
         except Exception as e:
             logger.error(
-                f"Exception while {action.lower()} comment | comment_id={comment_id} | error={str(e)}",
-                exc_info=True
+                "Exception while %s comment | comment_id=%s | error=%s",
+                action.lower(),
+                comment_id,
+                str(e),
+                exc_info=True,
             )
             return {"success": False, "error": str(e), "status_code": None}
 
