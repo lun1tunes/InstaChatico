@@ -26,10 +26,6 @@ class MediaUpdateRequest(BaseModel):
         return self
 
 
-class CommentVisibilityRequest(BaseModel):
-    is_hidden: bool = Field(..., description="True to hide the comment, False to unhide")
-
-
 class ClassificationUpdateRequest(BaseModel):
     type: str = Field(..., description="Classification label/string")
     reasoning: str = Field(..., description="Manual reasoning for the change")

@@ -43,7 +43,7 @@ async def test_media_list_wrong_token(integration_environment):
 async def test_comment_hide_unauthorized(integration_environment):
     """Test that comment visibility endpoint requires authentication."""
     client: AsyncClient = integration_environment["client"]
-    response = await client.patch("/api/v1/comments/comment_123", json={"is_hidden": True})
+    response = await client.patch("/api/v1/comments/comment_123", params={"is_hidden": True})
     assert response.status_code == 401
 
 
@@ -53,5 +53,4 @@ async def test_answer_patch_unauthorized(integration_environment):
     client: AsyncClient = integration_environment["client"]
     response = await client.patch("/api/v1/answers/1", json={"answer": "New"})
     assert response.status_code == 401
-
 

@@ -44,7 +44,7 @@ async def test_hide_comment(integration_environment):
     response = await client.patch(
         "/api/v1/comments/comment_to_hide",
         headers=auth_headers(integration_environment),
-        json={"is_hidden": True},
+        params={"is_hidden": True},
     )
     assert response.status_code == 200
     assert "comment_to_hide" in instagram_service.hidden
@@ -87,7 +87,7 @@ async def test_unhide_comment(integration_environment):
     response = await client.patch(
         "/api/v1/comments/comment_to_unhide",
         headers=auth_headers(integration_environment),
-        json={"is_hidden": False},
+        params={"is_hidden": False},
     )
     assert response.status_code == 200
     assert "comment_to_unhide" not in instagram_service.hidden
@@ -100,7 +100,7 @@ async def test_hide_comment_not_found(integration_environment):
     response = await client.patch(
         "/api/v1/comments/nonexistent_comment",
         headers=auth_headers(integration_environment),
-        json={"is_hidden": True},
+        params={"is_hidden": True},
     )
     # The use case returns error status first, causing 502
     assert response.status_code == 502

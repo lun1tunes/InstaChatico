@@ -205,7 +205,7 @@ async def test_concurrent_comment_hide_toggle(integration_environment):
         return await client.patch(
             "/api/v1/comments/comment_concurrent_hide",
             headers=auth_headers(integration_environment),
-            json={"is_hidden": hide},
+            params={"is_hidden": hide},
         )
 
     tasks = [
@@ -543,4 +543,3 @@ async def test_concurrent_comment_delete_and_update(integration_environment):
             orphaned_classification = result.scalar_one_or_none()
             # SQLAlchemy cascade should have handled this
             # (This depends on your cascade configuration)
-

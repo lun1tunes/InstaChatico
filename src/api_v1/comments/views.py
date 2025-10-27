@@ -46,7 +46,6 @@ from core.use_cases.proxy_media_image import MediaImageProxyError
 from .schemas import (
     AnswerUpdateRequest,
     ClassificationUpdateRequest,
-    CommentVisibilityRequest,
     MediaUpdateRequest,
     ClassificationTypeDTO,
     ClassificationTypesResponse,
@@ -343,10 +342,10 @@ async def delete_comment(
 async def patch_comment_visibility(
     _: None = Depends(require_service_token),
     comment_id: str = Path(..., alias="id"),
-    body: CommentVisibilityRequest = Body(...),
+    is_hidden: bool = Query(..., description="True to hide the comment, False to unhide"),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
-    hide = bool(body.is_hidden)
+    hide = bool(is_hidden)
     container = get_container()
     use_case: HideCommentUseCase = container.hide_comment_use_case(session=session)
     result = await use_case.execute(comment_id, hide=hide)
