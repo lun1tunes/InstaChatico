@@ -117,6 +117,8 @@ async def test_delete_comment(integration_environment):
     client: AsyncClient = integration_environment["client"]
     session_factory = integration_environment["session_factory"]
 
+    instagram_service = integration_environment["instagram_service"]
+
     async with session_factory() as session:
         media = Media(
             id="media_delete_test",
@@ -137,6 +139,17 @@ async def test_delete_comment(integration_environment):
             raw_data={},
         )
         session.add(comment)
+        child = InstagramComment(
+            id="child_comment",
+            media_id=media.id,
+            user_id="user_child",
+            username="childuser",
+            text="Child reply",
+            parent_id=comment.id,
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        session.add(child)
         await session.commit()
 
     response = await client.delete(
@@ -146,10 +159,58 @@ async def test_delete_comment(integration_environment):
     assert response.status_code == 200
     assert response.json()["payload"] is None
 
+    assert "comment_to_delete" in instagram_service.deleted
+
     # Verify deleted from database
     async with session_factory() as session:
         deleted = await session.get(InstagramComment, "comment_to_delete")
-        assert deleted is None
+        assert deleted is not None
+        assert deleted.is_deleted is True
+        child = await session.get(InstagramComment, "child_comment")
+        assert child is not None
+        assert child.is_deleted is True
+
+
+@pytest.mark.asyncio
+async def test_deleted_comments_excluded_from_listing(integration_environment):
+    """Deleted comments should not appear in listings."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+
+    async with session_factory() as session:
+        media = Media(
+            id="media_deleted_list",
+            permalink="https://instagram.com/p/media_deleted_list",
+            media_type="IMAGE",
+            media_url="https://cdn.test/list.jpg",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.add(media)
+        comment = InstagramComment(
+            id="comment_list_hidden",
+            media_id=media.id,
+            user_id="user_list",
+            username="listuser",
+            text="Hidden",
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        session.add(comment)
+        await session.commit()
+
+    await client.delete(
+        "/api/v1/comments/comment_list_hidden",
+        headers=auth_headers(integration_environment),
+    )
+
+    response = await client.get(
+        "/api/v1/media/media_deleted_list/comments",
+        headers=auth_headers(integration_environment),
+    )
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert payload == []
 
 
 # ===== Status Filter Tests =====

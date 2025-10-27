@@ -19,6 +19,9 @@ class ICommentRepository(Protocol):
     async def get_by_id(self, comment_id: str) -> Optional["InstagramComment"]:
         ...
 
+    async def mark_deleted_with_descendants(self, comment_id: str) -> int:
+        ...
+
     async def get_with_classification(self, comment_id: str) -> Optional["InstagramComment"]:
         ...
 

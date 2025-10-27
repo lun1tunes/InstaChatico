@@ -110,6 +110,15 @@ class IInstagramService(Protocol):
         """
         ...
 
+    async def delete_comment(self, comment_id: str) -> Dict[str, Any]:
+        """
+        Permanently delete an Instagram comment.
+
+        Args:
+            comment_id: ID of the comment to delete
+        """
+        ...
+
     async def get_comment_info(self, comment_id: str) -> Dict[str, Any]:
         """
         Get information about an Instagram comment.

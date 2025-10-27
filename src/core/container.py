@@ -36,6 +36,7 @@ from .use_cases.classify_comment import ClassifyCommentUseCase
 from .use_cases.generate_answer import GenerateAnswerUseCase
 from .use_cases.send_reply import SendReplyUseCase
 from .use_cases.hide_comment import HideCommentUseCase
+from .use_cases.delete_comment import DeleteCommentUseCase
 from .use_cases.process_webhook_comment import ProcessWebhookCommentUseCase
 from .use_cases.send_telegram_notification import SendTelegramNotificationUseCase
 from .use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
@@ -198,6 +199,13 @@ class Container(containers.DeclarativeContainer):
 
     hide_comment_use_case = providers.Factory(
         HideCommentUseCase,
+        # session is injected at runtime
+        comment_repository_factory=comment_repository_factory.provider,
+        instagram_service=instagram_service,
+    )
+
+    delete_comment_use_case = providers.Factory(
+        DeleteCommentUseCase,
         # session is injected at runtime
         comment_repository_factory=comment_repository_factory.provider,
         instagram_service=instagram_service,

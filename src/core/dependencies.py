@@ -23,6 +23,7 @@ from .use_cases.classify_comment import ClassifyCommentUseCase
 from .use_cases.generate_answer import GenerateAnswerUseCase
 from .use_cases.send_reply import SendReplyUseCase
 from .use_cases.hide_comment import HideCommentUseCase
+from .use_cases.delete_comment import DeleteCommentUseCase
 from .use_cases.process_webhook_comment import ProcessWebhookCommentUseCase
 from .use_cases.send_telegram_notification import SendTelegramNotificationUseCase
 from .use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
@@ -96,6 +97,14 @@ def get_hide_comment_use_case(
 ) -> HideCommentUseCase:
     """Provide HideCommentUseCase with dependencies."""
     return container.hide_comment_use_case(session=session)
+
+
+def get_delete_comment_use_case(
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+) -> DeleteCommentUseCase:
+    """Provide DeleteCommentUseCase with dependencies."""
+    return container.delete_comment_use_case(session=session)
 
 
 def get_process_webhook_comment_use_case(

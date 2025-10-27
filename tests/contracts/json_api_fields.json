@@ -41,7 +41,9 @@
     "parent_id",
     "username",
     "text",
+    "created_at",
     "is_hidden",
+    "is_deleted",
     "last_error",
     "classification",
     "answers"

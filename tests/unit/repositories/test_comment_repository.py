@@ -90,6 +90,30 @@ class TestCommentRepository:
         deleted_comment = await repo.get_by_id(comment.id)
         assert deleted_comment is None
 
+    async def test_mark_deleted_with_descendants(self, db_session, instagram_comment_factory):
+        """Soft delete should mark comment and descendants as deleted."""
+        repo = CommentRepository(db_session)
+        parent = await instagram_comment_factory(comment_id="parent_comment")
+        child = await instagram_comment_factory(comment_id="child_comment", parent_id=parent.id)
+        grandchild = await instagram_comment_factory(comment_id="grandchild_comment", parent_id=child.id)
+
+        affected = await repo.mark_deleted_with_descendants(parent.id)
+        await db_session.commit()
+
+        assert affected == 3
+
+        # Repository should no longer return deleted comments
+        assert await repo.get_by_id(parent.id) is None
+        assert await repo.get_by_id(child.id) is None
+
+        # Raw query verifies flag is set
+        parent_row = await db_session.get(InstagramComment, parent.id)
+        assert parent_row.is_deleted is True
+        child_row = await db_session.get(InstagramComment, child.id)
+        assert child_row.is_deleted is True
+        grandchild_row = await db_session.get(InstagramComment, grandchild.id)
+        assert grandchild_row.is_deleted is True
+
     async def test_comment_persistence(self, db_session):
         """Test that created comment persists in database."""
         # Arrange

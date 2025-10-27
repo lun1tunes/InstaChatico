@@ -501,6 +501,42 @@ class InstagramGraphAPIService:
             )
             return {"success": False, "error": str(e), "status_code": None}
 
+    async def delete_comment(self, comment_id: str) -> Dict[str, Any]:
+        """Delete an Instagram comment by ID."""
+        url = f"{self.base_url}/{comment_id}"
+        params = {"access_token": self.access_token}
+
+        logger.info(
+            "Deleting Instagram comment | comment_id=%s",
+            comment_id,
+        )
+
+        try:
+            session = await self._get_session()
+            async with session.delete(url, params=params) as response:
+                response_data = await response.json()
+
+                if response.status == 200:
+                    logger.info(
+                        "Instagram comment deleted | comment_id=%s | status_code=%s | response=%s",
+                        comment_id,
+                        response.status,
+                        response_data,
+                    )
+                    return {"success": True, "status_code": response.status, "response": response_data}
+
+                logger.error(
+                    "Failed to delete Instagram comment | comment_id=%s | status_code=%s | error=%s",
+                    comment_id,
+                    response.status,
+                    response_data,
+                )
+                return {"success": False, "status_code": response.status, "error": response_data}
+
+        except Exception as exc:
+            logger.exception("Exception while deleting Instagram comment | comment_id=%s", comment_id)
+            return {"success": False, "error": str(exc), "status_code": None}
+
     async def _fetch_debug_token(self) -> Tuple[int, Dict[str, Any]]:
         """Fetch token debug information from Facebook Graph API."""
         debug_access_token = self._build_debug_access_token()

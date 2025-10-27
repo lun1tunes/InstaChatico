@@ -20,6 +20,7 @@ from core.repositories.media import MediaRepository
 from core.repositories.classification import ClassificationRepository
 from core.models.comment_classification import CommentClassification, ProcessingStatus
 from core.use_cases.hide_comment import HideCommentUseCase
+from core.use_cases.delete_comment import DeleteCommentUseCase
 from core.dependencies import get_container
 from sqlalchemy import update
 from api_v1.comments.serializers import (
@@ -336,9 +337,15 @@ async def delete_comment(
     comment_id: str = Path(..., alias="id"),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
-    comment = await _get_comment_or_404(session, comment_id)
-    await session.delete(comment)
-    await session.commit()
+    container = get_container()
+    use_case: DeleteCommentUseCase = container.delete_comment_use_case(session=session)
+    result = await use_case.execute(comment_id)
+    status = result.get("status")
+    if status == "error":
+        reason = result.get("reason")
+        if isinstance(reason, str) and "not found" in reason.lower():
+            raise JsonApiError(404, 4041, "Comment not found")
+        raise JsonApiError(502, 5004, "Failed to delete comment")
     return EmptyResponse(meta=SimpleMeta())
 
 

@@ -83,6 +83,7 @@ class StubInstagramService:
         self.hidden: List[str] = []
         self.replies: List[Dict[str, Any]] = []
         self.closed = False
+        self.deleted: List[str] = []
 
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
         reply_id = f"reply-{comment_id}"
@@ -96,6 +97,11 @@ class StubInstagramService:
         else:
             if comment_id in self.hidden:
                 self.hidden.remove(comment_id)
+        return {"success": True}
+
+    async def delete_comment(self, comment_id: str) -> Dict[str, Any]:
+        if comment_id not in self.deleted:
+            self.deleted.append(comment_id)
         return {"success": True}
 
     async def close(self) -> None:

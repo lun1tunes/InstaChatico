@@ -43,6 +43,13 @@ class InstagramComment(Base):
         comment="Conversation ID for session management - first_question_comment_{id} format",
     )
 
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Soft delete flag to track comments removed from Instagram",
+    )
+
     # Relationship to classification
     classification: Mapped[CommentClassification] = relationship(
         "CommentClassification",
