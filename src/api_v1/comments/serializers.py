@@ -43,6 +43,8 @@ CLASSIFICATION_TYPE_CODES: dict[str, int] = {
     "spam / irrelevant": 7,
 }
 
+CLASSIFICATION_CODE_TO_TYPE = {code: label for label, code in CLASSIFICATION_TYPE_CODES.items()}
+
 PROCESSING_STATUS_CODES: dict[ProcessingStatus, int] = {
     ProcessingStatus.PENDING: 1,
     ProcessingStatus.PROCESSING: 2,
@@ -81,6 +83,10 @@ def classification_type_to_code(value: Optional[str]) -> Optional[int]:
 def normalize_classification_label(value: str) -> Optional[str]:
     label = value.strip().lower()
     return label if label in CLASSIFICATION_TYPE_CODES else None
+
+
+def classification_code_to_label(code: int) -> Optional[str]:
+    return CLASSIFICATION_CODE_TO_TYPE.get(code)
 
 
 def processing_status_code_to_enum(code: int) -> Optional[ProcessingStatus]:
@@ -175,6 +181,18 @@ def parse_status_filters(values: Optional[List[int]]) -> Optional[List[Processin
             return None
         statuses.append(status)
     return statuses
+
+
+def parse_classification_filters(values: Optional[List[int]]) -> Optional[List[str]]:
+    if not values:
+        return None
+    labels: List[str] = []
+    for code in values:
+        label = classification_code_to_label(code)
+        if not label:
+            return None
+        labels.append(label)
+    return labels
 
 
 def list_classification_types() -> List[tuple[int, str]]:

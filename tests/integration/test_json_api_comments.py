@@ -229,6 +229,111 @@ async def test_media_comments_filter_invalid_status(integration_environment):
 
 
 @pytest.mark.asyncio
+async def test_media_comments_filter_by_classification_type(integration_environment):
+    """Test filtering comments by classification type parameter."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+
+    async with session_factory() as session:
+        media = Media(
+            id="media_type_filter",
+            permalink="https://instagram.com/p/media_type_filter",
+            media_type="IMAGE",
+            media_url="https://cdn.test/type.jpg",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.add(media)
+
+        comment_question = InstagramComment(
+            id="comment_type_question",
+            media_id=media.id,
+            user_id="user_question",
+            username="asker",
+            text="Is this available?",
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        session.add(comment_question)
+        session.add(
+            CommentClassification(
+                comment_id=comment_question.id,
+                type="question / inquiry",
+                processing_status=ProcessingStatus.COMPLETED.value,
+            )
+        )
+
+        comment_positive = InstagramComment(
+            id="comment_type_positive",
+            media_id=media.id,
+            user_id="user_positive",
+            username="fan",
+            text="Love it!",
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        session.add(comment_positive)
+        session.add(
+            CommentClassification(
+                comment_id=comment_positive.id,
+                type="positive feedback",
+                processing_status=ProcessingStatus.COMPLETED.value,
+            )
+        )
+        await session.commit()
+
+    # Filter for question/inquiry (code 4)
+    response = await client.get(
+        "/api/v1/media/media_type_filter/comments?type=4",
+        headers=auth_headers(integration_environment),
+    )
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert len(payload) == 1
+    assert payload[0]["id"] == "comment_type_question"
+    assert payload[0]["classification"]["type"] == 4
+
+    # Filter for both question and positive using array syntax
+    response = await client.get(
+        "/api/v1/media/media_type_filter/comments?type[]=4&type[]=1",
+        headers=auth_headers(integration_environment),
+    )
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert {item["id"] for item in payload} == {
+        "comment_type_question",
+        "comment_type_positive",
+    }
+
+
+@pytest.mark.asyncio
+async def test_media_comments_filter_invalid_classification(integration_environment):
+    """Test filtering comments with invalid classification returns error."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+
+    async with session_factory() as session:
+        media = Media(
+            id="media_invalid_type_filter",
+            permalink="https://instagram.com/p/media_invalid_type_filter",
+            media_type="IMAGE",
+            media_url="https://cdn.test/invalid_type.jpg",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.add(media)
+        await session.commit()
+
+    response = await client.get(
+        "/api/v1/media/media_invalid_type_filter/comments?type=999",
+        headers=auth_headers(integration_environment),
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert data["meta"]["error"]["code"] == 4007
+
+
+@pytest.mark.asyncio
 async def test_media_comments_pagination(integration_environment):
     """Test comment listing pagination."""
     client: AsyncClient = integration_environment["client"]
@@ -359,5 +464,4 @@ async def test_patch_classification_creates_if_missing(integration_environment):
     payload = response.json()["payload"]
     assert payload["classification"]["type"] == 4  # question / inquiry
     assert payload["classification"]["reasoning"] == "manual"
-
 

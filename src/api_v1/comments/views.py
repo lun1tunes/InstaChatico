@@ -35,6 +35,7 @@ from api_v1.comments.serializers import (
     SimpleMeta,
     normalize_classification_label,
     parse_status_filters,
+    parse_classification_filters,
     serialize_answer,
     serialize_comment,
     serialize_media,
@@ -258,6 +259,8 @@ async def list_media_comments(
     per_page: int = Query(COMMENTS_DEFAULT_PER_PAGE, ge=1),
     status_multi: Optional[List[int]] = Query(default=None, alias="status[]"),
     status_csv: Optional[str] = Query(default=None, alias="status"),
+    classification_multi: Optional[List[int]] = Query(default=None, alias="type[]"),
+    classification_csv: Optional[str] = Query(default=None, alias="type"),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     await _get_media_or_404(session, media_id)
@@ -279,9 +282,31 @@ async def list_media_comments(
     if status_values and statuses is None:
         raise JsonApiError(400, 4006, "Invalid status filter")
 
+    classification_values: List[int] = []
+    if classification_multi:
+        classification_values.extend(classification_multi)
+    if classification_csv:
+        for part in classification_csv.split(","):
+            part = part.strip()
+            if part:
+                try:
+                    classification_values.append(int(part))
+                except ValueError:
+                    raise JsonApiError(400, 4007, "Invalid classification filter")
+
+    classification_types = parse_classification_filters(classification_values) if classification_values else None
+    if classification_values and classification_types is None:
+        raise JsonApiError(400, 4007, "Invalid classification filter")
+
     repo = CommentRepository(session)
-    total = await repo.count_for_media(media_id, statuses=statuses)
-    items = await repo.list_for_media(media_id, offset=offset, limit=per_page, statuses=statuses)
+    total = await repo.count_for_media(media_id, statuses=statuses, classification_types=classification_types)
+    items = await repo.list_for_media(
+        media_id,
+        offset=offset,
+        limit=per_page,
+        statuses=statuses,
+        classification_types=classification_types,
+    )
     payload = [serialize_comment(comment) for comment in items]
     response = CommentListResponse(
         meta=PaginationMeta(page=page, per_page=per_page, total=total),

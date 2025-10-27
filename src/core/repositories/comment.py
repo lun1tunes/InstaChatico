@@ -57,6 +57,7 @@ class CommentRepository(BaseRepository[InstagramComment]):
         offset: int,
         limit: int,
         statuses: Optional[list[ProcessingStatus]] = None,
+        classification_types: Optional[list[str]] = None,
     ) -> list[InstagramComment]:
         stmt = (
             select(InstagramComment)
@@ -69,10 +70,12 @@ class CommentRepository(BaseRepository[InstagramComment]):
             .offset(offset)
             .limit(limit)
         )
-        if statuses:
-            stmt = stmt.join(InstagramComment.classification).where(
-                CommentClassification.processing_status.in_(statuses)
-            )
+        if statuses or classification_types:
+            stmt = stmt.join(InstagramComment.classification)
+            if statuses:
+                stmt = stmt.where(CommentClassification.processing_status.in_(statuses))
+            if classification_types:
+                stmt = stmt.where(CommentClassification.type.in_(classification_types))
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -81,18 +84,14 @@ class CommentRepository(BaseRepository[InstagramComment]):
         media_id: str,
         *,
         statuses: Optional[list[ProcessingStatus]] = None,
+        classification_types: Optional[list[str]] = None,
     ) -> int:
-        if statuses:
-            stmt = (
-                select(func.count())
-                .select_from(InstagramComment)
-                .join(CommentClassification, InstagramComment.id == CommentClassification.comment_id)
-                .where(
-                    InstagramComment.media_id == media_id,
-                    CommentClassification.processing_status.in_(statuses),
-                )
-            )
-        else:
-            stmt = select(func.count()).select_from(InstagramComment).where(InstagramComment.media_id == media_id)
+        stmt = select(func.count()).select_from(InstagramComment).where(InstagramComment.media_id == media_id)
+        if statuses or classification_types:
+            stmt = stmt.join(CommentClassification, InstagramComment.id == CommentClassification.comment_id)
+            if statuses:
+                stmt = stmt.where(CommentClassification.processing_status.in_(statuses))
+            if classification_types:
+                stmt = stmt.where(CommentClassification.type.in_(classification_types))
         result = await self.session.execute(stmt)
         return result.scalar() or 0
