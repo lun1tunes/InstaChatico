@@ -466,10 +466,11 @@ class InstagramGraphAPIService:
                 if response.status == 200:
                     action_past = "hidden" if hide else "unhidden"
                     logger.info(
-                        "Comment %s successfully | comment_id=%s | status_code=%s",
+                        "Comment %s successfully | comment_id=%s | status_code=%s | response=%s",
                         action_past,
                         comment_id,
                         response.status,
+                        response_data,
                     )
                     return {
                         "success": True,
