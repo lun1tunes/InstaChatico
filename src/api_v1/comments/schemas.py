@@ -104,7 +104,9 @@ class CommentDTO(BaseModel):
     parent_id: Optional[str] = None
     username: str
     text: str
+    created_at: Optional[str] = None
     is_hidden: bool
+    is_deleted: bool
     last_error: Optional[str] = None
     classification: Optional[ClassificationDTO] = None
     answers: list[AnswerDTO] = Field(default_factory=list)

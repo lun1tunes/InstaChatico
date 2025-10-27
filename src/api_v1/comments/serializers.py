@@ -160,12 +160,18 @@ def serialize_comment(comment: InstagramComment) -> CommentDTO:
     elif comment.question_answer and comment.question_answer.last_error:
         last_error = comment.question_answer.last_error
 
+    is_deleted = getattr(comment, "is_deleted", False)
+    if is_deleted is None:
+        is_deleted = False
+
     return CommentDTO(
         id=comment.id,
         parent_id=comment.parent_id,
         username=comment.username,
         text=comment.text,
+        created_at=format_datetime(comment.created_at),
         is_hidden=comment.is_hidden,
+        is_deleted=is_deleted,
         last_error=last_error,
         classification=classification,
         answers=answers,
