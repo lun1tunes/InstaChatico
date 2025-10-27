@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 import uvicorn
+from starlette.responses import Response
 
 from api_v1 import router as router_v1
 from api_v1.docs.views import create_docs_router
@@ -17,12 +18,43 @@ from core.logging_config import configure_logging, trace_id_ctx
 import uuid
 from fastapi.middleware.cors import CORSMiddleware
 
+logger = logging.getLogger(__name__)
+
+
+class LoggingCORSMiddleware(CORSMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        origin = request.headers.get("origin")
+        method = request.method
+        response: Response = await super().dispatch(request, call_next)
+
+        if origin:
+            allowed_origin = response.headers.get("access-control-allow-origin")
+            if allowed_origin:
+                logger.debug(
+                    "CORS request allowed | origin=%s | method=%s | allow_credentials=%s",
+                    origin,
+                    method,
+                    settings.cors_allow_credentials,
+                )
+            else:
+                logger.warning(
+                    "CORS request denied or not matched | origin=%s | method=%s",
+                    origin,
+                    method,
+                )
+
+        return response
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
-    logger = logging.getLogger(__name__)
     logger.info("Application starting up...")
+    logger.info(
+        "CORS configuration | origins=%s | allow_credentials=%s",
+        settings.cors_allowed_origins,
+        settings.cors_allow_credentials,
+    )
 
     from core.container import get_container
     container = get_container()
@@ -38,7 +70,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
-    CORSMiddleware,
+    LoggingCORSMiddleware,
     allow_origins=settings.cors_allowed_origins,
     allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
