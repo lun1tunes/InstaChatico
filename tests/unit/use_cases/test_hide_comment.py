@@ -265,6 +265,68 @@ class TestHideCommentUseCase:
         assert result["status"] == "error"
         assert "failed to hide comment" in result["reason"].lower()
 
+    async def test_execute_api_transient_error_returns_retry(self, db_session, comment_factory):
+        """Transient Instagram errors should signal retry instead of failure."""
+        comment = await comment_factory(comment_id="comment_1", is_hidden=False)
+
+        mock_instagram_service = MagicMock()
+        mock_instagram_service.hide_comment = AsyncMock(
+            return_value={
+                "success": False,
+                "error": {
+                    "error": {
+                        "message": "Try again later",
+                        "is_transient": True,
+                        "code": 2,
+                        "retry_after": "3.5",
+                    }
+                },
+            }
+        )
+
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_by_id = AsyncMock(return_value=comment)
+
+        use_case = HideCommentUseCase(
+            session=db_session,
+            instagram_service=mock_instagram_service,
+            comment_repository_factory=lambda session: mock_comment_repo,
+        )
+
+        result = await use_case.execute(comment_id="comment_1", hide=True)
+
+        assert result["status"] == "retry"
+        assert "try again later" in result["reason"].lower()
+        assert pytest.approx(result.get("retry_after"), 0.01) == 3.5
+        assert comment.is_hidden is False
+
+    async def test_execute_api_error_code_retry(self, db_session, comment_factory):
+        """Certain error codes (e.g., 2) should also trigger retry."""
+        comment = await comment_factory(comment_id="comment_1", is_hidden=False)
+
+        mock_instagram_service = MagicMock()
+        mock_instagram_service.hide_comment = AsyncMock(
+            return_value={
+                "success": False,
+                "error": {"message": "Generic error", "code": 2},
+            }
+        )
+
+        mock_comment_repo = MagicMock()
+        mock_comment_repo.get_by_id = AsyncMock(return_value=comment)
+
+        use_case = HideCommentUseCase(
+            session=db_session,
+            instagram_service=mock_instagram_service,
+            comment_repository_factory=lambda session: mock_comment_repo,
+        )
+
+        result = await use_case.execute(comment_id="comment_1", hide=True)
+
+        assert result["status"] == "retry"
+        assert "generic error" in result["reason"].lower()
+        assert comment.is_hidden is False
+
     async def test_execute_hide_default_parameter(self, db_session, comment_factory):
         """Test that hide parameter defaults to True."""
         # Arrange

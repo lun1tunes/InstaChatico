@@ -64,13 +64,48 @@ class HideCommentUseCase:
         result = await self.instagram_service.hide_comment(comment_id, hide=hide)
 
         if not result.get("success"):
+            error_payload = result.get("error")
+            error_info = error_payload
+            if isinstance(error_payload, dict):
+                error_info = error_payload.get("error", error_payload)
+
+            is_transient = False
+            retry_after = None
+            error_message = "Failed to hide comment"
+
+            if isinstance(error_info, dict):
+                is_transient = bool(error_info.get("is_transient")) or error_info.get("code") in {1, 2}
+                retry_after = error_info.get("retry_after")
+                if error_info.get("message"):
+                    error_message = error_info["message"]
+            elif isinstance(error_info, str):
+                error_message = error_info
+
+            if is_transient:
+                logger.warning(
+                    "Transient Instagram API error while hiding comment | comment_id=%s | hide=%s | error=%s",
+                    comment_id,
+                    hide,
+                    error_payload,
+                )
+                retry_payload: Dict[str, Any] = {
+                    "status": "retry",
+                    "reason": error_message,
+                }
+                try:
+                    if retry_after is not None:
+                        retry_payload["retry_after"] = float(retry_after)
+                except (TypeError, ValueError):
+                    pass
+                return retry_payload
+
             logger.error(
                 f"Failed to hide comment via API | comment_id={comment_id} | "
-                f"hide={hide} | error={result.get('error', 'Failed to hide comment')}"
+                f"hide={hide} | error={error_payload or 'Failed to hide comment'}"
             )
             return {
                 "status": "error",
-                "reason": result.get("error", "Failed to hide comment"),
+                "reason": error_payload or "Failed to hide comment",
                 "api_response": result,
             }
 
