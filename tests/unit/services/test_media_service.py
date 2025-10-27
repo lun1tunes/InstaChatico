@@ -163,6 +163,7 @@ class TestMediaService:
         assert media.id == "new_media_123"
         assert media.media_type == "IMAGE"
         assert media.caption == "New image caption"
+        assert media.posted_at is not None
         mock_instagram_service.get_media_info.assert_called_once_with("new_media_123")
         mock_task_queue.enqueue.assert_called_once()
 
@@ -200,6 +201,7 @@ class TestMediaService:
         assert refreshed is not None
         assert refreshed.media_url == "https://new-url"
         assert refreshed.caption == "New caption"
+        assert refreshed.posted_at is not None
         mock_instagram_service.get_media_info.assert_awaited_once_with("media_refresh")
 
     async def test_refresh_media_urls_failure(
@@ -550,13 +552,13 @@ class TestMediaService:
         # Assert
         assert urls is None
 
-    def test_parse_timestamp_success(self, media_service):
-        """Test parsing valid timestamp."""
+    def test_parse_posted_at_success(self, media_service):
+        """Test parsing valid posted_at string."""
         # Arrange
         timestamp_str = "2025-01-15T10:30:00Z"
 
         # Act
-        dt = media_service._parse_timestamp(timestamp_str)
+        dt = media_service._parse_posted_at(timestamp_str)
 
         # Assert
         assert dt is not None
@@ -566,21 +568,21 @@ class TestMediaService:
         assert dt.day == 15
         assert dt.tzinfo is None  # Should be timezone-naive
 
-    def test_parse_timestamp_none(self, media_service):
-        """Test parsing None timestamp."""
+    def test_parse_posted_at_none(self, media_service):
+        """Test parsing None posted_at string."""
         # Act
-        dt = media_service._parse_timestamp(None)
+        dt = media_service._parse_posted_at(None)
 
         # Assert
         assert dt is None
 
-    def test_parse_timestamp_invalid(self, media_service):
-        """Test parsing invalid timestamp."""
+    def test_parse_posted_at_invalid(self, media_service):
+        """Test parsing invalid posted_at string."""
         # Arrange
         invalid_timestamp = "not a timestamp"
 
         # Act
-        dt = media_service._parse_timestamp(invalid_timestamp)
+        dt = media_service._parse_posted_at(invalid_timestamp)
 
         # Assert
         assert dt is None

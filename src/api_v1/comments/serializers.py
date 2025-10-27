@@ -108,6 +108,7 @@ def serialize_media(media: Media) -> MediaDTO:
         comments_count=media.comments_count,
         like_count=media.like_count,
         shortcode=media.shortcode,
+        posted_at=format_datetime(media.posted_at) if media.posted_at else None,
         is_comment_enabled=media.is_comment_enabled,
         is_processing_enabled=bool(media.is_processing_enabled),
     )

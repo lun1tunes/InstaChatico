@@ -64,6 +64,9 @@ class ProcessMediaUseCase:
                         "created_at": (
                             existing_media.created_at.isoformat() if existing_media.created_at else None
                         ),
+                        "posted_at": (
+                            existing_media.posted_at.isoformat() if existing_media.posted_at else None
+                        ),
                     },
                 )
 
@@ -96,6 +99,7 @@ class ProcessMediaUseCase:
                     "comments_count": media.comments_count,
                     "like_count": media.like_count,
                     "created_at": media.created_at.isoformat() if media.created_at else None,
+                    "posted_at": media.posted_at.isoformat() if media.posted_at else None,
                 },
             )
         except Exception as exc:

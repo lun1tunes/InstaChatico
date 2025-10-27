@@ -90,7 +90,7 @@ class MediaService:
                 comments_count=media_info.get("comments_count"),
                 like_count=media_info.get("like_count"),
                 shortcode=media_info.get("shortcode"),
-                timestamp=self._parse_timestamp(media_info.get("timestamp")),
+                posted_at=self._parse_posted_at(media_info.get("timestamp")),
                 is_comment_enabled=media_info.get("is_comment_enabled"),
                 is_processing_enabled=media_info.get("is_processing_enabled", True),
                 username=media_info.get("username"),
@@ -157,8 +157,8 @@ class MediaService:
 
         return None
 
-    def _parse_timestamp(self, timestamp_str: Optional[str]) -> Optional[datetime]:
-        """Parse ISO timestamp string to datetime."""
+    def _parse_posted_at(self, timestamp_str: Optional[str]) -> Optional[datetime]:
+        """Parse ISO posted_at string to datetime."""
         if not timestamp_str:
             return None
 
@@ -170,8 +170,12 @@ class MediaService:
                 dt = dt.replace(tzinfo=None)
             return dt
         except (ValueError, AttributeError) as e:
-            logger.warning(f"Failed to parse timestamp '{timestamp_str}': {e}")
+            logger.warning(f"Failed to parse posted_at '{timestamp_str}': {e}")
             return None
+
+    def _parse_timestamp(self, timestamp_str: Optional[str]) -> Optional[datetime]:
+        """Backward-compatible wrapper for posted_at parsing."""
+        return self._parse_posted_at(timestamp_str)
 
     def _parse_owner(self, owner_data: Optional[dict]) -> Optional[str]:
         """Parse owner data to owner ID string."""
@@ -217,8 +221,8 @@ class MediaService:
             new_owner = self._parse_owner(media_info.get("owner"))
             if new_owner:
                 media.owner = new_owner
-            if timestamp := self._parse_timestamp(media_info.get("timestamp")):
-                media.timestamp = timestamp
+            if posted_at := self._parse_posted_at(media_info.get("timestamp")):
+                media.posted_at = posted_at
 
             media.updated_at = now_db_utc()
 

@@ -29,7 +29,12 @@ class Media(Base):
     comments_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Number of comments on the post")
     like_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Number of likes on the post")
     shortcode: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Instagram shortcode")
-    timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="When the media was posted")
+    posted_at: Mapped[datetime | None] = mapped_column(
+        "posted_at",
+        DateTime,
+        nullable=True,
+        comment="When the media was posted on Instagram",
+    )
     is_comment_enabled: Mapped[bool | None] = mapped_column(
         Boolean, nullable=True, comment="Whether comments are enabled"
     )

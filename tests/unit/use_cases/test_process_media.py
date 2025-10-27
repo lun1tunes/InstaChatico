@@ -149,11 +149,13 @@ class TestProcessMediaUseCase:
         from core.models.media import Media
 
         media_time = datetime.now(timezone.utc)
+        posted_at = datetime.now(timezone.utc)
         new_media = Media(
             id="media_1",
             permalink="https://instagram.com/p/test",
             username="testuser",
             created_at=media_time,
+            posted_at=posted_at.replace(tzinfo=None),
         )
 
         # Mock services
@@ -178,6 +180,7 @@ class TestProcessMediaUseCase:
         # Assert
         assert result.status == "success"
         assert result.media["created_at"] == media_time.isoformat()
+        assert result.media["posted_at"] == posted_at.replace(tzinfo=None).isoformat()
 
     async def test_execute_with_none_created_at(self, db_session):
         """Test handling when created_at is None."""
@@ -188,6 +191,7 @@ class TestProcessMediaUseCase:
             permalink="https://instagram.com/p/test",
             username="testuser",
             created_at=None,
+            posted_at=None,
         )
 
         # Mock services
@@ -212,6 +216,7 @@ class TestProcessMediaUseCase:
         # Assert
         assert result.status == "success"
         assert result.media["created_at"] is None
+        assert result.media["posted_at"] is None
 
 
 @pytest.mark.unit

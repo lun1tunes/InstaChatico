@@ -26,6 +26,7 @@ def _build_media():
         comments_count=5,
         like_count=10,
         shortcode="MEDIA1",
+        posted_at=datetime.now(timezone.utc),
         is_comment_enabled=True,
         is_processing_enabled=True,
     )
@@ -78,6 +79,7 @@ def test_serialize_media_returns_dto():
     assert isinstance(dto, MediaDTO)
     assert dto.id == media.id
     assert dto.type == 1  # IMAGE
+    assert dto.posted_at is not None
     assert dto.is_processing_enabled is True
 
 
@@ -90,7 +92,7 @@ def test_serialize_comment_with_relations():
     dto = serialize_comment(comment)
 
     assert isinstance(dto, CommentDTO)
-    assert dto.classification.type == 4  # question / inquiry
+    assert dto.classification.classification_type == 4  # question / inquiry
     assert dto.answers and isinstance(dto.answers[0], AnswerDTO)
 
 

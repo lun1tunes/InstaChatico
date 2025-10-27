@@ -23,7 +23,7 @@ class MediaBase(BaseModel):
     comments_count: Optional[int] = Field(None, description="Number of comments on the post")
     like_count: Optional[int] = Field(None, description="Number of likes on the post")
     shortcode: Optional[str] = Field(None, description="Instagram shortcode")
-    timestamp: Optional[datetime] = Field(None, description="When the media was posted")
+    posted_at: Optional[datetime] = Field(None, description="When the media was posted")
     is_comment_enabled: Optional[bool] = Field(None, description="Whether comments are enabled")
     is_processing_enabled: Optional[bool] = Field(None, description="Whether automated processing is enabled")
     username: Optional[str] = Field(None, description="Username of the media owner")

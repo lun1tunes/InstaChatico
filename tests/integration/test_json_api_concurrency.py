@@ -145,7 +145,7 @@ async def test_concurrent_comment_classification_updates(integration_environment
         assert payload is not None
         classification_payload = payload.get("classification")
         assert classification_payload is not None
-        type_code = classification_payload.get("type")
+        type_code = classification_payload.get("classification_type")
         reasoning = classification_payload.get("reasoning")
         type_label = code_to_label.get(type_code)
         observed_states.add((type_label, reasoning))
@@ -543,5 +543,4 @@ async def test_concurrent_comment_delete_and_update(integration_environment):
             orphaned_classification = result.scalar_one_or_none()
             # SQLAlchemy cascade should have handled this
             # (This depends on your cascade configuration)
-
 

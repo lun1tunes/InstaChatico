@@ -10,6 +10,7 @@
     "comments_count",
     "like_count",
     "shortcode",
+    "posted_at",
     "is_comment_enabled",
     "is_processing_enabled"
   ],
@@ -19,7 +20,7 @@
     "processing_completed_at",
     "last_error",
     "confidence",
-    "type",
+    "classification_type",
     "reasoning"
   ],
   "AnswerDTO": [

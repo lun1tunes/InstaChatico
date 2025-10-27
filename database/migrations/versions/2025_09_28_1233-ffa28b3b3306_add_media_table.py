@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column("comments_count", sa.Integer(), nullable=True, comment="Number of comments on the post"),
         sa.Column("like_count", sa.Integer(), nullable=True, comment="Number of likes on the post"),
         sa.Column("shortcode", sa.String(length=100), nullable=True, comment="Instagram shortcode"),
-        sa.Column("timestamp", sa.DateTime(), nullable=True, comment="When the media was posted"),
+        sa.Column("posted_at", sa.DateTime(), nullable=True, comment="When the media was posted on Instagram"),
         sa.Column("is_comment_enabled", sa.Boolean(), nullable=True, comment="Whether comments are enabled"),
         sa.Column("username", sa.String(length=100), nullable=True, comment="Username of the media owner"),
         sa.Column("owner", sa.String(length=100), nullable=True, comment="Owner account ID"),

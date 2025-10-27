@@ -180,7 +180,7 @@ def media_factory(db_session):
             comments_count=kwargs.get("comments_count"),
             like_count=kwargs.get("like_count"),
             shortcode=kwargs.get("shortcode"),
-            timestamp=kwargs.get("timestamp"),
+            posted_at=kwargs.get("posted_at") or kwargs.get("timestamp"),
             is_comment_enabled=kwargs.get("is_comment_enabled"),
             is_processing_enabled=kwargs.get("is_processing_enabled", True),
             username=kwargs.get("username"),

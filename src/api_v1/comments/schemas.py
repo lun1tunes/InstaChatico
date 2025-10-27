@@ -74,6 +74,7 @@ class MediaDTO(BaseModel):
     comments_count: Optional[int] = None
     like_count: Optional[int] = None
     shortcode: Optional[str] = None
+    posted_at: Optional[str] = None
     is_comment_enabled: Optional[bool] = None
     is_processing_enabled: bool
 
