@@ -30,7 +30,7 @@ class Media(Base):
     like_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="Number of likes on the post")
     shortcode: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="Instagram shortcode")
     posted_at: Mapped[datetime | None] = mapped_column(
-        "posted_at",
+        "timestamp",
         DateTime,
         nullable=True,
         comment="When the media was posted on Instagram",
