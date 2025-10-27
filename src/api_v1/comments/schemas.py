@@ -84,7 +84,7 @@ class ClassificationDTO(BaseModel):
     processing_completed_at: Optional[str] = None
     last_error: Optional[str] = None
     confidence: Optional[int] = None
-    type: Optional[int] = None
+    classification_type: Optional[int] = None
     reasoning: Optional[str] = None
 
 

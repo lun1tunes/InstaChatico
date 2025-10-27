@@ -80,7 +80,7 @@ async def test_media_comments_with_status_filter(integration_environment):
     assert response.status_code == 200
     payload = response.json()["payload"]
     assert len(payload) == 1
-    assert payload[0]["classification"]["type"] == 4
+    assert payload[0]["classification"]["classification_type"] == 4
     ts = payload[0]["classification"]["processing_completed_at"]
     assert ts and ts.endswith("Z")
     assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$", ts)
@@ -177,7 +177,7 @@ async def test_patch_comment_classification(integration_environment):
     )
     assert response.status_code == 200
     payload = response.json()["payload"]
-    assert payload["classification"]["type"] == 2
+    assert payload["classification"]["classification_type"] == 2
     assert payload["classification"]["confidence"] is None
     patched_ts = payload["classification"]["processing_completed_at"]
     assert patched_ts and patched_ts.endswith("Z")

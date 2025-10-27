@@ -122,7 +122,7 @@ def serialize_classification(classification: Optional[CommentClassification]) ->
         processing_completed_at=format_datetime(classification.processing_completed_at),
         last_error=classification.last_error,
         confidence=classification.confidence,
-        type=classification_type_to_code(classification.type),
+        classification_type=classification_type_to_code(classification.type),
         reasoning=classification.reasoning,
     )
 

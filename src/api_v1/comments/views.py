@@ -261,6 +261,8 @@ async def list_media_comments(
     status_csv: Optional[str] = Query(default=None, alias="status"),
     classification_multi: Optional[List[int]] = Query(default=None, alias="type[]"),
     classification_csv: Optional[str] = Query(default=None, alias="type"),
+    classification_multi_alt: Optional[List[int]] = Query(default=None, alias="classification_type[]"),
+    classification_csv_alt: Optional[str] = Query(default=None, alias="classification_type"),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     await _get_media_or_404(session, media_id)
@@ -285,8 +287,18 @@ async def list_media_comments(
     classification_values: List[int] = []
     if classification_multi:
         classification_values.extend(classification_multi)
+    if classification_multi_alt:
+        classification_values.extend(classification_multi_alt)
     if classification_csv:
         for part in classification_csv.split(","):
+            part = part.strip()
+            if part:
+                try:
+                    classification_values.append(int(part))
+                except ValueError:
+                    raise JsonApiError(400, 4007, "Invalid classification filter")
+    if classification_csv_alt:
+        for part in classification_csv_alt.split(","):
             part = part.strip()
             if part:
                 try:

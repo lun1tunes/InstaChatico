@@ -291,7 +291,7 @@ async def test_media_comments_filter_by_classification_type(integration_environm
     payload = response.json()["payload"]
     assert len(payload) == 1
     assert payload[0]["id"] == "comment_type_question"
-    assert payload[0]["classification"]["type"] == 4
+    assert payload[0]["classification"]["classification_type"] == 4
 
     # Filter for both question and positive using array syntax
     response = await client.get(
@@ -304,6 +304,17 @@ async def test_media_comments_filter_by_classification_type(integration_environm
         "comment_type_question",
         "comment_type_positive",
     }
+
+    # Filter using classification_type alias
+    response = await client.get(
+        "/api/v1/media/media_type_filter/comments?classification_type=1",
+        headers=auth_headers(integration_environment),
+    )
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert len(payload) == 1
+    assert payload[0]["id"] == "comment_type_positive"
+    assert payload[0]["classification"]["classification_type"] == 1
 
 
 @pytest.mark.asyncio
@@ -462,6 +473,5 @@ async def test_patch_classification_creates_if_missing(integration_environment):
     )
     assert response.status_code == 200
     payload = response.json()["payload"]
-    assert payload["classification"]["type"] == 4  # question / inquiry
+    assert payload["classification"]["classification_type"] == 4  # question / inquiry
     assert payload["classification"]["reasoning"] == "manual"
-
