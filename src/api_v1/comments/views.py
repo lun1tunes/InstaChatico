@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, Depends, Header, Path, Query, Request
@@ -49,6 +50,8 @@ from .schemas import (
     ClassificationTypeDTO,
     ClassificationTypesResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["JSON API"])
 
@@ -177,6 +180,11 @@ async def patch_media(
     body: MediaUpdateRequest = Body(...),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
+    logger.debug(
+        "Patch media request received | media_id=%s | payload=%s",
+        media_id,
+        body.model_dump(exclude_none=True),
+    )
     media = await _get_media_or_404(session, media_id)
     container = get_container()
     updated_comment_status = False
@@ -185,6 +193,11 @@ async def patch_media(
         media_service = container.media_service()
         result = await media_service.set_comment_status(media_id, bool(body.is_comment_enabled), session)
         if not result.get("success"):
+            logger.error(
+                "Failed to update Instagram comment status | media_id=%s | response=%s",
+                media_id,
+                result,
+            )
             raise JsonApiError(502, 5002, "Failed to update Instagram comment status")
         updated_comment_status = True
 
@@ -197,6 +210,12 @@ async def patch_media(
     await session.commit()
     if updated_comment_status:
         await session.refresh(media)
+
+    logger.info(
+        "Media updated | media_id=%s | updated_comment_status=%s",
+        media_id,
+        updated_comment_status,
+    )
 
     return MediaResponse(meta=SimpleMeta(), payload=serialize_media(media))
 
@@ -214,8 +233,20 @@ async def proxy_media_image(
     try:
         result = await use_case.execute(media_id=media_id, child_index=child_index)
     except MediaImageProxyError as exc:
+        logger.error(
+            "Proxy media image failed | media_id=%s | child_index=%s | code=%s | message=%s",
+            media_id,
+            child_index,
+            exc.code,
+            exc.message,
+        )
         raise JsonApiError(exc.status_code, exc.code, exc.message)
 
+    logger.debug(
+        "Proxy media image succeeded | media_id=%s | child_index=%s",
+        media_id,
+        child_index,
+    )
     return StreamingResponse(result.content_stream, media_type=result.content_type, headers=result.headers)
 
 
