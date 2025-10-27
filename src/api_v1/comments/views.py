@@ -199,6 +199,8 @@ async def patch_media(
         await session.refresh(media)
 
     return MediaResponse(meta=SimpleMeta(), payload=serialize_media(media))
+
+
 @router.get("/media/{id}/image")
 async def proxy_media_image(
     _: None = Depends(require_service_token),
@@ -386,12 +388,11 @@ async def delete_answer(
     answer.reply_error = None
     await session.commit()
     return EmptyResponse(meta=SimpleMeta())
+
+
 @router.get("/meta/classification-types")
 async def get_classification_types(
     _: None = Depends(require_service_token),
 ):
-    items = [
-        ClassificationTypeDTO(code=code, label=label)
-        for code, label in list_classification_types()
-    ]
+    items = [ClassificationTypeDTO(code=code, label=label) for code, label in list_classification_types()]
     return ClassificationTypesResponse(meta=SimpleMeta(), payload=items)
