@@ -14,8 +14,10 @@ from ..models.comment_classification import CommentClassification, ProcessingSta
 logger = logging.getLogger(__name__)
 
 
-def _exclude_deleted(stmt: Select) -> Select:
-    """Ensure queries skip soft-deleted comments."""
+def _exclude_deleted(stmt: Select, include_deleted: bool = False) -> Select:
+    """Optionally filter out soft-deleted comments."""
+    if include_deleted:
+        return stmt
     return stmt.where(InstagramComment.is_deleted.is_(False))
 
 
@@ -73,6 +75,7 @@ class CommentRepository(BaseRepository[InstagramComment]):
         limit: int,
         statuses: Optional[list[ProcessingStatus]] = None,
         classification_types: Optional[list[str]] = None,
+        include_deleted: bool = False,
     ) -> list[InstagramComment]:
         stmt = (
             select(InstagramComment)
@@ -85,7 +88,7 @@ class CommentRepository(BaseRepository[InstagramComment]):
             .offset(offset)
             .limit(limit)
         )
-        stmt = _exclude_deleted(stmt)
+        stmt = _exclude_deleted(stmt, include_deleted=include_deleted)
         if statuses or classification_types:
             stmt = stmt.join(InstagramComment.classification)
             if statuses:
@@ -101,11 +104,13 @@ class CommentRepository(BaseRepository[InstagramComment]):
         *,
         statuses: Optional[list[ProcessingStatus]] = None,
         classification_types: Optional[list[str]] = None,
+        include_deleted: bool = False,
     ) -> int:
         stmt = select(func.count()).select_from(InstagramComment).where(
             InstagramComment.media_id == media_id,
-            InstagramComment.is_deleted.is_(False),
         )
+        if not include_deleted:
+            stmt = stmt.where(InstagramComment.is_deleted.is_(False))
         if statuses or classification_types:
             stmt = stmt.join(CommentClassification, InstagramComment.id == CommentClassification.comment_id)
             if statuses:

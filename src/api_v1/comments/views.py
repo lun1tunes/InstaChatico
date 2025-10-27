@@ -261,6 +261,10 @@ async def list_media_comments(
     media_id: str = Path(..., alias="id"),
     page: int = Query(1, ge=1),
     per_page: int = Query(COMMENTS_DEFAULT_PER_PAGE, ge=1),
+    include_deleted: bool = Query(
+        False,
+        description="Include comments marked as deleted",
+    ),
     status_multi: Optional[List[int]] = Query(default=None, alias="status[]"),
     status_csv: Optional[str] = Query(default=None, alias="status"),
     classification_multi: Optional[List[int]] = Query(default=None, alias="type[]"),
@@ -315,13 +319,19 @@ async def list_media_comments(
         raise JsonApiError(400, 4007, "Invalid classification filter")
 
     repo = CommentRepository(session)
-    total = await repo.count_for_media(media_id, statuses=statuses, classification_types=classification_types)
+    total = await repo.count_for_media(
+        media_id,
+        statuses=statuses,
+        classification_types=classification_types,
+        include_deleted=include_deleted,
+    )
     items = await repo.list_for_media(
         media_id,
         offset=offset,
         limit=per_page,
         statuses=statuses,
         classification_types=classification_types,
+        include_deleted=include_deleted,
     )
     payload = [serialize_comment(comment) for comment in items]
     response = CommentListResponse(

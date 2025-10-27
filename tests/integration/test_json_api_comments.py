@@ -212,6 +212,16 @@ async def test_deleted_comments_excluded_from_listing(integration_environment):
     payload = response.json()["payload"]
     assert payload == []
 
+    response = await client.get(
+        "/api/v1/media/media_deleted_list/comments?include_deleted=true",
+        headers=auth_headers(integration_environment),
+    )
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert len(payload) == 1
+    assert payload[0]["id"] == "comment_list_hidden"
+    assert payload[0]["is_deleted"] is True
+
 
 # ===== Status Filter Tests =====
 
