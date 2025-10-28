@@ -261,10 +261,7 @@ async def list_media_comments(
     media_id: str = Path(..., alias="id"),
     page: int = Query(1, ge=1),
     per_page: int = Query(COMMENTS_DEFAULT_PER_PAGE, ge=1),
-    include_deleted: bool = Query(
-        False,
-        description="Include comments marked as deleted",
-    ),
+    include_deleted: bool = Query(True, description="Include comments marked as deleted"),
     status_multi: Optional[List[int]] = Query(default=None, alias="status[]"),
     status_csv: Optional[str] = Query(default=None, alias="status"),
     classification_multi: Optional[List[int]] = Query(default=None, alias="type[]"),

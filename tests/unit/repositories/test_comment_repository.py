@@ -114,19 +114,21 @@ class TestCommentRepository:
         grandchild_row = await db_session.get(InstagramComment, grandchild.id)
         assert grandchild_row.is_deleted is True
 
-    async def test_list_for_media_can_include_deleted(self, db_session, instagram_comment_factory):
+    async def test_list_for_media_default_includes_deleted(self, db_session, instagram_comment_factory):
         repo = CommentRepository(db_session)
         active = await instagram_comment_factory(media_id="media-list", is_deleted=False)
         deleted = await instagram_comment_factory(media_id="media-list", is_deleted=True)
 
         results = await repo.list_for_media("media-list", offset=0, limit=10)
         ids = {comment.id for comment in results}
-        assert active.id in ids
-        assert deleted.id not in ids
+        assert {active.id, deleted.id} <= ids
 
-        with_deleted = await repo.list_for_media("media-list", offset=0, limit=10, include_deleted=True)
-        ids_with_deleted = {comment.id for comment in with_deleted}
-        assert {active.id, deleted.id} <= ids_with_deleted
+        without_deleted = await repo.list_for_media(
+            "media-list", offset=0, limit=10, include_deleted=False
+        )
+        ids_without = {comment.id for comment in without_deleted}
+        assert active.id in ids_without
+        assert deleted.id not in ids_without
 
     async def test_comment_persistence(self, db_session):
         """Test that created comment persists in database."""

@@ -75,7 +75,7 @@ class CommentRepository(BaseRepository[InstagramComment]):
         limit: int,
         statuses: Optional[list[ProcessingStatus]] = None,
         classification_types: Optional[list[str]] = None,
-        include_deleted: bool = False,
+        include_deleted: bool = True,
     ) -> list[InstagramComment]:
         stmt = (
             select(InstagramComment)
@@ -104,7 +104,7 @@ class CommentRepository(BaseRepository[InstagramComment]):
         *,
         statuses: Optional[list[ProcessingStatus]] = None,
         classification_types: Optional[list[str]] = None,
-        include_deleted: bool = False,
+        include_deleted: bool = True,
     ) -> int:
         stmt = select(func.count()).select_from(InstagramComment).where(
             InstagramComment.media_id == media_id,
