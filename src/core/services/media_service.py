@@ -47,17 +47,7 @@ class MediaService:
             if media:
                 logger.debug(f"Media {media_id} already exists in database")
 
-                # Check if existing media needs analysis
-                if media.media_type in ["IMAGE", "CAROUSEL_ALBUM"] and media.media_url and not media.media_context:
-                    try:
-                        self.task_queue.enqueue(
-                            "core.tasks.media_tasks.analyze_media_image_task",
-                            media_id,
-                        )
-                        logger.info(f"Queued image analysis task for existing media {media_id}")
-                    except Exception as e:
-                        logger.warning(f"Failed to queue image analysis for existing media {media_id}: {e}")
-
+                await self._queue_analysis_if_needed(media, session)
                 return media
 
             # Media doesn't exist, fetch from Instagram API
@@ -108,15 +98,7 @@ class MediaService:
             logger.info(f"Created media record for {media_id}")
 
             # Queue image analysis task if media is an image
-            if media.media_type in ["IMAGE", "CAROUSEL_ALBUM"] and media.media_url:
-                try:
-                    self.task_queue.enqueue(
-                        "core.tasks.media_tasks.analyze_media_image_task",
-                        media_id,
-                    )
-                    logger.info(f"Queued image analysis task for media {media_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to queue image analysis for {media_id}: {e}")
+            await self._queue_analysis_if_needed(media, session)
 
             return media
 
@@ -124,6 +106,43 @@ class MediaService:
             logger.exception(f"Exception while getting/creating media {media_id}")
             await session.rollback()
             return None
+
+    async def _queue_analysis_if_needed(self, media: Media, session: AsyncSession) -> None:
+        """Queue image analysis task once per media while tracking request timestamp."""
+        if media.media_type not in ["IMAGE", "CAROUSEL_ALBUM"]:
+            return
+        if not media.media_url:
+            return
+        if media.media_context:
+            return
+        if media.analysis_requested_at:
+            logger.debug(
+                "Analysis already requested | media_id=%s | requested_at=%s",
+                media.id,
+                media.analysis_requested_at,
+            )
+            return
+
+        try:
+            self.task_queue.enqueue(
+                "core.tasks.media_tasks.analyze_media_image_task",
+                media.id,
+            )
+            logger.info(f"Queued image analysis task for media {media.id}")
+        except Exception as e:
+            logger.warning(f"Failed to queue image analysis for {media.id}: {e}")
+            return
+
+        media.analysis_requested_at = now_db_utc()
+        try:
+            await session.commit()
+            await session.refresh(media)
+        except Exception:
+            logger.exception(
+                "Failed to persist analysis request flag | media_id=%s",
+                media.id,
+            )
+            await session.rollback()
 
     def _extract_carousel_children_urls(self, media_info: dict) -> Optional[list]:
         """

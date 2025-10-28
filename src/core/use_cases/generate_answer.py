@@ -10,6 +10,7 @@ from ..utils.decorators import handle_task_errors
 from ..utils.time import now_db_utc
 from ..models.question_answer import AnswerStatus
 from ..interfaces.repositories import ICommentRepository, IAnswerRepository
+from ..utils.comment_context import push_comment_context, reset_comment_context
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class GenerateAnswerUseCase:
         answer_record.retry_count = retry_count
 
         # 4. Generate answer using service
+        context_token = push_comment_context(comment_id=comment_id, media_id=comment.media_id)
         try:
             answer_result = await self.qa_service.generate_answer(
                 question_text=comment.text,
@@ -100,6 +102,9 @@ class GenerateAnswerUseCase:
                 raise
 
             return result_payload
+
+        finally:
+            reset_comment_context(context_token)
 
         # 5. Update answer record with results
         answer_record.answer = answer_result.answer

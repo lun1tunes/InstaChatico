@@ -35,6 +35,11 @@ class Media(Base):
         nullable=True,
         comment="When the media was posted on Instagram",
     )
+    analysis_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+        comment="When an AI image analysis job was last queued",
+    )
     is_comment_enabled: Mapped[bool | None] = mapped_column(
         Boolean, nullable=True, comment="Whether comments are enabled"
     )

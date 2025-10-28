@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from core.use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
+from core.utils.time import now_db_utc
 
 
 @pytest.mark.unit
@@ -233,6 +234,7 @@ class TestAnalyzeMediaUseCase:
             media_url="https://example.com/image.jpg",
             caption="Beautiful sunset",
             media_context=None,
+            analysis_requested_at=now_db_utc(),
         )
 
         # Mock analysis service
@@ -269,6 +271,7 @@ class TestAnalyzeMediaUseCase:
 
         # Verify media updated
         assert media.media_context == "Analysis: Sunset over ocean with warm colors"
+        assert media.analysis_requested_at is None
 
     async def test_execute_carousel_images_success(self, db_session, media_factory):
         """Test successfully analyzing carousel images."""
@@ -279,6 +282,7 @@ class TestAnalyzeMediaUseCase:
             media_url="https://example.com/carousel_cover.jpg",
             caption="Product showcase",
             media_context=None,
+            analysis_requested_at=now_db_utc(),
         )
         media.children_media_urls = [
             "https://example.com/img1.jpg",
@@ -320,6 +324,7 @@ class TestAnalyzeMediaUseCase:
             ],
             caption="Product showcase"
         )
+        assert media.analysis_requested_at is None
 
     async def test_execute_media_not_found(self, db_session):
         """Test analysis when media doesn't exist."""
@@ -350,6 +355,7 @@ class TestAnalyzeMediaUseCase:
             media_type="IMAGE",
             media_url="https://example.com/image.jpg",
             media_context="Already analyzed",
+            analysis_requested_at=now_db_utc(),
         )
 
         # Mock repository
@@ -373,6 +379,7 @@ class TestAnalyzeMediaUseCase:
         # Assert
         assert result.status == "skipped"
         assert result.reason == "already_analyzed"
+        assert media.analysis_requested_at is None
 
         # Verify analysis NOT called
         mock_analysis_service.analyze_media_image.assert_not_called()
@@ -385,6 +392,7 @@ class TestAnalyzeMediaUseCase:
             media_type="VIDEO",
             media_url="https://example.com/video.mp4",
             media_context=None,
+            analysis_requested_at=now_db_utc(),
         )
 
         # Mock repository
@@ -404,6 +412,7 @@ class TestAnalyzeMediaUseCase:
         # Assert
         assert result.status == "skipped"
         assert result.reason == "no_image_to_analyze"
+        assert media.analysis_requested_at is None
 
     async def test_execute_image_without_url(self, db_session, media_factory):
         """Test skipping analysis when image has no URL."""
@@ -413,6 +422,7 @@ class TestAnalyzeMediaUseCase:
             media_type="IMAGE",
             media_url=None,
             media_context=None,
+            analysis_requested_at=now_db_utc(),
         )
 
         # Mock repository
@@ -432,6 +442,7 @@ class TestAnalyzeMediaUseCase:
         # Assert
         assert result.status == "skipped"
         assert result.reason == "no_image_to_analyze"
+        assert media.analysis_requested_at is None
 
     async def test_execute_analysis_exception(self, db_session, media_factory):
         """Test handling analysis service exception."""
@@ -441,6 +452,7 @@ class TestAnalyzeMediaUseCase:
             media_type="IMAGE",
             media_url="https://example.com/image.jpg",
             media_context=None,
+            analysis_requested_at=now_db_utc(),
         )
 
         # Mock analysis service - raises exception
@@ -469,6 +481,7 @@ class TestAnalyzeMediaUseCase:
 
         # Verify media marked as failed
         assert media.media_context == "ANALYSIS_FAILED"
+        assert media.analysis_requested_at is None
 
     async def test_execute_analysis_returns_none(self, db_session, media_factory):
         """Test handling when analysis service returns None."""
@@ -478,6 +491,7 @@ class TestAnalyzeMediaUseCase:
             media_type="IMAGE",
             media_url="https://example.com/image.jpg",
             media_context=None,
+            analysis_requested_at=now_db_utc(),
         )
 
         # Mock analysis service - returns None
@@ -504,6 +518,7 @@ class TestAnalyzeMediaUseCase:
 
         # Verify media marked as failed
         assert media.media_context == "ANALYSIS_FAILED"
+        assert media.analysis_requested_at is None
 
     async def test_execute_carousel_exception(self, db_session, media_factory):
         """Test handling carousel analysis exception."""
@@ -513,6 +528,7 @@ class TestAnalyzeMediaUseCase:
             media_type="CAROUSEL_ALBUM",
             media_url="https://example.com/carousel.jpg",
             media_context=None,
+            analysis_requested_at=now_db_utc(),
         )
         media.children_media_urls = ["url1.jpg", "url2.jpg"]
 
@@ -542,6 +558,7 @@ class TestAnalyzeMediaUseCase:
 
         # Verify media marked as failed
         assert media.media_context == "ANALYSIS_FAILED"
+        assert media.analysis_requested_at is None
 
     async def test_execute_unexpected_exception(self, db_session):
         """Test handling unexpected exceptions."""
@@ -599,3 +616,4 @@ class TestAnalyzeMediaUseCase:
         # Should fallback to single image analysis
         mock_analysis_service.analyze_media_image.assert_awaited_once()
         assert result.images_analyzed == 1
+        assert media.analysis_requested_at is None

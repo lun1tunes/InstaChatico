@@ -38,6 +38,7 @@ from core.models import (
     Media,
     Document,
     ProductEmbedding,
+    InstrumentTokenUsage,
 )
 from core.models.comment_classification import ProcessingStatus
 from core.models.question_answer import AnswerStatus
@@ -187,6 +188,7 @@ def media_factory(db_session):
             username=kwargs.get("username"),
             owner=kwargs.get("owner"),
             raw_data=kwargs.get("raw_data"),
+            analysis_requested_at=kwargs.get("analysis_requested_at"),
         )
         db_session.add(media)
         await db_session.commit()

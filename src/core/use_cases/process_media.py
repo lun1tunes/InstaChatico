@@ -150,6 +150,9 @@ class AnalyzeMediaUseCase:
 
             # 2. Check if already analyzed
             if media.media_context:
+                if media.analysis_requested_at:
+                    media.analysis_requested_at = None
+                    await self.session.commit()
                 logger.info(f"Media already analyzed | media_id={media_id} | skipping analysis")
                 return MediaAnalysisResult(
                     status="skipped",
@@ -159,6 +162,9 @@ class AnalyzeMediaUseCase:
 
             # 3. Check if media has image(s)
             if media.media_type not in ["IMAGE", "CAROUSEL_ALBUM"] or not media.media_url:
+                if media.analysis_requested_at:
+                    media.analysis_requested_at = None
+                    await self.session.commit()
                 logger.info(
                     f"No image to analyze | media_id={media_id} | media_type={media.media_type} | "
                     f"has_url={bool(media.media_url)}"
@@ -188,6 +194,7 @@ class AnalyzeMediaUseCase:
             except Exception as analysis_exc:
                 logger.exception(f"Exception during media analysis | media_id={media_id}")
                 media.media_context = "ANALYSIS_FAILED"
+                media.analysis_requested_at = None
                 await self.session.commit()
 
                 return MediaAnalysisResult(
@@ -198,6 +205,7 @@ class AnalyzeMediaUseCase:
 
             if analysis_result:
                 media.media_context = analysis_result
+                media.analysis_requested_at = None
                 await self.session.commit()
 
                 logger.info(
@@ -220,6 +228,7 @@ class AnalyzeMediaUseCase:
             )
 
             media.media_context = "ANALYSIS_FAILED"
+            media.analysis_requested_at = None
             await self.session.commit()
 
             return MediaAnalysisResult(

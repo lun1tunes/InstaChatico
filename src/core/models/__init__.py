@@ -10,6 +10,7 @@ __all__ = (
     "Media",
     "ProductEmbedding",
     "Document",
+    "InstrumentTokenUsage",
 )
 
 from .base import Base
@@ -20,3 +21,4 @@ from .question_answer import QuestionAnswer, AnswerStatus
 from .media import Media
 from .product_embedding import ProductEmbedding
 from .document import Document
+from .instrument_token_usage import InstrumentTokenUsage

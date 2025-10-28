@@ -146,6 +146,7 @@ class ClassifyCommentUseCase:
             "confidence": result.confidence,
         }
 
+
     def _calculate_max_retries(self, classification: CommentClassification) -> int:
         """Return configured max retries or fall back to default schedule length."""
         raw_value = getattr(classification, "max_retries", None)

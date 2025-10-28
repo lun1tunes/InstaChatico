@@ -9,11 +9,17 @@ from agents import function_tool
 
 from ...services.embedding_service import EmbeddingService
 from ...models.db_helper import db_helper
+from ...utils.comment_context import get_comment_context
 
 logger = logging.getLogger(__name__)
 
 
-async def _embedding_search_implementation(query: str, limit: int = 5, category: Optional[str] = None) -> str:
+async def _embedding_search_implementation(
+    query: str,
+    limit: int = 5,
+    category: Optional[str] = None,
+    comment_id: Optional[str] = None,
+) -> str:
     """
     Поиск продуктов и услуг по семантическому сходству с автоматической фильтрацией нерелевантных результатов.
 
@@ -86,6 +92,8 @@ async def _embedding_search_implementation(query: str, limit: int = 5, category:
             try:
                 # Initialize embedding service with proper cleanup
                 async with EmbeddingService() as embedding_service:
+                    ctx = get_comment_context()
+                    comment_ref = comment_id or ctx.get("comment_id")
                     # Perform semantic search (get more results to account for filtering)
                     all_results = await embedding_service.search_similar_products(
                         query=query,
@@ -93,6 +101,7 @@ async def _embedding_search_implementation(query: str, limit: int = 5, category:
                         limit=limit * 2,  # Get more results to filter
                         category_filter=category,
                         include_inactive=False,
+                        comment_id=comment_ref,
                     )
 
                     # Handle empty database

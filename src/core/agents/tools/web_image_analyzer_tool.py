@@ -9,6 +9,7 @@ from typing import Optional
 import aiohttp
 from openai import AsyncOpenAI
 from ...config import settings
+from ...utils.comment_context import get_comment_context
 from agents import function_tool
 
 logger = logging.getLogger(__name__)
@@ -90,10 +91,7 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
 
         # Download the image first (Instagram URLs require this)
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                image_url,
-                timeout=aiohttp.ClientTimeout(total=IMAGE_DOWNLOAD_TIMEOUT)
-            ) as response:
+            async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=IMAGE_DOWNLOAD_TIMEOUT)) as response:
                 if response.status != 200:
                     error_msg = f"Image download failed | status={response.status}"
                     logger.error(error_msg)
@@ -188,13 +186,34 @@ async def _analyze_image_implementation(image_url: str, additional_context: Opti
             analysis_result = api_response.choices[0].message.content
 
             # Get token usage from response
-            input_tokens = getattr(api_response.usage, 'prompt_tokens', 0) if api_response.usage else 0
-            output_tokens = getattr(api_response.usage, 'completion_tokens', 0) if api_response.usage else 0
+            input_tokens = getattr(api_response.usage, "prompt_tokens", 0) if api_response.usage else 0
+            output_tokens = getattr(api_response.usage, "completion_tokens", 0) if api_response.usage else 0
 
             logger.info(
                 f"Image analysis completed | result_length={len(analysis_result)} | "
                 f"input_tokens={input_tokens} | output_tokens={output_tokens}"
             )
+
+            from ...container import get_container  # local import to avoid circular dependency
+
+            try:
+                inspector = get_container().tools_token_usage_inspector(session=None)
+                ctx = get_comment_context()
+                comment_ref = ctx.get("comment_id")
+                await inspector.record(
+                    tool="web_image_analyzer_tool",
+                    task="media_image_analysis",
+                    model=IMAGE_ANALYSIS_MODEL,
+                    tokens_in=input_tokens,
+                    tokens_out=output_tokens,
+                    comment_id=comment_ref,
+                    metadata={
+                        "image_url": image_url,
+                        "additional_context": additional_context[:200] if additional_context else None,
+                    },
+                )
+            except Exception:
+                logger.debug("Skipping token usage logging for vision tool", exc_info=True)
 
             return analysis_result
 

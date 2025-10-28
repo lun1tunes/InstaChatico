@@ -8,6 +8,7 @@ from datetime import datetime
 
 from core.services.media_service import MediaService
 from core.models import Media
+from core.utils.time import now_db_utc
 
 
 @pytest.mark.unit
@@ -84,6 +85,7 @@ class TestMediaService:
             "core.tasks.media_tasks.analyze_media_image_task",
             "media_456"
         )
+        assert media.analysis_requested_at is not None
 
     async def test_get_or_create_media_exists_with_context_no_queue(
         self, media_service, mock_task_queue, db_session
@@ -135,6 +137,28 @@ class TestMediaService:
         assert media.id == "media_999"
         # Should return media despite queue failure
         mock_task_queue.enqueue.assert_called_once()
+        assert media.analysis_requested_at is None
+
+    async def test_get_or_create_media_skips_when_analysis_already_requested(
+        self, media_service, mock_task_queue, db_session
+    ):
+        """Do not enqueue analysis again when a request was already queued."""
+        existing_media = Media(
+            id="media_200",
+            permalink="https://instagram.com/p/IMG200",
+            media_type="IMAGE",
+            media_url="https://example.com/image.jpg",
+            caption="Test image",
+            media_context=None,
+            analysis_requested_at=now_db_utc(),
+        )
+        db_session.add(existing_media)
+        await db_session.commit()
+
+        media = await media_service.get_or_create_media("media_200", db_session)
+
+        assert media is not None
+        mock_task_queue.enqueue.assert_not_called()
 
     async def test_get_or_create_media_fetches_from_api(
         self, media_service, mock_instagram_service, mock_task_queue, db_session
@@ -166,6 +190,7 @@ class TestMediaService:
         assert media.posted_at is not None
         mock_instagram_service.get_media_info.assert_called_once_with("new_media_123")
         mock_task_queue.enqueue.assert_called_once()
+        assert media.analysis_requested_at is not None
 
     async def test_refresh_media_urls_success(
         self, media_service, mock_instagram_service, db_session

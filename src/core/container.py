@@ -25,6 +25,7 @@ from .services.agent_session_service import AgentSessionService
 from .services.agent_executor import AgentExecutor
 from .services.rate_limiter import RedisRateLimiter
 from .services.media_proxy_service import MediaProxyService
+from .services.tools_token_usage_inspector import ToolsTokenUsageInspector
 
 # Infrastructure
 from .infrastructure.task_queue import CeleryTaskQueue
@@ -50,6 +51,7 @@ from .repositories.classification import ClassificationRepository
 from .repositories.answer import AnswerRepository
 from .repositories.media import MediaRepository
 from .repositories.document import DocumentRepository
+from .repositories.instrument_token_usage import InstrumentTokenUsageRepository
 
 
 class Container(containers.DeclarativeContainer):
@@ -94,6 +96,7 @@ class Container(containers.DeclarativeContainer):
     answer_repository_factory = providers.Factory(AnswerRepository)
     media_repository_factory = providers.Factory(MediaRepository)
     document_repository_factory = providers.Factory(DocumentRepository)
+    instrument_token_usage_repository_factory = providers.Factory(InstrumentTokenUsageRepository)
 
     agent_session_service = providers.Singleton(
         AgentSessionService,
@@ -167,6 +170,12 @@ class Container(containers.DeclarativeContainer):
         proxy_service=media_proxy_service,
         media_service=media_service,
         allowed_host_suffixes=settings.media_proxy.allowed_host_suffixes,
+    )
+
+    tools_token_usage_inspector = providers.Factory(
+        ToolsTokenUsageInspector,
+        repository_factory=instrument_token_usage_repository_factory.provider,
+        session_factory=db_session_factory.provider,
     )
 
     # Use Cases - Factory (new instance per request)

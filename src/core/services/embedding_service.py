@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 from ..config import settings
 from ..models import ProductEmbedding
 from ..repositories.product_embedding import ProductEmbeddingRepository
+from ..utils.comment_context import get_comment_context
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +38,20 @@ class EmbeddingService:
         """Async context manager exit - no cleanup needed (singleton manages client)"""
         return False
 
-    async def generate_embedding(self, text: str) -> List[float]:
+    async def generate_embedding(
+        self,
+        text: str,
+        *,
+        comment_id: Optional[str] = None,
+        media_id: Optional[str] = None,
+    ) -> List[float]:
         """Generate normalized embedding vector using OpenAI API (1536 dims)"""
         try:
             logger.debug(f"Generating embedding for text: {text[:100]}...")
 
             # Create new client each time to avoid event loop issues in Celery
+            ctx = get_comment_context()
+            comment_ref = comment_id or ctx.get("comment_id")
             async with AsyncOpenAI(api_key=settings.openai.api_key) as client:
                 response = await client.embeddings.create(
                     model=self.EMBEDDING_MODEL, input=text, encoding_format="float"
@@ -50,6 +59,35 @@ class EmbeddingService:
 
                 embedding = response.data[0].embedding
                 logger.debug(f"Generated embedding with {len(embedding)} dimensions")
+
+                usage = getattr(response, "usage", None)
+                tokens_in = None
+                total_tokens = None
+                if usage:
+                    tokens_in = getattr(usage, "prompt_tokens", None)
+                    total_tokens = getattr(usage, "total_tokens", None)
+                    if tokens_in is None and total_tokens is not None:
+                        tokens_in = total_tokens
+
+                # Record usage when available (comment/media IDs default to None)
+                try:
+                    from ..container import get_container  # local import to avoid circular dependency
+
+                    inspector = get_container().tools_token_usage_inspector(session=None)
+                    await inspector.record(
+                        tool="embedding_service",
+                        task="generate_embedding",
+                        model=self.EMBEDDING_MODEL,
+                        tokens_in=tokens_in,
+                        tokens_out=None,
+                        comment_id=comment_ref,
+                        metadata={
+                            "text_length": len(text),
+                            "total_tokens": total_tokens,
+                        },
+                    )
+                except Exception:
+                    logger.debug("Skipping token usage logging for embedding service", exc_info=True)
 
                 return embedding
 
@@ -64,6 +102,9 @@ class EmbeddingService:
         limit: int = 5,
         category_filter: Optional[str] = None,
         include_inactive: bool = False,
+        *,
+        comment_id: Optional[str] = None,
+        media_id: Optional[str] = None,
     ) -> List[Dict]:
         """
         Search products using cosine similarity, marks OOD results (< threshold).
@@ -73,7 +114,7 @@ class EmbeddingService:
             logger.info(f"Searching for products similar to: {query}")
 
             # Generate embedding for the query
-            query_embedding = await self.generate_embedding(query)
+            query_embedding = await self.generate_embedding(query, comment_id=comment_id, media_id=media_id)
 
             # Use repository for vector search with retry logic
             product_repo = ProductEmbeddingRepository(session)
@@ -132,7 +173,7 @@ class EmbeddingService:
 
             # Generate embedding from title + description
             text_to_embed = f"{title}\n{description}"
-            embedding = await self.generate_embedding(text_to_embed)
+            embedding = await self.generate_embedding(text_to_embed, media_id=None, comment_id=None)
 
             # Create product record
             product = ProductEmbedding(
@@ -177,7 +218,7 @@ class EmbeddingService:
 
             # Regenerate embedding
             text_to_embed = f"{product.title}\n{product.description}"
-            embedding = await self.generate_embedding(text_to_embed)
+            embedding = await self.generate_embedding(text_to_embed, media_id=None, comment_id=None)
 
             # Update product using repository
             await product_repo.update_embedding(product, embedding)
