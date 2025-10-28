@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 
 class MediaUpdateRequest(BaseModel):
@@ -27,13 +27,31 @@ class MediaUpdateRequest(BaseModel):
 
 
 class ClassificationUpdateRequest(BaseModel):
-    type: str = Field(..., description="Classification label/string")
+    model_config = ConfigDict(populate_by_name=True)
+
+    type: str | int | None = Field(
+        default=None,
+        description="Classification label/string",
+    )
+    classification_type: str | int | None = Field(
+        default=None,
+        alias="classification_type",
+        description="Alias for classification label/string",
+    )
     reasoning: str = Field(..., description="Manual reasoning for the change")
 
     @model_validator(mode="after")
     def ensure_reasoning(self) -> "ClassificationUpdateRequest":
         if not self.reasoning.strip():
             raise ValueError("Reasoning cannot be empty")
+        raw_type = self.type if self.type is not None else self.classification_type
+        if raw_type is None:
+            raise ValueError("Classification type is required")
+        normalized = str(raw_type).strip()
+        if not normalized:
+            raise ValueError("Classification type cannot be empty")
+        self.type = normalized
+        self.classification_type = None
         return self
 
 

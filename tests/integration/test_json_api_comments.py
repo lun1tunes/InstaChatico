@@ -546,3 +546,41 @@ async def test_patch_classification_creates_if_missing(integration_environment):
     payload = response.json()["payload"]
     assert payload["classification"]["classification_type"] == 4  # question / inquiry
     assert payload["classification"]["reasoning"] == "manual"
+
+
+@pytest.mark.asyncio
+async def test_patch_classification_accepts_numeric_code(integration_environment):
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+
+    async with session_factory() as session:
+        media = Media(
+            id="media_numeric_class",
+            permalink="https://instagram.com/p/media_numeric_class",
+            media_type="IMAGE",
+            media_url="https://cdn.test/numeric_class.jpg",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.add(media)
+        comment = InstagramComment(
+            id="comment_numeric_class",
+            media_id=media.id,
+            user_id="user",
+            username="tester",
+            text="Numeric classification",
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        session.add(comment)
+        await session.commit()
+
+    response = await client.patch(
+        "/api/v1/comments/comment_numeric_class/classification",
+        headers=auth_headers(integration_environment),
+        json={"type": 4, "reasoning": "manual numeric"},
+    )
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert payload["classification"]["classification_type"] == 4
+    assert payload["classification"]["reasoning"] == "manual numeric"

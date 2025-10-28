@@ -81,8 +81,17 @@ def classification_type_to_code(value: Optional[str]) -> Optional[int]:
 
 
 def normalize_classification_label(value: str) -> Optional[str]:
-    label = value.strip().lower()
-    return label if label in CLASSIFICATION_TYPE_CODES else None
+    raw = value.strip()
+    if not raw:
+        return None
+    label = raw.lower()
+    if label in CLASSIFICATION_TYPE_CODES:
+        return label
+    if raw.isdigit():
+        code = int(raw)
+        mapped = CLASSIFICATION_CODE_TO_TYPE.get(code)
+        return mapped.lower() if mapped else None
+    return None
 
 
 def classification_code_to_label(code: int) -> Optional[str]:

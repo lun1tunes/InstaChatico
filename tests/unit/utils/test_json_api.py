@@ -13,7 +13,12 @@ from api_v1.comments.serializers import (
     serialize_comment,
     serialize_answer,
 )
-from api_v1.comments.schemas import MediaDTO, CommentDTO, AnswerDTO
+from api_v1.comments.schemas import (
+    MediaDTO,
+    CommentDTO,
+    AnswerDTO,
+    ClassificationUpdateRequest,
+)
 
 
 def _build_media():
@@ -113,6 +118,21 @@ def test_classification_type_to_code_handles_synonyms():
     assert classification_type_to_code("positive feedback") == 1
     assert classification_type_to_code("positive feedback / appreciation") is None
     assert classification_type_to_code("unknown") is None
+
+
+def test_normalize_classification_label_numeric_code():
+    from api_v1.comments.serializers import normalize_classification_label
+
+    assert normalize_classification_label("4") == "question / inquiry"
+    assert normalize_classification_label(" 5 ") == "partnership proposal"
+
+
+def test_classification_update_request_accepts_alias_and_numeric():
+    request = ClassificationUpdateRequest(classification_type=7, reasoning="spam")
+    assert request.type == "7"
+
+    request2 = ClassificationUpdateRequest(type=2, reasoning="manual")
+    assert request2.type == "2"
 
 
 def test_parse_status_filters_valid_and_invalid():
