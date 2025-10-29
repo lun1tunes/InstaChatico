@@ -11,6 +11,10 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = len(DEFAULT_RETRY_SCHEDULE)
 
+ANSWER_QUEUE_CLASSIFICATIONS = {"question / inquiry"}
+HIDE_QUEUE_CLASSIFICATIONS = {"urgent issue / complaint", "toxic / abusive", "critical feedback"}
+TELEGRAM_QUEUE_CLASSIFICATIONS = {"urgent issue / complaint", "critical feedback", "partnership proposal"}
+
 
 @celery_app.task(bind=True, max_retries=MAX_RETRIES)
 @async_task
@@ -53,14 +57,14 @@ async def _trigger_post_classification_actions(classification_result: dict):
     Uses DI container to get task queue - follows SOLID principles.
     """
     comment_id = classification_result["comment_id"]
-    classification = classification_result.get("classification", "").lower()
+    classification = (classification_result.get("classification") or "").strip().lower()
 
     # Get task queue from container
     container = get_container()
     task_queue = container.task_queue()
 
     # Answer generation for questions
-    if classification == "question / inquiry":
+    if classification in ANSWER_QUEUE_CLASSIFICATIONS:
         logger.info(f"Queuing answer task | comment_id={comment_id} | classification={classification}")
         try:
             task_id = task_queue.enqueue(
@@ -72,7 +76,7 @@ async def _trigger_post_classification_actions(classification_result: dict):
             logger.error(f"Failed to queue answer task | comment_id={comment_id} | error={str(e)}", exc_info=True)
 
     # Hide toxic/complaint comments
-    if classification in ["urgent issue / complaint", "toxic / abusive"]:
+    if classification in HIDE_QUEUE_CLASSIFICATIONS:
         logger.info(f"Queuing hide task | comment_id={comment_id} | classification={classification}")
         try:
             task_id = task_queue.enqueue(
@@ -84,7 +88,7 @@ async def _trigger_post_classification_actions(classification_result: dict):
             logger.error(f"Failed to queue hide task | comment_id={comment_id} | error={str(e)}", exc_info=True)
 
     # Telegram notifications (excluding toxic)
-    if classification in ["urgent issue / complaint", "critical feedback", "partnership proposal"]:
+    if classification in TELEGRAM_QUEUE_CLASSIFICATIONS:
         logger.info(f"Queuing Telegram task | comment_id={comment_id} | classification={classification}")
         try:
             task_id = task_queue.enqueue(

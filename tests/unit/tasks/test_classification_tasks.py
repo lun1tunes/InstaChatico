@@ -155,6 +155,25 @@ def test_classify_comment_success_toxic(monkeypatch):
     assert queue.calls == [("core.tasks.instagram_reply_tasks.hide_instagram_comment_task", "c5")]
 
 
+def test_classify_comment_success_critical(monkeypatch):
+    queue = DummyQueue()
+    use_case = _make_use_case(
+        {"status": "success", "comment_id": "c7", "classification": "critical feedback"}
+    )
+    container = DummyContainer(classify_use_case=use_case, queue=queue)
+    session = object()
+    _patch_common(monkeypatch, container, session)
+
+    task = DummyTask()
+    result = _run_classify_task(task, "c7")
+
+    assert result["status"] == "success"
+    assert queue.calls == [
+        ("core.tasks.instagram_reply_tasks.hide_instagram_comment_task", "c7"),
+        ("core.tasks.telegram_tasks.send_telegram_notification_task", "c7"),
+    ]
+
+
 def test_classify_comment_success_handles_enqueue_errors(monkeypatch):
     queue = DummyQueue(raise_error=ValueError("queue down"))
     use_case = _make_use_case(
@@ -215,6 +234,8 @@ def test_classify_comment_urgent_handles_telegram_enqueue_error(monkeypatch):
 
     # Task should still succeed even if telegram enqueue fails
     assert result["status"] == "success"
+    # Hide call should still be recorded
+    assert ("core.tasks.instagram_reply_tasks.hide_instagram_comment_task", "c_telegram") in queue.calls
 
 
 def test_classify_comment_retry(monkeypatch):
