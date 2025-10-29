@@ -1,7 +1,12 @@
+name: instachatico-app
+
 services:
   postgres:
     image: pgvector/pgvector:pg15
     container_name: instagram_postgres
+    labels:
+      - "project=instachatico-app"
+      - "service=postgres"
     env_file:
       - .env
     environment:
@@ -12,7 +17,7 @@ services:
     ports:
       - "${POSTGRES_PORT}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - instachatico_postgres_data:/var/lib/postgresql/data
       - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - instagram_network
@@ -42,10 +47,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: instagram_redis
+    labels:
+      - "project=instachatico-app"
+      - "service=redis"
     ports:
       - "${REDIS_HOST_INTERFACE:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
-      - redis_data:/data
+      - instachatico_redis_data:/data
       - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - ./config/redis/entrypoint.sh:/docker-entrypoint.d/10-custom-entrypoint.sh:ro
     networks:
@@ -65,6 +73,9 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: instagram_api
+    labels:
+      - "project=instachatico-app"
+      - "service=api"
     env_file:
       - .env
     ports:
@@ -72,7 +83,7 @@ services:
     volumes:
       - ../src:/app/src
       - ../database:/app/database
-      - conversations_data:/app/src/conversations
+      - instachatico_conversations_data:/app/src/conversations
     environment:
       # Override Redis connection for Docker networking
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -94,12 +105,15 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: instagram_celery_worker
+    labels:
+      - "project=instachatico-app"
+      - "service=celery_worker"
     env_file:
       - .env
     volumes:
       - ../src:/app/src
       - ../database:/app/database
-      - conversations_data:/app/src/conversations
+      - instachatico_conversations_data:/app/src/conversations
     environment:
       # Override Redis connection for Docker networking
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -128,13 +142,16 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: instagram_celery_beat
+    labels:
+      - "project=instachatico-app"
+      - "service=celery_beat"
     env_file:
       - .env
     volumes:
       - ../src:/app/src
       - ../database:/app/database
-      - conversations_data:/app/src/conversations
-      - celerybeat_schedule:/app/celerybeat
+      - instachatico_conversations_data:/app/src/conversations
+      - instachatico_celerybeat_schedule:/app/celerybeat
     environment:
       # Override Redis connection for Docker networking
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -154,6 +171,9 @@ services:
   dozzle:
     image: amir20/dozzle:latest
     container_name: instagram_dozzle
+    labels:
+      - "project=instachatico-app"
+      - "service=dozzle"
     ports:
       - "57928:8080"
     volumes:
@@ -167,16 +187,21 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  instachatico_postgres_data:
     driver: local
-  redis_data:
+    name: instachatico_postgres_data
+  instachatico_redis_data:
     driver: local
-  conversations_data:
+    name: instachatico_redis_data
+  instachatico_conversations_data:
     driver: local
-  celerybeat_schedule:
+    name: instachatico_conversations_data
+  instachatico_celerybeat_schedule:
     driver: local
+    name: instachatico_celerybeat_schedule
 
 networks:
   instagram_network:
-    driver: bridge  
+    driver: bridge
+    name: instachatico-network  
     
