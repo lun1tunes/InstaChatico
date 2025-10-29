@@ -501,13 +501,14 @@ class InstagramGraphAPIService:
             )
             return {"success": False, "error": str(e), "status_code": None}
 
-    async def delete_comment(self, comment_id: str) -> Dict[str, Any]:
-        """Delete an Instagram comment by ID."""
+    async def delete_comment(self, comment_id: str, *, resource_type: str = "comment") -> Dict[str, Any]:
+        """Delete an Instagram comment or reply by ID."""
         url = f"{self.base_url}/{comment_id}"
         params = {"access_token": self.access_token}
 
         logger.info(
-            "Deleting Instagram comment | comment_id=%s",
+            "Deleting Instagram %s | id=%s",
+            resource_type,
             comment_id,
         )
 
@@ -518,7 +519,8 @@ class InstagramGraphAPIService:
 
                 if response.status == 200:
                     logger.info(
-                        "Instagram comment deleted | comment_id=%s | status_code=%s | response=%s",
+                        "Instagram %s deleted | id=%s | status_code=%s | response=%s",
+                        resource_type,
                         comment_id,
                         response.status,
                         response_data,
@@ -526,7 +528,8 @@ class InstagramGraphAPIService:
                     return {"success": True, "status_code": response.status, "response": response_data}
 
                 logger.error(
-                    "Failed to delete Instagram comment | comment_id=%s | status_code=%s | error=%s",
+                    "Failed to delete Instagram %s | id=%s | status_code=%s | error=%s",
+                    resource_type,
                     comment_id,
                     response.status,
                     response_data,
@@ -534,7 +537,7 @@ class InstagramGraphAPIService:
                 return {"success": False, "status_code": response.status, "error": response_data}
 
         except Exception as exc:
-            logger.exception("Exception while deleting Instagram comment | comment_id=%s", comment_id)
+            logger.exception("Exception while deleting Instagram %s | id=%s", resource_type, comment_id)
             return {"success": False, "error": str(exc), "status_code": None}
 
     async def _fetch_debug_token(self) -> Tuple[int, Dict[str, Any]]:
@@ -581,24 +584,4 @@ class InstagramGraphAPIService:
 
     async def delete_comment_reply(self, reply_id: str) -> Dict[str, Any]:
         """Delete an Instagram reply/comment by ID."""
-        url = f"{self.base_url}/{reply_id}"
-        params = {"access_token": self.access_token}
-
-        logger.info(f"Deleting Instagram reply | reply_id={reply_id}")
-
-        try:
-            session = await self._get_session()
-            async with session.delete(url, params=params) as response:
-                response_data = await response.json()
-
-                if response.status == 200:
-                    logger.info(f"Instagram reply deleted | reply_id={reply_id}")
-                    return {"success": True, "status_code": response.status, "response": response_data}
-
-                logger.error(
-                    f"Failed to delete Instagram reply | reply_id={reply_id} | status_code={response.status} | error={response_data}"
-                )
-                return {"success": False, "status_code": response.status, "error": response_data}
-        except Exception as exc:
-            logger.exception(f"Exception while deleting reply {reply_id}")
-            return {"success": False, "error": str(exc), "status_code": None}
+        return await self.delete_comment(reply_id, resource_type="reply")
