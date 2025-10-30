@@ -231,9 +231,9 @@ class TestProcessWebhookCommentUseCase:
         assert result["should_classify"] is False
         assert "failed to create media" in result["reason"].lower()
 
-    async def test_execute_owner_mismatch_media_owner(self, db_session, media_factory):
-        """Media owner mismatch should block processing after fetch."""
-        media = await media_factory(media_id="media_1", owner="other_owner")
+    async def test_execute_account_mismatch_entry_id(self, db_session, media_factory):
+        """Webhook entry account mismatch should block processing."""
+        media = await media_factory(media_id="media_1")
         from core.config import settings
         original_owner = settings.instagram.base_account_id
         settings.instagram.base_account_id = "expected_owner"
@@ -258,11 +258,12 @@ class TestProcessWebhookCommentUseCase:
             username="tester",
             text="Should be rejected",
             entry_timestamp=1234567890,
+            entry_owner_id="other_owner",
         )
 
         assert result["status"] == "forbidden"
         assert result["should_classify"] is False
-        assert result["reason"] == "Invalid media owner"
+        assert result["reason"] == "Invalid webhook account"
         settings.instagram.base_account_id = original_owner
 
     async def test_execute_with_parent_comment(self, db_session, media_factory):

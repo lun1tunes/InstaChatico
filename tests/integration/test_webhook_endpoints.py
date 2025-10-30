@@ -73,7 +73,7 @@ async def test_webhook_invalid_payload_returns_422(integration_environment, sign
         "object": "instagram",
         "entry": [
             {
-                "id": "acct",
+                "id": "wrong_acct",
                 "time": 10,
                 "changes": [
                     {
@@ -238,7 +238,7 @@ async def test_webhook_media_owner_mismatch(integration_environment, sign_payloa
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Invalid media owner"
+    assert response.json()["detail"] == "Invalid webhook account"
 
 
 @pytest.mark.asyncio

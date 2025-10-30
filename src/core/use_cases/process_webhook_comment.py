@@ -63,6 +63,7 @@ class ProcessWebhookCommentUseCase:
         entry_timestamp: int,
         parent_id: Optional[str] = None,
         raw_data: Optional[dict] = None,
+        entry_owner_id: Optional[str] = None,
     ) -> dict:
         """
         Process incoming webhook comment.
@@ -128,21 +129,19 @@ class ProcessWebhookCommentUseCase:
                 }
 
             # Validate media owner when available
-            if expected_owner_id:
-                media_owner = getattr(media, "owner", None)
-                if media_owner and media_owner != expected_owner_id:
+            if expected_owner_id and entry_owner_id:
+                if entry_owner_id != expected_owner_id:
                     logger.warning(
-                        "Media owner mismatch detected | comment_id=%s | media_id=%s | media_owner=%s | expected_owner=%s",
+                        "Webhook account mismatch detected | comment_id=%s | entry_id=%s | expected_id=%s",
                         comment_id,
-                        media_id,
-                        media_owner,
+                        entry_owner_id,
                         expected_owner_id,
                     )
                     return {
                         "status": "forbidden",
                         "comment_id": comment_id,
                         "should_classify": False,
-                        "reason": "Invalid media owner",
+                        "reason": "Invalid webhook account",
                     }
 
             # Create comment record
