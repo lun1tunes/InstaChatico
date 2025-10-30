@@ -8,6 +8,7 @@ from .send_reply import SendReplyUseCase
 from .send_telegram_notification import SendTelegramNotificationUseCase
 from .process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
 from .process_document import ProcessDocumentUseCase
+from .replace_answer import ReplaceAnswerUseCase, ReplaceAnswerError
 
 __all__ = [
     "ClassifyCommentUseCase",
@@ -19,4 +20,6 @@ __all__ = [
     "ProcessMediaUseCase",
     "AnalyzeMediaUseCase",
     "ProcessDocumentUseCase",
+    "ReplaceAnswerUseCase",
+    "ReplaceAnswerError",
 ]

@@ -8,6 +8,7 @@ from core.models import CommentClassification, InstagramComment, Media, Question
 from core.models.comment_classification import ProcessingStatus
 from core.utils.time import now_db_utc
 from tests.integration.json_api_helpers import auth_headers
+from sqlalchemy import select
 
 
 # ===== Answer Listing Tests =====
@@ -58,6 +59,7 @@ async def test_list_answers_for_comment(integration_environment):
     payload = response.json()["payload"]
     assert len(payload) == 1
     assert payload[0]["answer"] == "Here is the answer"
+    assert payload[0]["is_deleted"] is False
 
 
 @pytest.mark.asyncio
@@ -182,6 +184,7 @@ async def test_delete_answer_with_instagram_reply_success(integration_environmen
         assert deleted_answer.reply_sent is False
         assert deleted_answer.reply_status == "deleted"
         assert deleted_answer.reply_error is None
+        assert deleted_answer.is_deleted is True
         # Original fields unchanged
         assert deleted_answer.answer == "Test answer response"
         assert deleted_answer.reply_id == "reply_del_test_123"
@@ -247,6 +250,102 @@ async def test_delete_answer_without_reply_id_fails(integration_environment):
     # Success is False when error is present
     assert data["meta"]["error"]["code"] == 4012
     assert "does not have an Instagram reply" in data["meta"]["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_patch_answer_replaces_reply_success(integration_environment):
+    """Manual patch replaces Instagram reply and persists new active answer."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+    instagram_service = integration_environment["instagram_service"]
+
+    async with session_factory() as session:
+        media = Media(
+            id="media_patch_answer",
+            permalink="https://instagram.com/p/media_patch_answer",
+            media_type="IMAGE",
+            media_url="https://cdn.test/media_patch_answer.jpg",
+            owner="acct",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.add(media)
+        await session.flush()
+
+        comment = InstagramComment(
+            id="comment_patch_answer",
+            media_id=media.id,
+            user_id="user_patch",
+            username="user_patch",
+            text="Need a better answer",
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        session.add(comment)
+        await session.flush()
+
+        session.add(
+            CommentClassification(
+                comment_id=comment.id,
+                processing_status=ProcessingStatus.COMPLETED,
+            )
+        )
+
+        answer = QuestionAnswer(
+            comment_id=comment.id,
+            answer="Original bot reply",
+            answer_confidence=0.65,
+            answer_quality_score=60,
+            reply_sent=True,
+            reply_status="sent",
+            reply_id="reply-original-999",
+            reply_sent_at=now_db_utc(),
+        )
+        session.add(answer)
+        await session.commit()
+        old_answer_id = answer.id
+
+    instagram_service.replies.append(
+        {
+            "comment_id": "comment_patch_answer",
+            "reply_id": "reply-original-999",
+            "message": "Original bot reply",
+        }
+    )
+
+    response = await client.patch(
+        f"/api/v1/answers/{old_answer_id}",
+        json={"answer": "Updated manual reply", "quality_score": 95, "confidence": 10},
+        headers=auth_headers(integration_environment),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert payload["answer"] == "Updated manual reply"
+    assert payload["confidence"] == 100
+    assert payload["quality_score"] == 95
+    assert payload["is_deleted"] is False
+    assert payload["id"] != old_answer_id
+
+    assert all(reply["reply_id"] != "reply-original-999" for reply in instagram_service.replies)
+    assert any(reply["message"] == "Updated manual reply" for reply in instagram_service.replies)
+
+    async with session_factory() as session:
+        old_answer = await session.get(QuestionAnswer, old_answer_id)
+        assert old_answer.is_deleted is True
+        assert old_answer.reply_status == "deleted"
+
+        result = await session.execute(
+            select(QuestionAnswer).where(
+                QuestionAnswer.comment_id == "comment_patch_answer",
+                QuestionAnswer.is_deleted.is_(False),
+            )
+        )
+        new_answer = result.scalar_one()
+        assert new_answer.answer == "Updated manual reply"
+        assert new_answer.answer_confidence == 1.0
+        assert new_answer.answer_quality_score == 95
+        assert new_answer.reply_id != "reply-original-999"
 
 
 @pytest.mark.asyncio
@@ -413,20 +512,21 @@ async def test_delete_answer_multiple_attempts(integration_environment):
     )
     assert first_response.status_code == 200
 
-    # Second deletion attempt returns 400 because reply is already removed
+    # Second deletion attempt returns 404 because the answer is now soft deleted
     second_response = await client.delete(
         f"/api/v1/answers/{answer_id}",
         headers=auth_headers(integration_environment),
     )
-    assert second_response.status_code == 400
+    assert second_response.status_code == 404
     error_payload = second_response.json()
-    assert error_payload["meta"]["error"]["code"] == 4012
+    assert error_payload["meta"]["error"]["code"] == 4042
 
     # Verify final state
     async with session_factory() as session:
         final_answer = await session.get(QuestionAnswer, answer_id)
         assert final_answer.reply_sent is False
         assert final_answer.reply_status == "deleted"
+        assert final_answer.is_deleted is True
 
     # Instagram reply should be gone after the successful delete
     assert len([r for r in instagram_service.replies if r.get("reply_id") == "reply_concurrent_123"]) == 0
@@ -693,5 +793,3 @@ async def test_delete_answer_isolation_between_comments(integration_environment)
     # Verify: Only first reply deleted from Instagram
     assert len(instagram_service.replies) == 1
     assert instagram_service.replies[0]["reply_id"] == "reply_multi_2"
-
-

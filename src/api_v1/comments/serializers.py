@@ -154,6 +154,7 @@ def serialize_answer(answer: QuestionAnswer) -> AnswerDTO:
         reply_status=answer.reply_status,
         reply_error=answer.reply_error,
         author=(answer.meta_data or {}).get("author_id") if answer.meta_data else None,
+        is_deleted=bool(getattr(answer, "is_deleted", False)),
     )
 
 

@@ -124,6 +124,7 @@ async def process_webhook(
                 skipped_count += 1
 
         logger.info(f"Webhook complete: {processed_count} new, {skipped_count} skipped")
+        logger.debug(f"Payload entry:{webhook_data.entry}")
         return WebhookProcessingResponse(
             status="success",
             message=f"Processed {processed_count} new comments, skipped {skipped_count}",

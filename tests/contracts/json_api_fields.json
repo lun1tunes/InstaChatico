@@ -34,7 +34,8 @@
     "reply_sent",
     "reply_status",
     "reply_error",
-    "author"
+    "author",
+    "is_deleted"
   ],
   "CommentDTO": [
     "id",

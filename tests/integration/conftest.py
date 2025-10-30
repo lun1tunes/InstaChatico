@@ -84,11 +84,13 @@ class StubInstagramService:
         self.replies: List[Dict[str, Any]] = []
         self.closed = False
         self.deleted: List[str] = []
+        self.reply_counter = 0
 
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
-        reply_id = f"reply-{comment_id}"
+        self.reply_counter += 1
+        reply_id = f"reply-{comment_id}-{self.reply_counter}"
         self.replies.append({"comment_id": comment_id, "message": message, "reply_id": reply_id})
-        return {"success": True, "reply_id": reply_id}
+        return {"success": True, "reply_id": reply_id, "response": {"id": reply_id}}
 
     async def hide_comment(self, comment_id: str, hide: bool = True) -> Dict[str, Any]:
         if hide:

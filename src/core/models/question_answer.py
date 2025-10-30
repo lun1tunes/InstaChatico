@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from datetime import datetime
 from enum import Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String, Text, Integer, JSON
+from sqlalchemy import ForeignKey, String, Text, Integer, JSON, Boolean, Index, text
 from sqlalchemy.dialects.postgresql import ENUM as SQLEnum
 from .base import Base
 
@@ -24,7 +24,7 @@ class QuestionAnswer(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     comment_id: Mapped[str] = mapped_column(
-        ForeignKey("comments_classification.comment_id", ondelete="CASCADE"), unique=True, index=True
+        ForeignKey("comments_classification.comment_id", ondelete="CASCADE"), index=True
     )
 
     processing_status: Mapped[AnswerStatus] = mapped_column(
@@ -62,6 +62,10 @@ class QuestionAnswer(Base):
         String(100), nullable=True
     )  # Instagram reply ID to prevent infinite loops
 
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, comment="Soft delete flag for answer history"
+    )
+
     # Relationship to classification (through comment_id)
     classification: Mapped[CommentClassification] = relationship(
         "CommentClassification",
@@ -70,3 +74,12 @@ class QuestionAnswer(Base):
         passive_deletes=True,
         overlaps="question_answer",
     )
+
+
+Index(
+    "uq_question_messages_answers_comment_active",
+    QuestionAnswer.comment_id,
+    unique=True,
+    postgresql_where=text("is_deleted = false"),
+    sqlite_where=text("is_deleted = 0"),
+)

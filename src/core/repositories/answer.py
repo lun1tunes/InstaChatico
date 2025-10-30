@@ -17,7 +17,10 @@ class AnswerRepository(BaseRepository[QuestionAnswer]):
     async def get_by_comment_id(self, comment_id: str) -> Optional[QuestionAnswer]:
         """Get answer by comment ID."""
         result = await self.session.execute(
-            select(QuestionAnswer).where(QuestionAnswer.comment_id == comment_id)
+            select(QuestionAnswer).where(
+                QuestionAnswer.comment_id == comment_id,
+                QuestionAnswer.is_deleted.is_(False),
+            )
         )
         return result.scalar_one_or_none()
 
@@ -25,21 +28,30 @@ class AnswerRepository(BaseRepository[QuestionAnswer]):
         """Get answer row with a write lock (FOR UPDATE) to coordinate concurrent mutations."""
         stmt = (
             select(QuestionAnswer)
-            .where(QuestionAnswer.id == answer_id)
+            .where(
+                QuestionAnswer.id == answer_id,
+                QuestionAnswer.is_deleted.is_(False),
+            )
             .with_for_update()
         )
         try:
             result = await self.session.execute(stmt)
         except NotImplementedError:
             # Dialects like SQLite do not support FOR UPDATE; fall back to a plain select.
-            fallback_stmt = select(QuestionAnswer).where(QuestionAnswer.id == answer_id)
+            fallback_stmt = select(QuestionAnswer).where(
+                QuestionAnswer.id == answer_id,
+                QuestionAnswer.is_deleted.is_(False),
+            )
             result = await self.session.execute(fallback_stmt)
         return result.scalar_one_or_none()
 
     async def get_by_reply_id(self, reply_id: str) -> Optional[QuestionAnswer]:
         """Get answer by Instagram reply ID (for bot loop detection)."""
         result = await self.session.execute(
-            select(QuestionAnswer).where(QuestionAnswer.reply_id == reply_id)
+            select(QuestionAnswer).where(
+                QuestionAnswer.reply_id == reply_id,
+                QuestionAnswer.is_deleted.is_(False),
+            )
         )
         return result.scalar_one_or_none()
 
@@ -47,7 +59,8 @@ class AnswerRepository(BaseRepository[QuestionAnswer]):
         """Create a new answer record for a comment."""
         answer = QuestionAnswer(
             comment_id=comment_id,
-            processing_status=AnswerStatus.PENDING
+            processing_status=AnswerStatus.PENDING,
+            is_deleted=False,
         )
         self.session.add(answer)
         await self.session.flush()
@@ -57,7 +70,10 @@ class AnswerRepository(BaseRepository[QuestionAnswer]):
         """Get pending answers for processing."""
         result = await self.session.execute(
             select(QuestionAnswer)
-            .where(QuestionAnswer.processing_status == AnswerStatus.PENDING)
+            .where(
+                QuestionAnswer.processing_status == AnswerStatus.PENDING,
+                QuestionAnswer.is_deleted.is_(False),
+            )
             .limit(limit)
         )
         return list(result.scalars().all())

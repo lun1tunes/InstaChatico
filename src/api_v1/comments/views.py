@@ -45,6 +45,7 @@ from api_v1.comments.serializers import (
 )
 from core.utils.time import now_db_utc
 from core.use_cases.proxy_media_image import MediaImageProxyError
+from core.use_cases.replace_answer import ReplaceAnswerError
 from .schemas import (
     AnswerUpdateRequest,
     ClassificationUpdateRequest,
@@ -129,7 +130,7 @@ async def _get_comment_or_404(session: AsyncSession, comment_id: str) -> Any:
 async def _get_answer_or_404(session: AsyncSession, answer_id: int) -> Any:
     repo = AnswerRepository(session)
     answer = await repo.get_by_id(answer_id)
-    if not answer:
+    if not answer or getattr(answer, "is_deleted", False):
         raise JsonApiError(404, 4042, "Answer not found")
     return answer
 
@@ -137,7 +138,7 @@ async def _get_answer_or_404(session: AsyncSession, answer_id: int) -> Any:
 async def _get_answer_for_update_or_404(session: AsyncSession, answer_id: int) -> Any:
     repo = AnswerRepository(session)
     answer = await repo.get_for_update(answer_id)
-    if not answer:
+    if not answer or getattr(answer, "is_deleted", False):
         raise JsonApiError(404, 4042, "Answer not found")
     return answer
 
@@ -439,18 +440,24 @@ async def patch_answer(
     body: AnswerUpdateRequest = Body(...),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
-    answer = await _get_answer_or_404(session, answer_id)
-    answer.answer = str(body.answer)
+    container = get_container()
+    use_case = container.replace_answer_use_case(session=session)
+    try:
+        new_answer = await use_case.execute(
+            answer_id=answer_id,
+            new_answer_text=str(body.answer),
+            quality_score=body.quality_score,
+        )
+    except ReplaceAnswerError as exc:
+        message = str(exc)
+        if message == "Answer not found":
+            raise JsonApiError(404, 4042, "Answer not found")
+        raise JsonApiError(502, 5005, message)
+    except Exception:
+        logger.exception("Unexpected error while replacing answer | answer_id=%s", answer_id)
+        raise JsonApiError(502, 5005, "Failed to replace answer")
 
-    if body.quality_score is not None:
-        answer.answer_quality_score = int(body.quality_score)
-
-    if body.confidence is not None:
-        answer.answer_confidence = body.confidence / 100
-
-    await session.commit()
-    await session.refresh(answer)
-    return AnswerResponse(meta=SimpleMeta(), payload=serialize_answer(answer))
+    return AnswerResponse(meta=SimpleMeta(), payload=serialize_answer(new_answer))
 
 
 @router.delete("/answers/{id}")
@@ -471,6 +478,7 @@ async def delete_answer(
     answer.reply_sent = False
     answer.reply_status = "deleted"
     answer.reply_error = None
+    answer.is_deleted = True
     await session.commit()
     return EmptyResponse(meta=SimpleMeta())
 

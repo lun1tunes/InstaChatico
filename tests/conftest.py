@@ -246,6 +246,7 @@ def answer_factory(db_session):
             max_retries=kwargs.get("max_retries", 5),
             reply_id=kwargs.get("reply_id"),
             reply_sent=kwargs.get("reply_sent", False),
+            is_deleted=kwargs.get("is_deleted", False),
         )
         db_session.add(answer)
         await db_session.commit()

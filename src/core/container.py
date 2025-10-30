@@ -44,6 +44,7 @@ from .use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
 from .use_cases.process_document import ProcessDocumentUseCase
 from .use_cases.test_comment_processing import TestCommentProcessingUseCase
 from .use_cases.proxy_media_image import ProxyMediaImageUseCase
+from .use_cases.replace_answer import ReplaceAnswerUseCase
 
 # Repositories
 from .repositories.comment import CommentRepository
@@ -217,6 +218,13 @@ class Container(containers.DeclarativeContainer):
         DeleteCommentUseCase,
         # session is injected at runtime
         comment_repository_factory=comment_repository_factory.provider,
+        instagram_service=instagram_service,
+    )
+
+    replace_answer_use_case = providers.Factory(
+        ReplaceAnswerUseCase,
+        # session is injected at runtime
+        answer_repository_factory=answer_repository_factory.provider,
         instagram_service=instagram_service,
     )
 

@@ -1,10 +1,11 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 from datetime import datetime
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, ForeignKey, Boolean
+from sqlalchemy.orm import Mapped, mapped_column, relationship, foreign
+from sqlalchemy import String, ForeignKey, Boolean, and_
 from sqlalchemy.dialects.postgresql import JSONB
 from .base import Base
+from .question_answer import QuestionAnswer
 
 if TYPE_CHECKING:
     from .comment_classification import CommentClassification
@@ -62,8 +63,11 @@ class InstagramComment(Base):
     # Relationship to question answer
     question_answer: Mapped[QuestionAnswer] = relationship(
         "QuestionAnswer",
-        foreign_keys="QuestionAnswer.comment_id",
-        primaryjoin="InstagramComment.id == QuestionAnswer.comment_id",
+        foreign_keys=[QuestionAnswer.comment_id],
+        primaryjoin=lambda: and_(
+            InstagramComment.id == foreign(QuestionAnswer.comment_id),
+            QuestionAnswer.is_deleted.is_(False),
+        ),
         uselist=False,
         passive_deletes=True,
         overlaps="classification",

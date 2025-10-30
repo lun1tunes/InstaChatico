@@ -115,6 +115,7 @@ class AnswerDTO(BaseModel):
     reply_status: Optional[str] = None
     reply_error: Optional[str] = None
     author: Optional[str] = None
+    is_deleted: bool = False
 
 
 class CommentDTO(BaseModel):
