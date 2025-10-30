@@ -129,20 +129,19 @@ class ProcessWebhookCommentUseCase:
                 }
 
             # Validate media owner when available
-            if expected_owner_id and entry_owner_id:
-                if entry_owner_id != expected_owner_id:
-                    logger.warning(
-                        "Webhook account mismatch detected | comment_id=%s | entry_id=%s | expected_id=%s",
-                        comment_id,
-                        entry_owner_id,
-                        expected_owner_id,
-                    )
-                    return {
-                        "status": "forbidden",
-                        "comment_id": comment_id,
-                        "should_classify": False,
-                        "reason": "Invalid webhook account",
-                    }
+            if expected_owner_id and entry_owner_id and entry_owner_id != expected_owner_id:
+                logger.warning(
+                    "Webhook account mismatch detected | comment_id=%s | entry_id=%s | expected_id=%s",
+                    comment_id,
+                    entry_owner_id,
+                    expected_owner_id,
+                )
+                return {
+                    "status": "forbidden",
+                    "comment_id": comment_id,
+                    "should_classify": False,
+                    "reason": "Invalid webhook account",
+                }
 
             # Create comment record
             logger.info(

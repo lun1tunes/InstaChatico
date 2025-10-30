@@ -38,7 +38,7 @@ async def test_webhook_verification_success(integration_environment):
             },
         )
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.json()
     assert response.text == "challenge-token"
 
 
@@ -73,7 +73,7 @@ async def test_webhook_invalid_payload_returns_422(integration_environment, sign
         "object": "instagram",
         "entry": [
             {
-                "id": "wrong_acct",
+                "id": "acct",
                 "time": 10,
                 "changes": [
                     {
@@ -91,12 +91,10 @@ async def test_webhook_invalid_payload_returns_422(integration_environment, sign
     }
     body = json.dumps(payload).encode()
     signature = sign_payload(body)
-    response = await _with_timeout(
-        client.post(
-            "/api/v1/webhook/",
-            content=body,
-            headers={"X-Hub-Signature-256": signature, "Content-Type": "application/json"},
-        )
+    response = await client.post(
+        "/api/v1/webhook/",
+        content=body,
+        headers={"X-Hub-Signature-256": signature, "Content-Type": "application/json"},
     )
     assert response.status_code == 422
 
@@ -138,7 +136,7 @@ async def test_webhook_process_comment_success(integration_environment, sign_pay
         )
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.json()
     data = response.json()
     assert data["status"] == "success"
 
@@ -210,7 +208,7 @@ async def test_webhook_media_owner_mismatch(integration_environment, sign_payloa
         "object": "instagram",
         "entry": [
             {
-                "id": "acct",
+                "id": "wrong_acct",
                 "time": int(now_db_utc().timestamp()),
                 "changes": [
                     {
