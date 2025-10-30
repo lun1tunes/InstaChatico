@@ -61,6 +61,10 @@ class AnswerUpdateRequest(BaseModel):
     confidence: Optional[int] = Field(default=None, ge=0, le=100, description="Confidence in integer percent")
 
 
+class AnswerCreateRequest(BaseModel):
+    answer: str = Field(..., description="Manual answer text")
+
+
 class ErrorDetail(BaseModel):
     code: int
     message: str

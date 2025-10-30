@@ -46,7 +46,9 @@ from api_v1.comments.serializers import (
 from core.utils.time import now_db_utc
 from core.use_cases.proxy_media_image import MediaImageProxyError
 from core.use_cases.replace_answer import ReplaceAnswerError
+from core.use_cases.create_manual_answer import ManualAnswerCreateError
 from .schemas import (
+    AnswerCreateRequest,
     AnswerUpdateRequest,
     ClassificationUpdateRequest,
     MediaUpdateRequest,
@@ -431,6 +433,25 @@ async def list_answers_for_comment(
     if comment.question_answer:
         answers.append(serialize_answer(comment.question_answer))
     return AnswerListResponse(meta=SimpleMeta(), payload=answers)
+
+
+@router.put("/comments/{comment_id}/answers")
+async def create_answer(
+    _: None = Depends(require_service_token),
+    comment_id: str = Path(...),
+    body: AnswerCreateRequest = Body(...),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+):
+    container = get_container()
+    use_case = container.create_manual_answer_use_case(session=session)
+    try:
+        answer = await use_case.execute(comment_id=comment_id, answer_text=str(body.answer))
+    except ManualAnswerCreateError as exc:
+        if exc.status_code == 404:
+            raise JsonApiError(404, 4041, "Comment not found")
+        raise JsonApiError(502, 5007, str(exc))
+
+    return AnswerResponse(meta=SimpleMeta(), payload=serialize_answer(answer))
 
 
 @router.patch("/answers/{id}")

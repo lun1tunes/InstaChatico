@@ -109,6 +109,7 @@ class ReplaceAnswerUseCase:
 
             new_answer = QuestionAnswer(
                 comment_id=comment_id,
+                processing_status=AnswerStatus.COMPLETED,
                 answer=new_answer_text,
                 answer_confidence=1.0,  # 100%
                 answer_quality_score=100,

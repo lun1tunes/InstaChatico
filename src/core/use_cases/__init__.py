@@ -9,6 +9,7 @@ from .send_telegram_notification import SendTelegramNotificationUseCase
 from .process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
 from .process_document import ProcessDocumentUseCase
 from .replace_answer import ReplaceAnswerUseCase, ReplaceAnswerError
+from .create_manual_answer import CreateManualAnswerUseCase, ManualAnswerCreateError
 
 __all__ = [
     "ClassifyCommentUseCase",
@@ -22,4 +23,6 @@ __all__ = [
     "ProcessDocumentUseCase",
     "ReplaceAnswerUseCase",
     "ReplaceAnswerError",
+    "CreateManualAnswerUseCase",
+    "ManualAnswerCreateError",
 ]

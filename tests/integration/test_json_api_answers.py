@@ -349,6 +349,65 @@ async def test_patch_answer_replaces_reply_success(integration_environment):
 
 
 @pytest.mark.asyncio
+async def test_put_answer_creates_manual_reply(integration_environment):
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+    instagram_service = integration_environment["instagram_service"]
+
+    async with session_factory() as session:
+        media = Media(
+            id="media_put_answer",
+            permalink="https://instagram.com/p/media_put_answer",
+            media_type="IMAGE",
+            media_url="https://cdn.test/media_put_answer.jpg",
+            owner="acct",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.add(media)
+        await session.flush()
+
+        comment = InstagramComment(
+            id="comment_put_answer",
+            media_id=media.id,
+            user_id="user_put",
+            username="user_put",
+            text="Need manual answer",
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        session.add(comment)
+        await session.commit()
+
+    response = await client.put(
+        "/api/v1/comments/comment_put_answer/answers",
+        json={"answer": "Manual answer"},
+        headers=auth_headers(integration_environment),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert payload["answer"] == "Manual answer"
+    assert payload["confidence"] == 100
+    assert payload["quality_score"] == 100
+    assert payload["reply_sent"] is True
+
+    assert any(reply["message"] == "Manual answer" for reply in instagram_service.replies)
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(QuestionAnswer).where(
+                QuestionAnswer.comment_id == "comment_put_answer",
+                QuestionAnswer.is_deleted.is_(False),
+            )
+        )
+        new_answer = result.scalar_one()
+        assert new_answer.answer == "Manual answer"
+        assert new_answer.answer_confidence == 1.0
+        assert new_answer.answer_quality_score == 100
+
+
+@pytest.mark.asyncio
 async def test_delete_answer_instagram_api_failure(integration_environment):
     """Test deletion fails with 502 when Instagram API returns error."""
     from unittest.mock import AsyncMock

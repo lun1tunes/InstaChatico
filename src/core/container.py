@@ -45,6 +45,7 @@ from .use_cases.process_document import ProcessDocumentUseCase
 from .use_cases.test_comment_processing import TestCommentProcessingUseCase
 from .use_cases.proxy_media_image import ProxyMediaImageUseCase
 from .use_cases.replace_answer import ReplaceAnswerUseCase
+from .use_cases.create_manual_answer import CreateManualAnswerUseCase
 
 # Repositories
 from .repositories.comment import CommentRepository
@@ -226,6 +227,15 @@ class Container(containers.DeclarativeContainer):
         # session is injected at runtime
         answer_repository_factory=answer_repository_factory.provider,
         instagram_service=instagram_service,
+    )
+
+    create_manual_answer_use_case = providers.Factory(
+        CreateManualAnswerUseCase,
+        # session is injected at runtime
+        comment_repository_factory=comment_repository_factory.provider,
+        answer_repository_factory=answer_repository_factory.provider,
+        instagram_service=instagram_service,
+        replace_answer_use_case_factory=replace_answer_use_case.provider,
     )
 
     process_webhook_comment_use_case = providers.Factory(
