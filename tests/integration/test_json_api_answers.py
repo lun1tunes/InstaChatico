@@ -323,7 +323,7 @@ async def test_patch_answer_replaces_reply_success(integration_environment):
     payload = response.json()["payload"]
     assert payload["answer"] == "Updated manual reply"
     assert payload["confidence"] == 100
-    assert payload["quality_score"] == 95
+    assert payload["quality_score"] == 100
     assert payload["is_deleted"] is False
     assert payload["id"] != old_answer_id
 
@@ -344,7 +344,7 @@ async def test_patch_answer_replaces_reply_success(integration_environment):
         new_answer = result.scalar_one()
         assert new_answer.answer == "Updated manual reply"
         assert new_answer.answer_confidence == 1.0
-        assert new_answer.answer_quality_score == 95
+        assert new_answer.answer_quality_score == 100
         assert new_answer.reply_id != "reply-original-999"
 
 

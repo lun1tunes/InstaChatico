@@ -103,25 +103,15 @@ class ReplaceAnswerUseCase:
             answer.reply_sent = False
             answer.reply_status = "deleted"
             answer.reply_error = None
-            answer.reply_sent_at = None
-            answer.processing_status = AnswerStatus.COMPLETED
-            answer.processing_completed_at = now
 
             manual_meta = dict(answer.meta_data or {})
             manual_meta["manual_patch"] = True
 
-            new_quality = (
-                int(quality_score) if quality_score is not None else answer.answer_quality_score or 100
-            )
-
             new_answer = QuestionAnswer(
                 comment_id=comment_id,
-                processing_status=AnswerStatus.COMPLETED,
-                processing_started_at=now,
-                processing_completed_at=now,
                 answer=new_answer_text,
                 answer_confidence=1.0,  # 100%
-                answer_quality_score=new_quality,
+                answer_quality_score=100,
                 last_error=None,
                 retry_count=0,
                 max_retries=answer.max_retries,

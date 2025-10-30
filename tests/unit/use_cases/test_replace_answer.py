@@ -61,6 +61,9 @@ async def test_replace_answer_success(db_session):
                 processing_status=ProcessingStatus.COMPLETED,
             )
         )
+        original_started = now_db_utc()
+        original_completed = now_db_utc()
+        original_sent_at = now_db_utc()
         answer = QuestionAnswer(
             comment_id=comment.id,
             answer="Bot reply",
@@ -69,7 +72,9 @@ async def test_replace_answer_success(db_session):
             reply_sent=True,
             reply_status="sent",
             reply_id="reply-original",
-            reply_sent_at=now_db_utc(),
+            reply_sent_at=original_sent_at,
+            processing_started_at=original_started,
+            processing_completed_at=original_completed,
         )
         session.add(answer)
         await session.commit()
@@ -91,9 +96,11 @@ async def test_replace_answer_success(db_session):
         assert new_answer.comment_id == "comment_replace"
         assert new_answer.answer == "Manual override reply"
         assert new_answer.answer_confidence == 1.0
-        assert new_answer.answer_quality_score == 92
+        assert new_answer.answer_quality_score == 100
         assert new_answer.reply_sent is True
         assert new_answer.is_deleted is False
+        assert new_answer.processing_started_at is None
+        assert new_answer.processing_completed_at is None
 
     assert instagram.deleted == ["reply-original"]
     assert instagram.sent[-1]["message"] == "Manual override reply"
@@ -102,6 +109,9 @@ async def test_replace_answer_success(db_session):
         original = await session.get(QuestionAnswer, answer_id)
         assert original.is_deleted is True
         assert original.reply_status == "deleted"
+        assert original.reply_sent_at == original_sent_at
+        assert original.processing_started_at == original_started
+        assert original.processing_completed_at == original_completed
 
 
 @pytest.mark.asyncio
