@@ -4,6 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Text, DateTime, Index
 from pgvector.sqlalchemy import Vector
 from .base import Base
+from ..utils.time import now_db_utc
 
 
 class ProductEmbedding(Base):
@@ -26,10 +27,10 @@ class ProductEmbedding(Base):
 
     # Metadata
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, comment="When this record was created"
+        DateTime, default=now_db_utc, comment="When this record was created"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="When this record was last updated"
+        DateTime, default=now_db_utc, onupdate=now_db_utc, comment="When this record was last updated"
     )
     is_active: Mapped[bool] = mapped_column(default=True, comment="Whether this product is active")
 

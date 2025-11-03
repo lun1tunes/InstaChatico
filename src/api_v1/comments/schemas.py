@@ -124,6 +124,7 @@ class AnswerDTO(BaseModel):
 
 class CommentDTO(BaseModel):
     id: str
+    media_id: str
     parent_id: Optional[str] = None
     username: str
     text: str

@@ -176,6 +176,7 @@ def serialize_comment(comment: InstagramComment) -> CommentDTO:
 
     return CommentDTO(
         id=comment.id,
+        media_id=comment.media_id,
         parent_id=comment.parent_id,
         username=comment.username,
         text=comment.text,

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, Boolean, DateTime, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from .base import Base
+from ..utils.time import now_db_utc
 
 if TYPE_CHECKING:
     from .instagram_comment import InstagramComment
@@ -54,10 +55,10 @@ class Media(Base):
 
     # Additional metadata
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, comment="When this record was created"
+        DateTime, default=now_db_utc, comment="When this record was created"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="When this record was last updated"
+        DateTime, default=now_db_utc, onupdate=now_db_utc, comment="When this record was last updated"
     )
     raw_data = mapped_column(JSONB, nullable=True, comment="Raw Instagram API response data")
 

@@ -39,6 +39,7 @@
   ],
   "CommentDTO": [
     "id",
+    "media_id",
     "parent_id",
     "username",
     "text",

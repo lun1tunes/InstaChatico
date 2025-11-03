@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 import uuid
 
 from .base import Base
+from ..utils.time import now_db_utc
 
 
 class Document(Base):
@@ -80,12 +81,12 @@ class Document(Base):
 
     # Audit fields
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, comment="When record was created"
+        DateTime, default=now_db_utc, nullable=False, comment="When record was created"
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=now_db_utc,
+        onupdate=now_db_utc,
         nullable=False,
         comment="When record was last updated",
     )

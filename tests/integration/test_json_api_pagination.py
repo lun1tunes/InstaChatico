@@ -348,6 +348,10 @@ async def test_recent_comments_returns_newest_first(integration_environment):
         "recent_comment_middle",
         "recent_comment_oldest",
     ]
+    media_map = {item["id"]: item["media_id"] for item in data["payload"]}
+    assert media_map["recent_comment_newest"] == "recent_media_a"
+    assert media_map["recent_comment_middle"] == "recent_media_b"
+    assert media_map["recent_comment_oldest"] == "recent_media_a"
 
 
 @pytest.mark.asyncio
@@ -415,6 +419,7 @@ async def test_recent_comments_filters_by_status(integration_environment):
     assert "recent_filter_completed" in payload_ids
     assert "recent_filter_pending" not in payload_ids
     target = next(item for item in data["payload"] if item["id"] == "recent_filter_completed")
+    assert target["media_id"] == "recent_filter_media"
     assert target["classification"]["processing_status"] == 3
 
 
@@ -486,3 +491,5 @@ async def test_recent_comments_excludes_deleted_when_requested(integration_envir
     filtered_ids = {item["id"] for item in filtered_data["payload"]}
     assert "recent_deleted_active" in filtered_ids
     assert "recent_deleted_soft" not in filtered_ids
+    media_ids_filtered = {item["id"]: item["media_id"] for item in filtered_data["payload"]}
+    assert media_ids_filtered["recent_deleted_active"] == "recent_deleted_media"
