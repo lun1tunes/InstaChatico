@@ -67,6 +67,47 @@ class CommentRepository(BaseRepository[InstagramComment]):
         )
         return result.scalar_one_or_none()
 
+    def _apply_filters(
+        self,
+        stmt: Select,
+        *,
+        statuses: Optional[list[ProcessingStatus]] = None,
+        classification_types: Optional[list[str]] = None,
+    ) -> Select:
+        if statuses or classification_types:
+            stmt = stmt.join(InstagramComment.classification)
+            if statuses:
+                stmt = stmt.where(CommentClassification.processing_status.in_(statuses))
+            if classification_types:
+                stmt = stmt.where(CommentClassification.type.in_(classification_types))
+        return stmt
+
+    async def list_recent(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        statuses: Optional[list[ProcessingStatus]] = None,
+        classification_types: Optional[list[str]] = None,
+        include_deleted: bool = True,
+    ) -> list[InstagramComment]:
+        stmt = select(InstagramComment).options(
+            selectinload(InstagramComment.classification),
+            selectinload(InstagramComment.question_answer),
+        )
+        stmt = _exclude_deleted(stmt, include_deleted=include_deleted)
+        stmt = self._apply_filters(
+            stmt,
+            statuses=statuses,
+            classification_types=classification_types,
+        )
+        stmt = stmt.order_by(
+            InstagramComment.created_at.desc(),
+            InstagramComment.id.desc(),
+        ).offset(offset).limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def list_for_media(
         self,
         media_id: str,
@@ -77,26 +118,41 @@ class CommentRepository(BaseRepository[InstagramComment]):
         classification_types: Optional[list[str]] = None,
         include_deleted: bool = True,
     ) -> list[InstagramComment]:
-        stmt = (
-            select(InstagramComment)
-            .options(
-                selectinload(InstagramComment.classification),
-                selectinload(InstagramComment.question_answer),
-            )
-            .where(InstagramComment.media_id == media_id)
-            .order_by(InstagramComment.created_at.desc())
-            .offset(offset)
-            .limit(limit)
+        stmt = select(InstagramComment).options(
+            selectinload(InstagramComment.classification),
+            selectinload(InstagramComment.question_answer),
         )
+        stmt = stmt.where(InstagramComment.media_id == media_id)
         stmt = _exclude_deleted(stmt, include_deleted=include_deleted)
-        if statuses or classification_types:
-            stmt = stmt.join(InstagramComment.classification)
-            if statuses:
-                stmt = stmt.where(CommentClassification.processing_status.in_(statuses))
-            if classification_types:
-                stmt = stmt.where(CommentClassification.type.in_(classification_types))
+        stmt = self._apply_filters(
+            stmt,
+            statuses=statuses,
+            classification_types=classification_types,
+        )
+        stmt = stmt.order_by(
+            InstagramComment.created_at.desc(),
+            InstagramComment.id.desc(),
+        ).offset(offset).limit(limit)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_all(
+        self,
+        *,
+        statuses: Optional[list[ProcessingStatus]] = None,
+        classification_types: Optional[list[str]] = None,
+        include_deleted: bool = True,
+    ) -> int:
+        stmt = select(func.count()).select_from(InstagramComment)
+        if not include_deleted:
+            stmt = stmt.where(InstagramComment.is_deleted.is_(False))
+        stmt = self._apply_filters(
+            stmt,
+            statuses=statuses,
+            classification_types=classification_types,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
 
     async def count_for_media(
         self,
@@ -111,12 +167,11 @@ class CommentRepository(BaseRepository[InstagramComment]):
         )
         if not include_deleted:
             stmt = stmt.where(InstagramComment.is_deleted.is_(False))
-        if statuses or classification_types:
-            stmt = stmt.join(CommentClassification, InstagramComment.id == CommentClassification.comment_id)
-            if statuses:
-                stmt = stmt.where(CommentClassification.processing_status.in_(statuses))
-            if classification_types:
-                stmt = stmt.where(CommentClassification.type.in_(classification_types))
+        stmt = self._apply_filters(
+            stmt,
+            statuses=statuses,
+            classification_types=classification_types,
+        )
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 

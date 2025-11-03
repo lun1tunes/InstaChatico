@@ -1,5 +1,7 @@
 """Pagination and filtering tests for JSON API endpoints."""
 
+from datetime import timedelta
+
 import pytest
 from httpx import AsyncClient
 
@@ -265,3 +267,222 @@ async def test_comment_list_per_page_clamped(integration_environment):
     assert payload["meta"]["per_page"] == 100  # MAX_PER_PAGE for comments
     assert len(payload["payload"]) <= 100
 
+
+# ===== Recent Comments Endpoint Tests =====
+
+
+@pytest.mark.asyncio
+async def test_recent_comments_returns_newest_first(integration_environment):
+    """Ensure /api/v1/comments returns most recent comments across media."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+    base_time = now_db_utc() + timedelta(days=1)
+
+    async with session_factory() as session:
+        media_a = Media(
+            id="recent_media_a",
+            permalink="https://instagram.com/p/recent_media_a",
+            media_type="IMAGE",
+            media_url="https://cdn.test/recent_a.jpg",
+            created_at=base_time,
+            updated_at=base_time,
+        )
+        media_b = Media(
+            id="recent_media_b",
+            permalink="https://instagram.com/p/recent_media_b",
+            media_type="IMAGE",
+            media_url="https://cdn.test/recent_b.jpg",
+            created_at=base_time,
+            updated_at=base_time,
+        )
+        session.add_all([media_a, media_b])
+
+        oldest = InstagramComment(
+            id="recent_comment_oldest",
+            media_id=media_a.id,
+            user_id="user_old",
+            username="old",
+            text="Old comment",
+            created_at=base_time - timedelta(hours=2),
+            raw_data={},
+        )
+        middle = InstagramComment(
+            id="recent_comment_middle",
+            media_id=media_b.id,
+            user_id="user_mid",
+            username="mid",
+            text="Middle comment",
+            created_at=base_time - timedelta(hours=1),
+            raw_data={},
+        )
+        newest = InstagramComment(
+            id="recent_comment_newest",
+            media_id=media_a.id,
+            user_id="user_new",
+            username="new",
+            text="Newest comment",
+            created_at=base_time,
+            raw_data={},
+        )
+        session.add_all([oldest, middle, newest])
+
+        for comment in (oldest, middle, newest):
+            session.add(
+                CommentClassification(
+                    comment_id=comment.id,
+                    type="question / inquiry",
+                    processing_status=ProcessingStatus.COMPLETED,
+                    processing_completed_at=base_time,
+                )
+            )
+
+        await session.commit()
+
+    response = await client.get("/api/v1/comments", headers=auth_headers(integration_environment))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["meta"]["total"] == 3
+    ids = [item["id"] for item in data["payload"]]
+    assert ids[:3] == [
+        "recent_comment_newest",
+        "recent_comment_middle",
+        "recent_comment_oldest",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_recent_comments_filters_by_status(integration_environment):
+    """Status filters should apply to aggregated comments endpoint."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+
+    async with session_factory() as session:
+        media = Media(
+            id="recent_filter_media",
+            permalink="https://instagram.com/p/recent_filter_media",
+            media_type="IMAGE",
+            media_url="https://cdn.test/recent_filter.jpg",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.add(media)
+
+        pending_comment = InstagramComment(
+            id="recent_filter_pending",
+            media_id=media.id,
+            user_id="pending_user",
+            username="pending",
+            text="Pending comment",
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        completed_comment = InstagramComment(
+            id="recent_filter_completed",
+            media_id=media.id,
+            user_id="completed_user",
+            username="completed",
+            text="Completed comment",
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        session.add_all([pending_comment, completed_comment])
+
+        session.add(
+            CommentClassification(
+                comment_id=pending_comment.id,
+                type="question / inquiry",
+                processing_status=ProcessingStatus.PENDING,
+            )
+        )
+        session.add(
+            CommentClassification(
+                comment_id=completed_comment.id,
+                type="question / inquiry",
+                processing_status=ProcessingStatus.COMPLETED,
+                processing_completed_at=now_db_utc(),
+            )
+        )
+
+        await session.commit()
+
+    response = await client.get(
+        "/api/v1/comments?status=3",
+        headers=auth_headers(integration_environment),
+    )
+    assert response.status_code == 200
+    data = response.json()
+    payload_ids = [item["id"] for item in data["payload"]]
+    assert "recent_filter_completed" in payload_ids
+    assert "recent_filter_pending" not in payload_ids
+    target = next(item for item in data["payload"] if item["id"] == "recent_filter_completed")
+    assert target["classification"]["processing_status"] == 3
+
+
+@pytest.mark.asyncio
+async def test_recent_comments_excludes_deleted_when_requested(integration_environment):
+    """include_deleted flag should hide soft-deleted comments when false."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+
+    async with session_factory() as session:
+        media = Media(
+            id="recent_deleted_media",
+            permalink="https://instagram.com/p/recent_deleted_media",
+            media_type="IMAGE",
+            media_url="https://cdn.test/recent_deleted.jpg",
+            created_at=now_db_utc(),
+            updated_at=now_db_utc(),
+        )
+        session.add(media)
+
+        active_comment = InstagramComment(
+            id="recent_deleted_active",
+            media_id=media.id,
+            user_id="active_user",
+            username="active",
+            text="Active comment",
+            created_at=now_db_utc(),
+            raw_data={},
+        )
+        deleted_comment = InstagramComment(
+            id="recent_deleted_soft",
+            media_id=media.id,
+            user_id="deleted_user",
+            username="deleted",
+            text="Soft deleted comment",
+            created_at=now_db_utc(),
+            raw_data={},
+            is_deleted=True,
+        )
+        session.add_all([active_comment, deleted_comment])
+
+        for comment in (active_comment, deleted_comment):
+            session.add(
+                CommentClassification(
+                    comment_id=comment.id,
+                    type="question / inquiry",
+                    processing_status=ProcessingStatus.COMPLETED,
+                    processing_completed_at=now_db_utc(),
+                )
+            )
+
+        await session.commit()
+
+    # Default (include_deleted=True) should return both
+    default_response = await client.get("/api/v1/comments", headers=auth_headers(integration_environment))
+    assert default_response.status_code == 200
+    default_data = default_response.json()
+    default_ids = {item["id"] for item in default_data["payload"]}
+    assert "recent_deleted_active" in default_ids
+    assert "recent_deleted_soft" in default_ids
+
+    # Explicit include_deleted=false should hide the soft-deleted comment
+    filtered_response = await client.get(
+        "/api/v1/comments?include_deleted=false",
+        headers=auth_headers(integration_environment),
+    )
+    assert filtered_response.status_code == 200
+    filtered_data = filtered_response.json()
+    filtered_ids = {item["id"] for item in filtered_data["payload"]}
+    assert "recent_deleted_active" in filtered_ids
+    assert "recent_deleted_soft" not in filtered_ids

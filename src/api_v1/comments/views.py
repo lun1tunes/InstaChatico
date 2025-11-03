@@ -151,6 +151,53 @@ def _clamp_per_page(value: int, default: int, max_value: int) -> int:
     return min(max(value, 1), max_value)
 
 
+def _parse_comment_filters(
+    status_multi: Optional[List[int]],
+    status_csv: Optional[str],
+    classification_multi: Optional[List[int]],
+    classification_csv: Optional[str],
+    classification_multi_alt: Optional[List[int]],
+    classification_csv_alt: Optional[str],
+) -> tuple[Optional[list[ProcessingStatus]], Optional[list[str]]]:
+    def _append_values(target: List[int], source: Optional[List[int]]):
+        if source:
+            target.extend(source)
+
+    def _append_csv(target: List[int], raw: Optional[str], error_code: int, message: str):
+        if not raw:
+            return
+        for part in raw.split(","):
+            token = part.strip()
+            if not token:
+                continue
+            try:
+                target.append(int(token))
+            except ValueError:
+                raise JsonApiError(400, error_code, message)
+
+    status_values: List[int] = []
+    _append_values(status_values, status_multi)
+    _append_csv(status_values, status_csv, 4006, "Invalid status filter")
+
+    statuses = parse_status_filters(status_values) if status_values else None
+    if status_values and statuses is None:
+        raise JsonApiError(400, 4006, "Invalid status filter")
+
+    classification_values: List[int] = []
+    _append_values(classification_values, classification_multi)
+    _append_values(classification_values, classification_multi_alt)
+    _append_csv(classification_values, classification_csv, 4007, "Invalid classification filter")
+    _append_csv(classification_values, classification_csv_alt, 4007, "Invalid classification filter")
+
+    classification_types = (
+        parse_classification_filters(classification_values) if classification_values else None
+    )
+    if classification_values and classification_types is None:
+        raise JsonApiError(400, 4007, "Invalid classification filter")
+
+    return statuses, classification_types
+
+
 @router.get("/media")
 async def list_media(
     _: None = Depends(require_service_token),
@@ -276,47 +323,14 @@ async def list_media_comments(
     await _get_media_or_404(session, media_id)
     per_page = _clamp_per_page(per_page, COMMENTS_DEFAULT_PER_PAGE, COMMENTS_MAX_PER_PAGE)
     offset = (page - 1) * per_page
-    status_values: List[int] = []
-    if status_multi:
-        status_values.extend(status_multi)
-    if status_csv:
-        for part in status_csv.split(","):
-            part = part.strip()
-            if part:
-                try:
-                    status_values.append(int(part))
-                except ValueError:
-                    raise JsonApiError(400, 4006, "Invalid status filter")
-
-    statuses = parse_status_filters(status_values) if status_values else None
-    if status_values and statuses is None:
-        raise JsonApiError(400, 4006, "Invalid status filter")
-
-    classification_values: List[int] = []
-    if classification_multi:
-        classification_values.extend(classification_multi)
-    if classification_multi_alt:
-        classification_values.extend(classification_multi_alt)
-    if classification_csv:
-        for part in classification_csv.split(","):
-            part = part.strip()
-            if part:
-                try:
-                    classification_values.append(int(part))
-                except ValueError:
-                    raise JsonApiError(400, 4007, "Invalid classification filter")
-    if classification_csv_alt:
-        for part in classification_csv_alt.split(","):
-            part = part.strip()
-            if part:
-                try:
-                    classification_values.append(int(part))
-                except ValueError:
-                    raise JsonApiError(400, 4007, "Invalid classification filter")
-
-    classification_types = parse_classification_filters(classification_values) if classification_values else None
-    if classification_values and classification_types is None:
-        raise JsonApiError(400, 4007, "Invalid classification filter")
+    statuses, classification_types = _parse_comment_filters(
+        status_multi=status_multi,
+        status_csv=status_csv,
+        classification_multi=classification_multi,
+        classification_csv=classification_csv,
+        classification_multi_alt=classification_multi_alt,
+        classification_csv_alt=classification_csv_alt,
+    )
 
     repo = CommentRepository(session)
     total = await repo.count_for_media(
@@ -327,6 +341,52 @@ async def list_media_comments(
     )
     items = await repo.list_for_media(
         media_id,
+        offset=offset,
+        limit=per_page,
+        statuses=statuses,
+        classification_types=classification_types,
+        include_deleted=include_deleted,
+    )
+    payload = [serialize_comment(comment) for comment in items]
+    response = CommentListResponse(
+        meta=PaginationMeta(page=page, per_page=per_page, total=total),
+        payload=payload,
+    )
+    return response
+
+
+@router.get("/comments")
+async def list_recent_comments(
+    _: None = Depends(require_service_token),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(COMMENTS_DEFAULT_PER_PAGE, ge=1),
+    include_deleted: bool = Query(True, description="Include comments marked as deleted"),
+    status_multi: Optional[List[int]] = Query(default=None, alias="status[]"),
+    status_csv: Optional[str] = Query(default=None, alias="status"),
+    classification_multi: Optional[List[int]] = Query(default=None, alias="type[]"),
+    classification_csv: Optional[str] = Query(default=None, alias="type"),
+    classification_multi_alt: Optional[List[int]] = Query(default=None, alias="classification_type[]"),
+    classification_csv_alt: Optional[str] = Query(default=None, alias="classification_type"),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+):
+    per_page = _clamp_per_page(per_page, COMMENTS_DEFAULT_PER_PAGE, COMMENTS_MAX_PER_PAGE)
+    offset = (page - 1) * per_page
+    statuses, classification_types = _parse_comment_filters(
+        status_multi=status_multi,
+        status_csv=status_csv,
+        classification_multi=classification_multi,
+        classification_csv=classification_csv,
+        classification_multi_alt=classification_multi_alt,
+        classification_csv_alt=classification_csv_alt,
+    )
+
+    repo = CommentRepository(session)
+    total = await repo.count_all(
+        statuses=statuses,
+        classification_types=classification_types,
+        include_deleted=include_deleted,
+    )
+    items = await repo.list_recent(
         offset=offset,
         limit=per_page,
         statuses=statuses,
