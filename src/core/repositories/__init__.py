@@ -8,6 +8,7 @@ from .media import MediaRepository
 from .document import DocumentRepository
 from .product_embedding import ProductEmbeddingRepository
 from .instrument_token_usage import InstrumentTokenUsageRepository
+from .expired_token import ExpiredTokenRepository
 
 __all__ = [
     "BaseRepository",
@@ -18,4 +19,5 @@ __all__ = [
     "DocumentRepository",
     "ProductEmbeddingRepository",
     "InstrumentTokenUsageRepository",
+    "ExpiredTokenRepository",
 ]

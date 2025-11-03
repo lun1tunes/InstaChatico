@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
+import jwt
 from fastapi import APIRouter, Body, Depends, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
+from jwt import ExpiredSignatureError, InvalidTokenError
+from jwt.exceptions import MissingRequiredClaimError
 
 from core.config import settings
 from core.models import db_helper
@@ -18,6 +22,7 @@ from core.repositories.answer import AnswerRepository
 from core.repositories.comment import CommentRepository
 from core.repositories.media import MediaRepository
 from core.repositories.classification import ClassificationRepository
+from core.repositories.expired_token import ExpiredTokenRepository
 from core.models.comment_classification import CommentClassification, ProcessingStatus
 from core.use_cases.hide_comment import HideCommentUseCase
 from core.use_cases.delete_comment import DeleteCommentUseCase
@@ -84,15 +89,72 @@ class JsonApiError(Exception):
 
 
 # NOTE: using explicit security dependency so Swagger UI sends Authorization header
-def require_service_token(credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme)) -> None:
-    token = settings.json_api.token
-    if not token:
-        raise JsonApiError(503, 5001, "JSON API token is not configured")
+async def require_service_token(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+) -> dict[str, Any]:
+    secret_key = settings.json_api.secret_key
+    algorithm = settings.json_api.algorithm
+
+    if not secret_key:
+        raise JsonApiError(503, 5001, "JSON API secret key is not configured")
     if not credentials or credentials.scheme.lower() != "bearer":
         raise JsonApiError(401, 4001, "Missing or invalid Authorization header")
-    provided = credentials.credentials.strip()
-    if provided != token:
+
+    token = credentials.credentials.strip()
+    repo = ExpiredTokenRepository(session)
+
+    try:
+        payload = jwt.decode(
+            token,
+            secret_key,
+            algorithms=[algorithm],
+            options={"require": ["exp", "jti"]},
+        )
+    except ExpiredSignatureError:
+        payload = _decode_without_exp(token, secret_key, algorithm)
+        await _record_expired_token(session, repo, payload)
+        raise JsonApiError(401, 4005, "Token expired")
+    except MissingRequiredClaimError:
+        raise JsonApiError(401, 4003, "Token missing required claim")
+    except InvalidTokenError:
         raise JsonApiError(401, 4002, "Unauthorized")
+
+    jti = payload.get("jti")
+    if not jti:
+        raise JsonApiError(401, 4003, "Token missing identifier")
+
+    if await repo.get_by_jti(jti):
+        raise JsonApiError(401, 4005, "Token expired")
+
+    return payload
+
+
+def _decode_without_exp(token: str, secret_key: str, algorithm: str) -> dict[str, Any]:
+    return jwt.decode(
+        token,
+        secret_key,
+        algorithms=[algorithm],
+        options={"verify_exp": False},
+    )
+
+
+async def _record_expired_token(
+    session: AsyncSession,
+    repo: ExpiredTokenRepository,
+    payload: dict[str, Any],
+) -> None:
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if not jti or not exp:
+        return
+
+    expired_at = datetime.fromtimestamp(exp, tz=timezone.utc).replace(tzinfo=None)
+    try:
+        await repo.record_expired(jti, expired_at)
+        await session.commit()
+    except Exception:
+        await session.rollback()
 
 
 def _is_json_api_path(path: str) -> bool:

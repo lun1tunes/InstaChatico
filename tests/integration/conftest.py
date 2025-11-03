@@ -240,7 +240,9 @@ async def integration_environment(test_engine):
     original_bucket = settings.s3.bucket_name
     original_s3_url = settings.s3.s3_url
     original_base_account_id = settings.instagram.base_account_id
-    original_json_api_token = settings.json_api.token
+    original_json_api_secret = settings.json_api.secret_key
+    original_json_api_algorithm = settings.json_api.algorithm
+    original_json_api_expire = settings.json_api.expire_minutes
 
     settings.app_secret = "test_app_secret"
     settings.app_webhook_verify_token = "verify_token"
@@ -248,7 +250,9 @@ async def integration_environment(test_engine):
     settings.s3.bucket_name = "test-bucket"
     settings.s3.s3_url = "s3.test.local"
     settings.instagram.base_account_id = "acct"
-    settings.json_api.token = "test-json-token"
+    settings.json_api.secret_key = "test-json-secret"
+    settings.json_api.algorithm = "HS256"
+    settings.json_api.expire_minutes = 60
 
     reset_container()
     container = get_container()
@@ -282,7 +286,9 @@ async def integration_environment(test_engine):
                 "s3_service": s3_service,
                 "document_processor": document_processor,
                 "telegram_service": telegram_service,
-                "json_api_token": settings.json_api.token,
+                "json_api_secret": settings.json_api.secret_key,
+                "json_api_algorithm": settings.json_api.algorithm,
+                "json_api_expire": settings.json_api.expire_minutes,
             }
     finally:
         container.task_queue.reset_override()
@@ -303,7 +309,9 @@ async def integration_environment(test_engine):
         settings.s3.bucket_name = original_bucket
         settings.s3.s3_url = original_s3_url
         settings.instagram.base_account_id = original_base_account_id
-        settings.json_api.token = original_json_api_token
+        settings.json_api.secret_key = original_json_api_secret
+        settings.json_api.algorithm = original_json_api_algorithm
+        settings.json_api.expire_minutes = original_json_api_expire
 
         if original_development_mode is None:
             os.environ.pop("DEVELOPMENT_MODE", None)

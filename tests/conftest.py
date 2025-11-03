@@ -38,6 +38,7 @@ from core.models import (
     Media,
     Document,
     ProductEmbedding,
+    ExpiredToken,
     InstrumentTokenUsage,
 )
 from core.models.comment_classification import ProcessingStatus

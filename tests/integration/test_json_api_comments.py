@@ -1,10 +1,16 @@
 """Comment operations tests (hide, unhide, delete, classification) for JSON API endpoints."""
 
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+import jwt
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from core.models import CommentClassification, InstagramComment, Media
 from core.models.comment_classification import ProcessingStatus
+from core.models.expired_token import ExpiredToken
 from core.utils.time import now_db_utc
 from tests.integration.json_api_helpers import auth_headers
 
@@ -584,3 +590,36 @@ async def test_patch_classification_accepts_numeric_code(integration_environment
     payload = response.json()["payload"]
     assert payload["classification"]["classification_type"] == 4
     assert payload["classification"]["reasoning"] == "manual numeric"
+
+
+@pytest.mark.asyncio
+async def test_expired_token_is_recorded(integration_environment):
+    client: AsyncClient = integration_environment["client"]
+    secret = integration_environment["json_api_secret"]
+    algorithm = integration_environment["json_api_algorithm"]
+    session_factory = integration_environment["session_factory"]
+
+    now = datetime.now(timezone.utc)
+    jti = uuid4().hex
+    payload = {
+        "sub": "expired-user",
+        "jti": jti,
+        "iat": int((now - timedelta(minutes=2)).timestamp()),
+        "exp": int((now - timedelta(minutes=1)).timestamp()),
+    }
+    token = jwt.encode(payload, secret, algorithm=algorithm)
+
+    response = await client.get(
+        "/api/v1/comments",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 401
+    body = response.json()
+    assert body["meta"]["error"]["code"] == 4005
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(ExpiredToken).where(ExpiredToken.jti == jti)
+        )
+        stored = result.scalar_one_or_none()
+        assert stored is not None

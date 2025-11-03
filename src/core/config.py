@@ -102,7 +102,19 @@ class DocsSettings(BaseModel):
 
 
 class JsonApiSettings(BaseModel):
-    token: str = Field(default_factory=lambda: os.getenv("JSON_API_TOKEN", "").strip())
+    secret_key: str = Field(default_factory=lambda: os.getenv("JWT_SECRET_KEY", "").strip())
+    algorithm: str = Field(default_factory=lambda: os.getenv("JWT_ALGORITHM", "HS256").strip() or "HS256")
+    expire_minutes: int = Field(default_factory=lambda: int(os.getenv("JWT_EXPIRE_MINUTES", "1440")))
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        if not self.secret_key:
+            raise ValueError("JWT_SECRET_KEY environment variable must be set.")
+        if not self.algorithm:
+            raise ValueError("JWT_ALGORITHM environment variable must be set.")
+        if self.expire_minutes <= 0:
+            raise ValueError("JWT_EXPIRE_MINUTES must be greater than zero.")
+        return self
 
 
 class MediaProxySettings(BaseModel):
