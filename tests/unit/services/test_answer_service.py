@@ -153,6 +153,10 @@ class TestQuestionAnswerService:
         # Verify session was passed to Runner.run
         call_args = executor.run.call_args
         assert "session" in call_args.kwargs
+        assert session_service.session.items == [
+            {"role": "user", "content": "Test question"},
+            {"role": "assistant", "content": "Answer with session"},
+        ]
 
     async def test_generate_answer_without_usage_data(self):
         """Test answer generation when raw_responses has no usage data."""

@@ -1,7 +1,6 @@
 """Shared helper functions for JSON API integration tests."""
 
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
 
 import jwt
 
@@ -12,7 +11,8 @@ def auth_headers(env):
     expire_minutes = env["json_api_expire"]
     payload = {
         "sub": "test-user",
-        "jti": uuid4().hex,
+        "role": "admin",
+        "scopes": ["me", "admin"],
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=expire_minutes)).timestamp()),
     }

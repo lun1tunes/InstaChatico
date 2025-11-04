@@ -1,7 +1,7 @@
 """Comment operations tests (hide, unhide, delete, classification) for JSON API endpoints."""
 
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+import hashlib
 
 import jwt
 import pytest
@@ -600,10 +600,10 @@ async def test_expired_token_is_recorded(integration_environment):
     session_factory = integration_environment["session_factory"]
 
     now = datetime.now(timezone.utc)
-    jti = uuid4().hex
     payload = {
         "sub": "expired-user",
-        "jti": jti,
+        "role": "admin",
+        "scopes": ["me", "admin"],
         "iat": int((now - timedelta(minutes=2)).timestamp()),
         "exp": int((now - timedelta(minutes=1)).timestamp()),
     }
@@ -617,9 +617,11 @@ async def test_expired_token_is_recorded(integration_environment):
     body = response.json()
     assert body["meta"]["error"]["code"] == 4005
 
+    token_id = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
     async with session_factory() as session:
         result = await session.execute(
-            select(ExpiredToken).where(ExpiredToken.jti == jti)
+            select(ExpiredToken).where(ExpiredToken.jti == token_id)
         )
         stored = result.scalar_one_or_none()
         assert stored is not None

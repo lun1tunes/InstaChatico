@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any, List, Optional
@@ -109,22 +110,21 @@ async def require_service_token(
             token,
             secret_key,
             algorithms=[algorithm],
-            options={"require": ["exp", "jti"]},
+            options={"require": ["exp"]},
         )
     except ExpiredSignatureError:
         payload = _decode_without_exp(token, secret_key, algorithm)
-        await _record_expired_token(session, repo, payload)
+        token_id = _token_identifier(token, payload)
+        await _record_expired_token(session, repo, payload, token_id)
         raise JsonApiError(401, 4005, "Token expired")
     except MissingRequiredClaimError:
         raise JsonApiError(401, 4003, "Token missing required claim")
     except InvalidTokenError:
         raise JsonApiError(401, 4002, "Unauthorized")
 
-    jti = payload.get("jti")
-    if not jti:
-        raise JsonApiError(401, 4003, "Token missing identifier")
+    token_id = _token_identifier(token, payload)
 
-    if await repo.get_by_jti(jti):
+    if await repo.get_by_jti(token_id):
         raise JsonApiError(401, 4005, "Token expired")
 
     return payload
@@ -139,19 +139,26 @@ def _decode_without_exp(token: str, secret_key: str, algorithm: str) -> dict[str
     )
 
 
+def _token_identifier(token: str, payload: dict[str, Any]) -> str:
+    raw_jti = payload.get("jti")
+    if isinstance(raw_jti, str) and raw_jti.strip():
+        return raw_jti.strip()
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 async def _record_expired_token(
     session: AsyncSession,
     repo: ExpiredTokenRepository,
     payload: dict[str, Any],
+    token_id: str,
 ) -> None:
-    jti = payload.get("jti")
     exp = payload.get("exp")
-    if not jti or not exp:
+    if not exp:
         return
 
     expired_at = datetime.fromtimestamp(exp, tz=timezone.utc).replace(tzinfo=None)
     try:
-        await repo.record_expired(jti, expired_at)
+        await repo.record_expired(token_id, expired_at)
         await session.commit()
     except Exception:
         await session.rollback()
