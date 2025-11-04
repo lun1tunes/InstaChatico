@@ -79,7 +79,7 @@ services:
     env_file:
       - .env
     ports:
-      - "${API_HOST_INTERFACE:-127.0.0.1}:${PORT}:${PORT}"
+      - "${API_HOST_INTERFACE:-0.0.0.0}:${PORT}:${PORT}"
     volumes:
       - ../src:/app/src
       - ../database:/app/database
