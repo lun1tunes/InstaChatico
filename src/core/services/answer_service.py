@@ -102,6 +102,13 @@ class QuestionAnswerService(BaseService):
                 tokens_used = self._estimate_tokens(sanitized_text + answer_result.answer)
                 logger.debug(f"Token usage estimated: {tokens_used}")
 
+            if conversation_id:
+                await self._append_exchange_to_session(
+                    conversation_id=conversation_id,
+                    user_message=sanitized_text,
+                    assistant_message=answer_result.answer,
+                )
+
             return AnswerResponse(
                 status="success",
                 comment_id=conversation_id or "unknown",
@@ -129,3 +136,33 @@ class QuestionAnswerService(BaseService):
             processing_time_ms=0,
             error=error_message,
         )
+
+    async def _append_exchange_to_session(
+        self,
+        *,
+        conversation_id: str,
+        user_message: str | None,
+        assistant_message: str,
+    ) -> None:
+        """Persist the latest user/assistant turn into the shared conversation session."""
+        if not assistant_message:
+            return
+
+        try:
+            session = self.session_service.get_session(conversation_id)
+            items = []
+            if user_message:
+                items.append({"role": "user", "content": user_message})
+            items.append({"role": "assistant", "content": assistant_message})
+            await session.add_items(items)
+            logger.debug(
+                "Conversation exchange appended | conversation_id=%s | user_added=%s",
+                conversation_id,
+                bool(user_message),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to append exchange to conversation | conversation_id=%s | error=%s",
+                conversation_id,
+                exc,
+            )

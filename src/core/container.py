@@ -236,6 +236,7 @@ class Container(containers.DeclarativeContainer):
         answer_repository_factory=answer_repository_factory.provider,
         instagram_service=instagram_service,
         replace_answer_use_case_factory=replace_answer_use_case.provider,
+        session_service=agent_session_service,
     )
 
     process_webhook_comment_use_case = providers.Factory(
