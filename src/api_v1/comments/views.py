@@ -371,7 +371,12 @@ async def proxy_media_image(
         media_id,
         child_index,
     )
-    return StreamingResponse(result.content_stream, media_type=result.content_type, headers=result.headers)
+    return JSONResponse(
+        content={
+            "meta": SimpleMeta().model_dump(),
+            "payload": {"url": result.media_url},
+        }
+    )
 
 
 @router.get("/media/{id}/comments")

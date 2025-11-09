@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 
 from core.use_cases.proxy_media_image import (
@@ -95,14 +94,9 @@ async def test_proxy_media_image_success():
 
     result = await use_case.execute("media1")
 
-    collected = []
-    async for chunk in result.content_stream:
-        collected.append(chunk)
-
-    assert collected == [b"a", b"b"]
-    assert result.content_type == "image/jpeg"
-    assert result.headers["Cache-Control"] == "public"
+    assert result.media_url == "https://cdninstagram.com/image.jpg"
     assert proxy_service.requested_urls == ["https://cdninstagram.com/image.jpg"]
+    assert fetch_result.closed is True
 
 
 @pytest.mark.asyncio
@@ -121,8 +115,9 @@ async def test_proxy_media_image_child_index():
         allowed_host_suffixes=["cdninstagram.com"],
     )
 
-    await use_case.execute("media1", child_index=0)
+    result = await use_case.execute("media1", child_index=0)
     assert proxy_service.requested_urls == ["https://cdninstagram.com/child.jpg"]
+    assert result.media_url == "https://cdninstagram.com/child.jpg"
 
 
 @pytest.mark.asyncio
@@ -146,8 +141,9 @@ async def test_proxy_media_image_second_child_index():
         allowed_host_suffixes=["cdninstagram.com"],
     )
 
-    await use_case.execute("media1", child_index=1)
+    result = await use_case.execute("media1", child_index=1)
     assert proxy_service.requested_urls == ["https://cdninstagram.com/child1.jpg"]
+    assert result.media_url == "https://cdninstagram.com/child1.jpg"
 
 
 @pytest.mark.asyncio
@@ -298,9 +294,7 @@ async def test_proxy_media_image_refresh_on_expired_url():
     )
 
     result = await use_case.execute("media1")
-
-    async for _ in result.content_stream:
-        pass
+    assert result.media_url == "https://cdninstagram.com/new.jpg"
 
     assert media_service.calls == ["media1"]
     assert proxy_service.requested_urls == [

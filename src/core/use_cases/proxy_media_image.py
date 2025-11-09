@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import AsyncIterator, Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence
 from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,10 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class MediaImageStreamResult:
-    content_stream: AsyncIterator[bytes]
-    content_type: str
-    headers: dict[str, str]
+class MediaImageUrlResult:
+    media_url: str
 
 
 class MediaImageProxyError(Exception):
@@ -47,7 +45,7 @@ class ProxyMediaImageUseCase:
         self.media_service = media_service
         self.allowed_hosts = tuple(host.lower() for host in allowed_host_suffixes)
 
-    async def execute(self, media_id: str, child_index: Optional[int] = None) -> MediaImageStreamResult:
+    async def execute(self, media_id: str, child_index: Optional[int] = None) -> MediaImageUrlResult:
         logger.debug(
             "Proxy media image use case started | media_id=%s | child_index=%s",
             media_id,
@@ -99,6 +97,7 @@ class ProxyMediaImageUseCase:
                 raise MediaImageProxyError(502, 5005, f"Error fetching media image: {exc}") from exc
 
             if fetch_result.status == 200:
+                await fetch_result.close()
                 break
 
             await fetch_result.close()
@@ -160,19 +159,13 @@ class ProxyMediaImageUseCase:
             )
             raise MediaImageProxyError(502, 5003, f"Failed to fetch media image (status {fetch_result.status})")
 
-        content_type = fetch_result.content_type or "image/jpeg"
-        headers: dict[str, str] = {}
-        if fetch_result.cache_control:
-            headers["Cache-Control"] = fetch_result.cache_control
-
-        stream = fetch_result.iter_bytes()
         logger.debug(
-            "Media proxy response prepared | media_id=%s | child_index=%s | content_type=%s",
+            "Media proxy response prepared | media_id=%s | child_index=%s | media_url=%s",
             media_id,
             child_index,
-            content_type,
+            image_url,
         )
-        return MediaImageStreamResult(content_stream=stream, content_type=content_type, headers=headers)
+        return MediaImageUrlResult(media_url=image_url)
 
     def _select_media_image_url(self, media, child_index: Optional[int]) -> Optional[str]:
         if child_index is None:
