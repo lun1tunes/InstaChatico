@@ -10,14 +10,17 @@ from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.interfaces.repositories import IMediaRepository
-from core.interfaces.services import IMediaProxyService, IMediaService
+from core.interfaces.services import IMediaProxyService, IMediaService, MediaImageFetchResult
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class MediaImageUrlResult:
+class MediaImageStreamResult:
+    """Holds the open fetch result for streaming back to the client."""
+
     media_url: str
+    fetch_result: MediaImageFetchResult
 
 
 class MediaImageProxyError(Exception):
@@ -45,7 +48,7 @@ class ProxyMediaImageUseCase:
         self.media_service = media_service
         self.allowed_hosts = tuple(host.lower() for host in allowed_host_suffixes)
 
-    async def execute(self, media_id: str, child_index: Optional[int] = None) -> MediaImageUrlResult:
+    async def execute(self, media_id: str, child_index: Optional[int] = None) -> MediaImageStreamResult:
         logger.debug(
             "Proxy media image use case started | media_id=%s | child_index=%s",
             media_id,
@@ -84,6 +87,7 @@ class ProxyMediaImageUseCase:
             raise MediaImageProxyError(400, 4004, "Image host not allowed")
 
         attempted_refresh = False
+        success_result: Optional[MediaImageFetchResult] = None
         while True:
             try:
                 fetch_result = await self.proxy_service.fetch_image(image_url)
@@ -97,7 +101,7 @@ class ProxyMediaImageUseCase:
                 raise MediaImageProxyError(502, 5005, f"Error fetching media image: {exc}") from exc
 
             if fetch_result.status == 200:
-                await fetch_result.close()
+                success_result = fetch_result
                 break
 
             await fetch_result.close()
@@ -165,7 +169,11 @@ class ProxyMediaImageUseCase:
             child_index,
             image_url,
         )
-        return MediaImageUrlResult(media_url=image_url)
+        if not success_result:
+            logger.error("Media proxy could not acquire image | media_id=%s", media_id)
+            raise MediaImageProxyError(502, 5003, "Failed to fetch media image")
+
+        return MediaImageStreamResult(media_url=image_url, fetch_result=success_result)
 
     def _select_media_image_url(self, media, child_index: Optional[int]) -> Optional[str]:
         if child_index is None:

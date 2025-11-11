@@ -17,6 +17,7 @@ from api_v1.comments.schemas import (
     ErrorDetail,
     ErrorResponse,
     MediaDTO,
+    MediaQuickStats,
     MediaListResponse,
     MediaResponse,
     PaginationMeta,
@@ -102,7 +103,7 @@ def processing_status_code_to_enum(code: int) -> Optional[ProcessingStatus]:
     return PROCESSING_STATUS_CODE_TO_ENUM.get(code)
 
 
-def serialize_media(media: Media) -> MediaDTO:
+def serialize_media(media: Media, stats: Optional[MediaQuickStats] = None) -> MediaDTO:
     media_type = (media.media_type or "").upper()
     type_code = MEDIA_TYPE_CODES.get(media_type)
     children = media.children_media_urls or []
@@ -120,6 +121,7 @@ def serialize_media(media: Media) -> MediaDTO:
         posted_at=format_datetime(media.posted_at) if media.posted_at else None,
         is_comment_enabled=media.is_comment_enabled,
         is_processing_enabled=bool(media.is_processing_enabled),
+        stats=stats,
     )
 
 

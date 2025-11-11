@@ -201,6 +201,75 @@ async def test_media_list_pagination_max_clamped(integration_environment):
 
 
 @pytest.mark.asyncio
+async def test_media_list_includes_quick_stats(integration_environment):
+    """Ensure media list response includes quick stats calculated over the last hour."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+    now = now_db_utc()
+
+    async with session_factory() as session:
+        media = Media(
+            id="stats_media",
+            permalink="https://instagram.com/p/stats_media",
+            media_type="IMAGE",
+            media_url="https://cdn.test/stats.jpg",
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(media)
+
+        recent_comment = InstagramComment(
+            id="stats_comment_recent",
+            media_id="stats_media",
+            user_id="user_recent",
+            username="recent_user",
+            text="Great job!",
+            created_at=now,
+            raw_data={},
+        )
+        old_comment = InstagramComment(
+            id="stats_comment_old",
+            media_id="stats_media",
+            user_id="user_old",
+            username="old_user",
+            text="Needs work",
+            created_at=now - timedelta(hours=3),
+            raw_data={},
+        )
+        session.add_all([recent_comment, old_comment])
+
+        session.add_all(
+            [
+                CommentClassification(
+                    comment_id="stats_comment_recent",
+                    processing_status=ProcessingStatus.COMPLETED,
+                    processing_completed_at=now,
+                    type="positive feedback",
+                ),
+                CommentClassification(
+                    comment_id="stats_comment_old",
+                    processing_status=ProcessingStatus.COMPLETED,
+                    processing_completed_at=now - timedelta(hours=3),
+                    type="critical feedback",
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await client.get("/api/v1/media", headers=auth_headers(integration_environment))
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    media_entry = next(item for item in payload if item["id"] == "stats_media")
+    stats = media_entry["stats"]
+
+    assert stats["positive_feedback_total"] == 1
+    assert stats["positive_feedback_increment"] == 1
+    assert stats["negative_feedback_total"] == 1
+    assert stats["negative_feedback_increment"] == 0
+    assert "questions_total" in stats
+
+
+@pytest.mark.asyncio
 async def test_media_list_page_2(integration_environment):
     """Test media listing on page 2."""
     client: AsyncClient = integration_environment["client"]
@@ -352,6 +421,50 @@ async def test_recent_comments_returns_newest_first(integration_environment):
     assert media_map["recent_comment_newest"] == "recent_media_a"
     assert media_map["recent_comment_middle"] == "recent_media_b"
     assert media_map["recent_comment_oldest"] == "recent_media_a"
+
+
+@pytest.mark.asyncio
+async def test_recent_comments_includes_stats(integration_environment):
+    """Ensure /api/v1/comments returns aggregated quick stats block."""
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+    now = now_db_utc()
+
+    async with session_factory() as session:
+        media = Media(
+            id="comments_stats_media",
+            permalink="https://instagram.com/p/comments_stats_media",
+            media_type="IMAGE",
+            media_url="https://cdn.test/comments_stats.jpg",
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(media)
+        comment = InstagramComment(
+            id="comments_stats_comment",
+            media_id=media.id,
+            user_id="stats_user",
+            username="stats_user",
+            text="Is this available?",
+            created_at=now,
+            raw_data={},
+        )
+        session.add(comment)
+        session.add(
+            CommentClassification(
+                comment_id=comment.id,
+                processing_status=ProcessingStatus.COMPLETED,
+                processing_completed_at=now,
+                type="question / inquiry",
+            )
+        )
+        await session.commit()
+
+    response = await client.get("/api/v1/comments", headers=auth_headers(integration_environment))
+    assert response.status_code == 200
+    stats = response.json()["stats"]
+    assert stats["questions_total"] >= 1
+    assert stats["questions_increment"] >= 1
 
 
 @pytest.mark.asyncio

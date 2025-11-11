@@ -17,6 +17,7 @@ MODEL_REGISTRY = {
     "PaginationMeta": comment_schemas.PaginationMeta,
     "MediaResponse": comment_schemas.MediaResponse,
     "MediaListResponse": comment_schemas.MediaListResponse,
+    "MediaQuickStats": comment_schemas.MediaQuickStats,
     "CommentResponse": comment_schemas.CommentResponse,
     "CommentListResponse": comment_schemas.CommentListResponse,
     "AnswerResponse": comment_schemas.AnswerResponse,

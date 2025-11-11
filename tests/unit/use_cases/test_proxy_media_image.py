@@ -1,9 +1,6 @@
 import pytest
 
-from core.use_cases.proxy_media_image import (
-    ProxyMediaImageUseCase,
-    MediaImageProxyError,
-)
+from core.use_cases.proxy_media_image import ProxyMediaImageUseCase, MediaImageProxyError
 
 
 class FakeMedia:
@@ -34,6 +31,7 @@ class FakeFetchResult:
         async def generator():
             for chunk in self._chunks:
                 yield chunk
+            # Simulate close responsibility on consumer
         return generator()
 
     async def close(self):
@@ -95,8 +93,9 @@ async def test_proxy_media_image_success():
     result = await use_case.execute("media1")
 
     assert result.media_url == "https://cdninstagram.com/image.jpg"
+    assert result.fetch_result is fetch_result
     assert proxy_service.requested_urls == ["https://cdninstagram.com/image.jpg"]
-    assert fetch_result.closed is True
+    assert fetch_result.closed is False
 
 
 @pytest.mark.asyncio

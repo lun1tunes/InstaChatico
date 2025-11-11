@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
-from typing import Any, List, Optional
+from datetime import datetime, timezone, timedelta
+from typing import Any, AsyncIterator, List, Optional
 
 import jwt
 from fastapi import APIRouter, Body, Depends, Path, Query, Request
@@ -60,6 +60,7 @@ from .schemas import (
     MediaUpdateRequest,
     ClassificationTypeDTO,
     ClassificationTypesResponse,
+    MediaQuickStats,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,17 @@ JSON_API_PATH_PREFIXES = (
     f"{settings.api_v1_prefix}/answers",
     f"{settings.api_v1_prefix}/meta",
 )
+
+QUICK_STATS_WINDOW = timedelta(hours=1)
+CLASSIFICATION_STATS_KEYS = {
+    "positive feedback": "positive_feedback",
+    "question / inquiry": "questions",
+    "critical feedback": "negative_feedback",
+    "urgent issue / complaint": "urgent_issues",
+    "partnership proposal": "partnership_proposals",
+    "toxic / abusive": "toxic_abusive",
+    "spam / irrelevant": "spam_irrelevant",
+}
 
 
 class JsonApiError(Exception):
@@ -198,6 +210,63 @@ async def _get_comment_or_404(session: AsyncSession, comment_id: str) -> Any:
     return comment
 
 
+def _init_stats_state() -> dict[str, dict[str, int]]:
+    return {key: {"total": 0, "increment": 0} for key in CLASSIFICATION_STATS_KEYS.values()}
+
+
+def _state_to_quick_stats(state: dict[str, dict[str, int]]) -> MediaQuickStats:
+    payload: dict[str, int] = {}
+    for key, values in state.items():
+        payload[f"{key}_total"] = values["total"]
+        payload[f"{key}_increment"] = values["increment"]
+    return MediaQuickStats(**payload)
+
+
+def _apply_classification_stats(
+    state: dict[str, dict[str, int]],
+    classification_label: Optional[str],
+    total_count: int,
+    recent_count: int,
+) -> None:
+    if not classification_label:
+        return
+    normalized = classification_label.strip().lower()
+    stat_key = CLASSIFICATION_STATS_KEYS.get(normalized)
+    if not stat_key:
+        logger.debug("Quick stats skipping unknown classification | type=%s", classification_label)
+        return
+    state[stat_key]["total"] = total_count
+    state[stat_key]["increment"] = recent_count
+
+
+async def _get_comment_quick_stats(session: AsyncSession) -> MediaQuickStats:
+    """Return aggregated stats across all media for last hour + totals."""
+    cutoff = now_db_utc() - QUICK_STATS_WINDOW
+    repo = ClassificationRepository(session)
+    rows = await repo.get_completed_stats_since(cutoff)
+    stats_state = _init_stats_state()
+    for cls_type, total_count, recent_count in rows:
+        _apply_classification_stats(stats_state, cls_type, total_count, recent_count)
+    return _state_to_quick_stats(stats_state)
+
+
+async def _get_media_stats_map(session: AsyncSession, media_ids: list[str]) -> dict[str, MediaQuickStats]:
+    if not media_ids:
+        return {}
+
+    cutoff = now_db_utc() - QUICK_STATS_WINDOW
+    repo = ClassificationRepository(session)
+    rows = await repo.get_completed_stats_since_by_media(media_ids, cutoff)
+
+    states = {media_id: _init_stats_state() for media_id in media_ids}
+    for media_id, cls_type, total_count, recent_count in rows:
+        if media_id not in states:
+            continue
+        _apply_classification_stats(states[media_id], cls_type, total_count, recent_count)
+
+    return {media_id: _state_to_quick_stats(state) for media_id, state in states.items()}
+
+
 async def _get_answer_or_404(session: AsyncSession, answer_id: int) -> Any:
     repo = AnswerRepository(session)
     answer = await repo.get_by_id(answer_id)
@@ -279,7 +348,9 @@ async def list_media(
     repo = MediaRepository(session)
     total = await repo.count_all()
     items = await repo.list_paginated(offset=offset, limit=per_page)
-    payload = [serialize_media(media) for media in items]
+    media_ids = [media.id for media in items]
+    stats_map = await _get_media_stats_map(session, media_ids)
+    payload = [serialize_media(media, stats=stats_map.get(media.id)) for media in items]
     response = MediaListResponse(
         meta=PaginationMeta(page=page, per_page=per_page, total=total),
         payload=payload,
@@ -294,7 +365,8 @@ async def get_media(
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     media = await _get_media_or_404(session, media_id)
-    return MediaResponse(meta=SimpleMeta(), payload=serialize_media(media))
+    stats_map = await _get_media_stats_map(session, [media.id])
+    return MediaResponse(meta=SimpleMeta(), payload=serialize_media(media, stats=stats_map.get(media.id)))
 
 
 @router.patch("/media/{id}")
@@ -341,7 +413,8 @@ async def patch_media(
         updated_comment_status,
     )
 
-    return MediaResponse(meta=SimpleMeta(), payload=serialize_media(media))
+    stats_map = await _get_media_stats_map(session, [media.id])
+    return MediaResponse(meta=SimpleMeta(), payload=serialize_media(media, stats=stats_map.get(media.id)))
 
 
 @router.get("/media/{id}/image")
@@ -366,17 +439,29 @@ async def proxy_media_image(
         )
         raise JsonApiError(exc.status_code, exc.code, exc.message)
 
+    fetch_result = result.fetch_result
+
+    async def _stream() -> AsyncIterator[bytes]:
+        try:
+            async for chunk in fetch_result.iter_bytes():
+                yield chunk
+        finally:
+            await fetch_result.close()
+
+    response = StreamingResponse(
+        _stream(),
+        media_type=fetch_result.content_type or "application/octet-stream",
+    )
+    if fetch_result.cache_control:
+        response.headers["Cache-Control"] = fetch_result.cache_control
+
     logger.debug(
-        "Proxy media image succeeded | media_id=%s | child_index=%s",
+        "Proxy media image succeeded | media_id=%s | child_index=%s | url=%s",
         media_id,
         child_index,
+        result.media_url,
     )
-    return JSONResponse(
-        content={
-            "meta": SimpleMeta().model_dump(),
-            "payload": {"url": result.media_url},
-        }
-    )
+    return response
 
 
 @router.get("/media/{id}/comments")
@@ -468,9 +553,11 @@ async def list_recent_comments(
         include_deleted=include_deleted,
     )
     payload = [serialize_comment(comment) for comment in items]
+    stats = await _get_comment_quick_stats(session)
     response = CommentListResponse(
         meta=PaginationMeta(page=page, per_page=per_page, total=total),
         payload=payload,
+        stats=stats,
     )
     return response
 

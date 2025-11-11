@@ -81,6 +81,23 @@ class PaginationMeta(SimpleMeta):
     total: int
 
 
+class MediaQuickStats(BaseModel):
+    positive_feedback_total: int = 0
+    positive_feedback_increment: int = 0
+    questions_total: int = 0
+    questions_increment: int = 0
+    negative_feedback_total: int = 0
+    negative_feedback_increment: int = 0
+    urgent_issues_total: int = 0
+    urgent_issues_increment: int = 0
+    partnership_proposals_total: int = 0
+    partnership_proposals_increment: int = 0
+    toxic_abusive_total: int = 0
+    toxic_abusive_increment: int = 0
+    spam_irrelevant_total: int = 0
+    spam_irrelevant_increment: int = 0
+
+
 class MediaDTO(BaseModel):
     id: str
     permalink: Optional[str] = None
@@ -95,6 +112,7 @@ class MediaDTO(BaseModel):
     posted_at: Optional[str] = None
     is_comment_enabled: Optional[bool] = None
     is_processing_enabled: bool
+    stats: Optional[MediaQuickStats] = None
 
 
 class ClassificationDTO(BaseModel):
@@ -149,6 +167,7 @@ class MediaResponse(BaseModel):
 class CommentListResponse(BaseModel):
     meta: PaginationMeta
     payload: list[CommentDTO]
+    stats: Optional[MediaQuickStats] = None
 
 
 class CommentResponse(BaseModel):
@@ -184,3 +203,6 @@ class EmptyResponse(BaseModel):
 class ErrorResponse(BaseModel):
     meta: SimpleMeta
     payload: None = None
+
+
+MediaListResponse.model_rebuild()
