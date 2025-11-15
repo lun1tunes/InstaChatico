@@ -69,6 +69,11 @@ async def check_instagram_token_expiration_task():
     )
 
     alert_sent = False
+    status_message = (
+        f"Instagram access token health check: expires in "
+        f"{days_remaining:.1f} days ({expires_at.isoformat() if expires_at else 'unknown timestamp'})."
+    )
+
     if days_remaining is not None and days_remaining <= TOKEN_EXPIRY_WARNING_DAYS:
         message = (
             f"⚠️ Instagram access token expires in approximately {days_remaining:.1f} days "
@@ -84,6 +89,15 @@ async def check_instagram_token_expiration_task():
             }
         )
         alert_sent = True
+    else:
+        logger.info(status_message)
+        await log_alert_service.send_log_alert(
+            {
+                "level": "INFO",
+                "logger": "instagram.token",
+                "message": status_message,
+            }
+        )
 
     return {
         "status": "ok",

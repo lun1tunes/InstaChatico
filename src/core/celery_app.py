@@ -1,5 +1,6 @@
 from celery import Celery
 from celery.schedules import crontab
+from datetime import timedelta
 from .config import settings
 import os
 from celery.signals import before_task_publish, task_prerun
@@ -67,6 +68,10 @@ celery_app.conf.update(
         "core.tasks.instagram_reply_tasks.send_instagram_reply_task": {"queue": "instagram_queue"},
         "core.tasks.instagram_reply_tasks.hide_instagram_comment_task": {"queue": "instagram_queue"},
         "core.tasks.telegram_tasks.send_telegram_notification_task": {"queue": "instagram_queue"},
+        # Periodic/scheduled jobs – route them explicitly so Celery Beat doesn't fall back to the default queue
+        "core.tasks.classification_tasks.retry_failed_classifications": {"queue": "llm_queue"},
+        "core.tasks.health_tasks.check_system_health_task": {"queue": "instagram_queue"},
+        "core.tasks.instagram_token_tasks.check_instagram_token_expiration_task": {"queue": "instagram_queue"},
     },
     task_soft_time_limit=300,
     task_time_limit=600,
@@ -88,11 +93,20 @@ celery_app.conf.beat_schedule = {
         "task": "core.tasks.health_tasks.check_system_health_task",
         "schedule": settings.health.check_interval_seconds,
     },
-    "check-instagram-token-expiration": {
-        "task": "core.tasks.instagram_token_tasks.check_instagram_token_expiration_task",
-        "schedule": crontab(hour=3, minute=0),
-    },
 }
+
+
+@celery_app.on_after_configure.connect
+def run_initial_health_check(sender, **kwargs):
+    """Ensure a health snapshot runs once on startup for immediate visibility."""
+    try:
+        sender.send_task(
+            "core.tasks.health_tasks.check_system_health_task",
+            countdown=5,
+        )
+    except Exception:
+        # Avoid crashing startup if broker temporarily unavailable
+        pass
 
 
 # Propagate trace_id via Celery headers

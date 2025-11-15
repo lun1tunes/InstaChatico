@@ -93,7 +93,10 @@ class HealthSettings(BaseModel):
     cpu_warn_pct: int = int(os.getenv("HEALTH_CPU_WARN_PCT", "85"))
     mem_warn_pct: int = int(os.getenv("HEALTH_MEM_WARN_PCT", "85"))
     disk_warn_pct: int = int(os.getenv("HEALTH_DISK_WARN_PCT", "90"))
-    check_interval_seconds: int = int(os.getenv("HEALTH_CHECK_INTERVAL_SECONDS", "600"))
+    check_interval_seconds: int = int(os.getenv("HEALTH_CHECK_INTERVAL_SECONDS", str(60 * 60)))
+    mem_min_available_mb: int = int(os.getenv("HEALTH_MEM_MIN_AVAILABLE_MB", "512"))
+    disk_min_free_gb: int = int(os.getenv("HEALTH_DISK_MIN_FREE_GB", "2"))
+    disk_path: str = os.getenv("HEALTH_DISK_PATH", "/")
 
 
 class DocsSettings(BaseModel):
