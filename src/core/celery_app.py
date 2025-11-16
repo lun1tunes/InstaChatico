@@ -91,7 +91,7 @@ celery_app.conf.beat_schedule = {
     },
     "check-system-health": {
         "task": "core.tasks.health_tasks.check_system_health_task",
-        "schedule": settings.health.check_interval_seconds,
+        "schedule": crontab(minute=0, hour="*/1"),
     },
 }
 
