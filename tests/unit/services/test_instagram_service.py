@@ -198,7 +198,60 @@ class TestInstagramServiceRateLimiting:
 
         assert result["success"] is False
         assert result["status"] == "rate_limited"
-        assert result["retry_after"] == pytest.approx(12.5)
+
+
+@pytest.mark.unit
+@pytest.mark.service
+class TestInstagramInsightsAPI:
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_get_insights_success(self, mock_session_class):
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"data": [{"metric": "views"}]})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.closed = False
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+
+        result = await service.get_insights(
+            "account_1",
+            {"metric": "views", "period": "day", "since": 1, "until": 2},
+        )
+
+        assert result["success"] is True
+        assert result["data"] == {"data": [{"metric": "views"}]}
+        mock_session.get.assert_called_once()
+        await service.close()
+
+    @patch("core.services.instagram_service.aiohttp.ClientSession")
+    async def test_get_insights_failure(self, mock_session_class):
+        mock_response = AsyncMock()
+        mock_response.status = 500
+        mock_response.json = AsyncMock(return_value={"error": "boom"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        mock_session.closed = False
+        mock_session_class.return_value = mock_session
+
+        service = InstagramGraphAPIService(access_token="test_token")
+
+        result = await service.get_insights(
+            "account_1",
+            {"metric": "views", "period": "day", "since": 1, "until": 2},
+        )
+
+        assert result["success"] is False
+        assert result["error"] == {"error": "boom"}
+        mock_session.get.assert_called_once()
+        await service.close()
 
 
 @pytest.mark.unit

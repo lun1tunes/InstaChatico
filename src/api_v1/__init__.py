@@ -20,6 +20,6 @@ try:
 except ImportError as e:
     logger.warning(f"Document management endpoints not available: {e}")
 
-from .stats_report.views import router as stats_report_router
+from .instagram_insights.views import router as instagram_insights_router
 
-router.include_router(stats_report_router)
+router.include_router(instagram_insights_router)

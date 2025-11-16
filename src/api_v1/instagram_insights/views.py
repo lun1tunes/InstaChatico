@@ -4,9 +4,9 @@ import logging
 
 from fastapi import APIRouter, Depends, Query
 
-from api_v1.comments.views import JsonApiError, require_service_token
-from api_v1.stats_report.schemas import StatsReportResponse, StatsReportPayload
+from api_v1.comments.views import JsonApiError
 from api_v1.comments.schemas import SimpleMeta
+from api_v1.instagram_insights.schemas import StatsReportResponse, StatsReportPayload
 from core.dependencies import get_generate_stats_report_use_case
 from core.use_cases.generate_stats_report import (
     GenerateStatsReportUseCase,
@@ -16,7 +16,7 @@ from core.use_cases.generate_stats_report import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/stats_report", tags=["Stats Report"])
+router = APIRouter(prefix="/instagram_insights", tags=["Instagram Insights"])
 
 
 @router.get("", response_model=StatsReportResponse)
