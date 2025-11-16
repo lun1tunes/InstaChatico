@@ -29,6 +29,7 @@ from .use_cases.send_telegram_notification import SendTelegramNotificationUseCas
 from .use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
 from .use_cases.process_document import ProcessDocumentUseCase
 from .use_cases.test_comment_processing import TestCommentProcessingUseCase
+from .use_cases.generate_stats_report import GenerateStatsReportUseCase, StatsPeriod
 
 # Import repositories
 from .repositories.comment import CommentRepository
@@ -153,6 +154,14 @@ def get_test_comment_processing_use_case(
 ) -> TestCommentProcessingUseCase:
     """Provide TestCommentProcessingUseCase with dependencies."""
     return container.test_comment_processing_use_case(session=session)
+
+
+def get_generate_stats_report_use_case(
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+) -> GenerateStatsReportUseCase:
+    """Provide GenerateStatsReportUseCase."""
+    return container.generate_stats_report_use_case(session=session)
 
 
 # Generic factory for creating dependency providers

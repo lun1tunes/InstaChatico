@@ -9,6 +9,7 @@ from .document import DocumentRepository
 from .product_embedding import ProductEmbeddingRepository
 from .instrument_token_usage import InstrumentTokenUsageRepository
 from .expired_token import ExpiredTokenRepository
+from .stats_report import StatsReportRepository
 
 __all__ = [
     "BaseRepository",
@@ -20,4 +21,5 @@ __all__ = [
     "ProductEmbeddingRepository",
     "InstrumentTokenUsageRepository",
     "ExpiredTokenRepository",
+    "StatsReportRepository",
 ]

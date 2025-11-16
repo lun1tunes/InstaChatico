@@ -53,7 +53,7 @@ class InstagramSettings(BaseModel):
     api_version: str = os.getenv("INSTAGRAM_API_VERSION", "v23.0")
     base_url: str = f"https://graph.instagram.com/{os.getenv('INSTAGRAM_API_VERSION', 'v23.0')}"
     bot_username: str = os.getenv("INSTAGRAM_BOT_USERNAME", "")
-    base_account_id: str = os.getenv("INSTAGRAM_BASE_ACCOUNT_ID", "")
+    base_account_id: str = os.getenv("INSTAGRAM_BASE_ACC_ID", os.getenv("INSTAGRAM_BASE_ACCOUNT_ID", "")).strip()
     app_id: str = os.getenv("INSTAGRAM_APP_ID", "")
     app_secret: str = os.getenv("INSTAGRAM_APP_SECRET", "")
     app_access_token: str = os.getenv("INSTAGRAM_APP_ACCESS_TOKEN", "")

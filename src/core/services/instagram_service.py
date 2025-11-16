@@ -352,6 +352,46 @@ class InstagramGraphAPIService:
             )
             return {"success": False, "error": str(e), "status_code": None}
 
+    async def get_insights(self, account_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Fetch insights from Instagram Graph API for the given account."""
+        if not account_id:
+            raise ValueError("Instagram account ID is required for insights")
+
+        url = f"{self.base_url}/{account_id}/insights"
+        query = {"access_token": self.access_token, **params}
+
+        try:
+            session = await self._get_session()
+            async with session.get(url, params=query) as response:
+                response_data = await response.json()
+
+                if response.status == 200:
+                    logger.debug(
+                        "Instagram insights fetched | account_id=%s | params=%s",
+                        account_id,
+                        params,
+                    )
+                    return {
+                        "success": True,
+                        "data": response_data,
+                        "status_code": response.status,
+                    }
+
+                logger.error(
+                    "Failed to fetch Instagram insights | account_id=%s | status=%s | error=%s",
+                    account_id,
+                    response.status,
+                    response_data,
+                )
+                return {
+                    "success": False,
+                    "error": response_data,
+                    "status_code": response.status,
+                }
+        except Exception as exc:
+            logger.exception("Error fetching Instagram insights | account_id=%s", account_id)
+            return {"success": False, "error": str(exc), "status_code": None}
+
     async def get_page_info(self) -> Dict[str, Any]:
         """
         Get Instagram page information.

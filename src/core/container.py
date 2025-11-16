@@ -46,6 +46,7 @@ from .use_cases.test_comment_processing import TestCommentProcessingUseCase
 from .use_cases.proxy_media_image import ProxyMediaImageUseCase
 from .use_cases.replace_answer import ReplaceAnswerUseCase
 from .use_cases.create_manual_answer import CreateManualAnswerUseCase
+from .use_cases.generate_stats_report import GenerateStatsReportUseCase
 
 # Repositories
 from .repositories.comment import CommentRepository
@@ -54,6 +55,7 @@ from .repositories.answer import AnswerRepository
 from .repositories.media import MediaRepository
 from .repositories.document import DocumentRepository
 from .repositories.instrument_token_usage import InstrumentTokenUsageRepository
+from .repositories.stats_report import StatsReportRepository
 
 
 class Container(containers.DeclarativeContainer):
@@ -99,6 +101,7 @@ class Container(containers.DeclarativeContainer):
     media_repository_factory = providers.Factory(MediaRepository)
     document_repository_factory = providers.Factory(DocumentRepository)
     instrument_token_usage_repository_factory = providers.Factory(InstrumentTokenUsageRepository)
+    stats_report_repository_factory = providers.Factory(StatsReportRepository)
 
     agent_session_service = providers.Singleton(
         AgentSessionService,
@@ -284,6 +287,12 @@ class Container(containers.DeclarativeContainer):
         comment_repository_factory=comment_repository_factory.provider,
         media_repository_factory=media_repository_factory.provider,
         # Optional use cases will use container if not provided
+    )
+
+    generate_stats_report_use_case = providers.Factory(
+        GenerateStatsReportUseCase,
+        stats_report_repository_factory=stats_report_repository_factory.provider,
+        instagram_service=instagram_service,
     )
 
 

@@ -15,8 +15,11 @@ router.include_router(router=comments_router)
 # Try to load documents router (requires boto3, pdfplumber, python-docx)
 try:
     from .documents.views import router as documents_router
-
     router.include_router(router=documents_router)
     logger.info("Document management endpoints loaded")
 except ImportError as e:
     logger.warning(f"Document management endpoints not available: {e}")
+
+from .stats_report.views import router as stats_report_router
+
+router.include_router(stats_report_router)

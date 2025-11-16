@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from core.models.question_answer import QuestionAnswer
     from core.models.media import Media
     from core.models.document import Document
+    from core.models.stats_report import StatsReport
 
 
 class ICommentRepository(Protocol):
@@ -82,6 +83,21 @@ class IMediaRepository(Protocol):
 
 class IDocumentRepository(Protocol):
     async def get_by_id(self, document_id: str | UUID) -> Optional["Document"]:
+        ...
+
+
+class IStatsReportRepository(Protocol):
+    async def get_by_range(self, range_start, range_end) -> "StatsReport" | None:
+        ...
+
+    async def save_month_report(
+        self,
+        *,
+        period_label: str,
+        range_start,
+        range_end,
+        payload: dict,
+    ) -> "StatsReport":
         ...
 
     async def get_completed_with_content(self) -> Iterable["Document"]:

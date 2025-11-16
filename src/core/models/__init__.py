@@ -12,6 +12,7 @@ __all__ = (
     "Document",
     "ExpiredToken",
     "InstrumentTokenUsage",
+    "StatsReport",
 )
 
 from .base import Base
@@ -24,3 +25,4 @@ from .product_embedding import ProductEmbedding
 from .document import Document
 from .expired_token import ExpiredToken
 from .instrument_token_usage import InstrumentTokenUsage
+from .stats_report import StatsReport
