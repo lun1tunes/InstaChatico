@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.interfaces.repositories import IMediaRepository
 from core.interfaces.services import IMediaProxyService, IMediaService, MediaImageFetchResult
+from core.models.media import Media
 
 logger = logging.getLogger(__name__)
 
@@ -60,33 +61,10 @@ class ProxyMediaImageUseCase:
             logger.warning("Media not found for proxy | media_id=%s", media_id)
             raise MediaImageProxyError(404, 4040, "Media not found")
 
-        image_url = self._select_media_image_url(media, child_index)
-        if not image_url:
-            logger.warning(
-                "Media image not available | media_id=%s | child_index=%s",
-                media_id,
-                child_index,
-            )
-            raise MediaImageProxyError(404, 4043, "Media image not available")
+        media, image_url = await self._refresh_and_select_url(media, media_id, child_index)
+        parsed = self._validate_media_url(media_id, image_url)
 
-        parsed = urlparse(image_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            logger.error(
-                "Invalid media image URL | media_id=%s | url=%s",
-                media_id,
-                image_url,
-            )
-            raise MediaImageProxyError(400, 4003, "Invalid media image URL")
-
-        if not self._is_allowed_host(parsed.netloc):
-            logger.error(
-                "Disallowed media image host | media_id=%s | host=%s",
-                media_id,
-                parsed.netloc,
-            )
-            raise MediaImageProxyError(400, 4004, "Image host not allowed")
-
-        attempted_refresh = False
+        refresh_attempts = 1 if self.media_service else 0
         success_result: Optional[MediaImageFetchResult] = None
         while True:
             try:
@@ -107,52 +85,18 @@ class ProxyMediaImageUseCase:
             await fetch_result.close()
 
             if (
-                not attempted_refresh
-                and self.media_service is not None
+                self.media_service is not None
                 and fetch_result.status in {401, 403, 404}
+                and refresh_attempts < 2
             ):
                 logger.info(
                     "Attempting to refresh media URLs after fetch failure | media_id=%s | status=%s",
                     media_id,
                     fetch_result.status,
                 )
-                refreshed_media = await self.media_service.refresh_media_urls(media_id, self.session)
-                attempted_refresh = True
-
-                if not refreshed_media:
-                    logger.error(
-                        "Media URL refresh failed | media_id=%s | status=%s",
-                        media_id,
-                        fetch_result.status,
-                    )
-                    raise MediaImageProxyError(502, 5003, "Failed to refresh media image")
-
-                media = refreshed_media
-                image_url = self._select_media_image_url(media, child_index)
-                if not image_url:
-                    logger.warning(
-                        "Media image unavailable after refresh | media_id=%s | child_index=%s",
-                        media_id,
-                        child_index,
-                    )
-                    raise MediaImageProxyError(404, 4043, "Media image not available after refresh")
-
-                parsed = urlparse(image_url)
-                if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                    logger.error(
-                        "Invalid refreshed media image URL | media_id=%s | url=%s",
-                        media_id,
-                        image_url,
-                    )
-                    raise MediaImageProxyError(400, 4003, "Invalid media image URL after refresh")
-
-                if not self._is_allowed_host(parsed.netloc):
-                    logger.error(
-                        "Disallowed host after refresh | media_id=%s | host=%s",
-                        media_id,
-                        parsed.netloc,
-                    )
-                    raise MediaImageProxyError(400, 4004, "Image host not allowed after refresh")
+                refresh_attempts += 1
+                media, image_url = await self._refresh_and_select_url(media, media_id, child_index)
+                parsed = self._validate_media_url(media_id, image_url)
                 continue
 
             logger.error(
@@ -174,6 +118,38 @@ class ProxyMediaImageUseCase:
             raise MediaImageProxyError(502, 5003, "Failed to fetch media image")
 
         return MediaImageStreamResult(media_url=image_url, fetch_result=success_result)
+
+    async def _refresh_and_select_url(self, media: Media, media_id: str, child_index: Optional[int]) -> tuple[Media, str]:
+        current_media = media
+        if self.media_service is not None:
+            refreshed = await self.media_service.refresh_media_urls(media_id, self.session)
+            if refreshed:
+                current_media = refreshed
+
+        image_url = self._select_media_image_url(current_media, child_index)
+        if not image_url:
+            logger.warning(
+                "Media image not available | media_id=%s | child_index=%s",
+                media_id,
+                child_index,
+            )
+            raise MediaImageProxyError(404, 4043, "Media image not available")
+        return current_media, image_url
+
+    def _validate_media_url(self, media_id: str, image_url: str):
+        parsed = urlparse(image_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            logger.error("Invalid media image URL | media_id=%s | url=%s", media_id, image_url)
+            raise MediaImageProxyError(400, 4003, "Invalid media image URL")
+
+        if not self._is_allowed_host(parsed.netloc):
+            logger.error(
+                "Disallowed media image host | media_id=%s | host=%s",
+                media_id,
+                parsed.netloc,
+            )
+            raise MediaImageProxyError(400, 4004, "Image host not allowed")
+        return parsed
 
     def _select_media_image_url(self, media, child_index: Optional[int]) -> Optional[str]:
         if child_index is None:
