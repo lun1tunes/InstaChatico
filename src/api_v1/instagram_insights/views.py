@@ -6,8 +6,15 @@ from fastapi import APIRouter, Depends, Query
 
 from api_v1.comments.views import JsonApiError
 from api_v1.comments.schemas import SimpleMeta
-from api_v1.instagram_insights.schemas import StatsReportResponse, StatsReportPayload
-from core.dependencies import get_generate_stats_report_use_case
+from api_v1.instagram_insights.schemas import (
+    StatsReportResponse,
+    StatsReportPayload,
+    AccountInsightsResponse,
+)
+from core.dependencies import (
+    get_generate_stats_report_use_case,
+    get_container,
+)
 from core.use_cases.generate_stats_report import (
     GenerateStatsReportUseCase,
     StatsPeriod,
@@ -16,10 +23,10 @@ from core.use_cases.generate_stats_report import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/instagram_insights", tags=["Instagram Insights"])
+router = APIRouter(prefix="/stats", tags=["Instagram Insights"])
 
 
-@router.get("", response_model=StatsReportResponse)
+@router.get("/instagram_insights", response_model=StatsReportResponse)
 async def get_stats_report(
     period: StatsPeriod = Query(StatsPeriod.LAST_MONTH),
     use_case: GenerateStatsReportUseCase = Depends(get_generate_stats_report_use_case),
@@ -32,3 +39,23 @@ async def get_stats_report(
 
     payload = StatsReportPayload(**result)
     return StatsReportResponse(meta=SimpleMeta(), payload=payload)
+
+
+@router.get("/account", response_model=AccountInsightsResponse)
+async def get_account_insights(
+    container = Depends(get_container),
+):
+    instagram_service = container.instagram_service()
+    try:
+        result = await instagram_service.get_account_profile()
+    except Exception as exc:
+        logger.error("Account insights error | error=%s", exc)
+        raise JsonApiError(502, 5009, "Failed to fetch Instagram account insights")
+
+    if not result.get("success"):
+        error_message = result.get("error") or "Instagram account lookup failed"
+        logger.error("Instagram account insights failed | error=%s", error_message)
+        raise JsonApiError(502, 5009, "Failed to fetch Instagram account insights")
+
+    payload = result.get("data", {})
+    return AccountInsightsResponse(meta=SimpleMeta(), payload=payload)

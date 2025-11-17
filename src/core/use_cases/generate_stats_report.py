@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..interfaces.repositories import IStatsReportRepository
 from ..interfaces.services import IInstagramService
+from ..interfaces.services import IInstagramService
 
 logger = logging.getLogger(__name__)
 

@@ -431,6 +431,46 @@ class InstagramGraphAPIService:
             logger.exception("Exception while getting page info")
             return {"success": False, "error": str(e), "status_code": None}
 
+    async def get_account_profile(self, account_id: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch account profile information: username, media_count, followers, follows."""
+        target_id = account_id or settings.instagram.base_account_id
+        if not target_id:
+            return {"success": False, "error": "Missing Instagram base account ID", "status_code": 400}
+
+        url = f"{self.base_url}/{target_id}"
+        params = {
+            "access_token": self.access_token,
+            "fields": "username,media_count,followers_count,follows_count",
+        }
+
+        try:
+            session = await self._get_session()
+            async with session.get(url, params=params) as response:
+                response_data = await response.json()
+
+                if response.status == 200:
+                    logger.info("Instagram account profile fetched | account_id=%s", target_id)
+                    return {
+                        "success": True,
+                        "data": response_data,
+                        "status_code": response.status,
+                    }
+
+                logger.error(
+                    "Failed to fetch Instagram account profile | account_id=%s | status=%s | error=%s",
+                    target_id,
+                    response.status,
+                    response_data,
+                )
+                return {
+                    "success": False,
+                    "error": response_data,
+                    "status_code": response.status,
+                }
+        except Exception as exc:
+            logger.exception("Error fetching Instagram account profile | account_id=%s", target_id)
+            return {"success": False, "error": str(exc), "status_code": None}
+
     async def set_media_comment_status(self, media_id: str, enabled: bool) -> Dict[str, Any]:
         """Enable or disable comments for a specific media item."""
         url = f"{self.base_url}/{media_id}"

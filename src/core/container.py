@@ -47,6 +47,7 @@ from .use_cases.proxy_media_image import ProxyMediaImageUseCase
 from .use_cases.replace_answer import ReplaceAnswerUseCase
 from .use_cases.create_manual_answer import CreateManualAnswerUseCase
 from .use_cases.generate_stats_report import GenerateStatsReportUseCase
+from .use_cases.record_follower_snapshot import RecordFollowerSnapshotUseCase
 
 # Repositories
 from .repositories.comment import CommentRepository
@@ -56,6 +57,7 @@ from .repositories.media import MediaRepository
 from .repositories.document import DocumentRepository
 from .repositories.instrument_token_usage import InstrumentTokenUsageRepository
 from .repositories.stats_report import StatsReportRepository
+from .repositories.followers_dynamic import FollowersDynamicRepository
 
 
 class Container(containers.DeclarativeContainer):
@@ -102,6 +104,7 @@ class Container(containers.DeclarativeContainer):
     document_repository_factory = providers.Factory(DocumentRepository)
     instrument_token_usage_repository_factory = providers.Factory(InstrumentTokenUsageRepository)
     stats_report_repository_factory = providers.Factory(StatsReportRepository)
+    followers_dynamic_repository_factory = providers.Factory(FollowersDynamicRepository)
 
     agent_session_service = providers.Singleton(
         AgentSessionService,
@@ -292,6 +295,12 @@ class Container(containers.DeclarativeContainer):
     generate_stats_report_use_case = providers.Factory(
         GenerateStatsReportUseCase,
         stats_report_repository_factory=stats_report_repository_factory.provider,
+        instagram_service=instagram_service,
+    )
+
+    record_follower_snapshot_use_case = providers.Factory(
+        RecordFollowerSnapshotUseCase,
+        followers_dynamic_repository_factory=followers_dynamic_repository_factory.provider,
         instagram_service=instagram_service,
     )
 

@@ -21,7 +21,7 @@ def _get_worker_event_loop() -> asyncio.AbstractEventLoop:
     and reuse it for every task to keep futures on the correct loop.
     """
     loop = getattr(_get_worker_event_loop, "_loop", None)
-    if loop is None:
+    if loop is None or loop.is_closed():
         loop = asyncio.new_event_loop()
         _get_worker_event_loop._loop = loop  # type: ignore[attr-defined]
     return loop
@@ -32,6 +32,10 @@ def _close_worker_event_loop() -> None:
     loop: Optional[asyncio.AbstractEventLoop] = getattr(_get_worker_event_loop, "_loop", None)  # type: ignore[attr-defined]
     if loop is not None and not loop.is_closed():
         loop.close()
+        try:
+            asyncio.set_event_loop(None)
+        except Exception:
+            pass
     if hasattr(_get_worker_event_loop, "_loop"):
         delattr(_get_worker_event_loop, "_loop")
 

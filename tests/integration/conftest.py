@@ -90,6 +90,22 @@ class StubInstagramService:
         self.closed = False
         self.deleted: List[str] = []
         self.reply_counter = 0
+        self.insights_calls: List[Dict[str, Any]] = []
+        self.insights_responses: Dict[str, Dict[str, Any]] = {}
+        self.insights_default_response: Optional[Dict[str, Any]] = None
+        self.insights_error: Optional[Exception] = None
+        self.account_profile_calls: int = 0
+        self.account_profile_response: Dict[str, Any] = {
+            "success": True,
+            "data": {
+                "username": "test_account",
+                "media_count": 0,
+                "followers_count": 0,
+                "follows_count": 0,
+                "id": "acct",
+            },
+        }
+        self.account_profile_error: Optional[Exception] = None
 
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
         self.reply_counter += 1
@@ -131,6 +147,33 @@ class StubInstagramService:
     async def delete_comment_reply(self, reply_id: str) -> Dict[str, Any]:
         self.replies = [r for r in self.replies if r.get("reply_id") != reply_id]
         return {"success": True, "reply_id": reply_id}
+
+    async def get_account_profile(self, account_id: Optional[str] = None) -> Dict[str, Any]:
+        self.account_profile_calls += 1
+        if self.account_profile_error:
+            raise self.account_profile_error
+        return self.account_profile_response
+
+    async def get_insights(self, account_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        self.insights_calls.append({"account_id": account_id, "params": params})
+        if self.insights_error:
+            raise self.insights_error
+
+        metric = params.get("metric")
+        response = self.insights_responses.get(metric) if metric else None
+        if response is None:
+            response = self.insights_default_response
+
+        if response is None:
+            return {
+                "success": True,
+                "data": {
+                    "metric": metric or "",
+                    "params": params,
+                },
+            }
+
+        return response
 
 
 class StubS3Service:

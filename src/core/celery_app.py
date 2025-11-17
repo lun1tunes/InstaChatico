@@ -19,6 +19,7 @@ celery_app = Celery(
         "core.tasks.media_tasks",
         "core.tasks.document_tasks",
         "core.tasks.instagram_token_tasks",
+        "core.tasks.stats_tasks",
     ],
 )
 
@@ -72,6 +73,7 @@ celery_app.conf.update(
         "core.tasks.classification_tasks.retry_failed_classifications": {"queue": "llm_queue"},
         "core.tasks.health_tasks.check_system_health_task": {"queue": "instagram_queue"},
         "core.tasks.instagram_token_tasks.check_instagram_token_expiration_task": {"queue": "instagram_queue"},
+        "core.tasks.stats_tasks.record_follower_snapshot_task": {"queue": "instagram_queue"},
     },
     task_soft_time_limit=300,
     task_time_limit=600,
@@ -92,6 +94,11 @@ celery_app.conf.beat_schedule = {
     "check-system-health": {
         "task": "core.tasks.health_tasks.check_system_health_task",
         "schedule": crontab(minute=0, hour="*/1"),
+    },
+    "record-instagram-followers": {
+        "task": "core.tasks.stats_tasks.record_follower_snapshot_task",
+        # enable_utc=True ensures this executes at 00:00 UTC
+        "schedule": crontab(minute=0, hour=0),
     },
 }
 

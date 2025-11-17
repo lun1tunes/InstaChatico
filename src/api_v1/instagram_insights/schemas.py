@@ -27,3 +27,16 @@ class StatsReportPayload(BaseModel):
 class StatsReportResponse(BaseModel):
     meta: SimpleMeta
     payload: StatsReportPayload
+
+
+class AccountInsightsPayload(BaseModel):
+    username: str | None = None
+    media_count: int | None = None
+    followers_count: int | None = None
+    follows_count: int | None = None
+    id: str | None = None
+
+
+class AccountInsightsResponse(BaseModel):
+    meta: SimpleMeta
+    payload: AccountInsightsPayload

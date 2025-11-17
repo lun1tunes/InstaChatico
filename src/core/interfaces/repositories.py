@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from core.models.media import Media
     from core.models.document import Document
     from core.models.stats_report import StatsReport
+    from core.models.followers_dynamic import FollowersDynamic
 
 
 class ICommentRepository(Protocol):
@@ -88,6 +89,23 @@ class IDocumentRepository(Protocol):
 
 class IStatsReportRepository(Protocol):
     async def get_by_range(self, range_start, range_end) -> "StatsReport" | None:
+        ...
+
+
+class IFollowersDynamicRepository(Protocol):
+    async def get_by_snapshot_date(self, snapshot_date) -> Optional["FollowersDynamic"]:
+        ...
+
+    async def upsert_snapshot(
+        self,
+        *,
+        snapshot_date,
+        username: str | None,
+        followers_count: int,
+        follows_count: int | None,
+        media_count: int | None,
+        raw_payload: dict,
+    ) -> "FollowersDynamic":
         ...
 
     async def save_month_report(
