@@ -45,6 +45,7 @@ class StubMediaService:
 
     def __init__(self) -> None:
         self.requested: List[str] = []
+        self.refreshed: List[str] = []
 
     async def get_or_create_media(self, media_id: str, session: AsyncSession) -> Media:
         self.requested.append(media_id)
@@ -68,6 +69,10 @@ class StubMediaService:
         session.add(media)
         await session.flush()
         return media
+
+    async def refresh_media_urls(self, media_id: str, session: AsyncSession) -> Optional[Media]:
+        self.refreshed.append(media_id)
+        return await self.get_or_create_media(media_id, session)
 
     async def set_comment_status(self, media_id: str, enabled: bool, session: AsyncSession) -> Dict[str, Any]:
         media = await self.get_or_create_media(media_id, session)

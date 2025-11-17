@@ -81,7 +81,8 @@ class TestInstagramTokenTask:
 
         assert result["status"] == "ok"
         assert result["alert_sent"] is False
-        assert container.alert_stub.messages == []
+        assert len(container.alert_stub.messages) == 1
+        assert container.alert_stub.messages[0]["level"] == "INFO"
 
     def test_error_alert_when_fetch_fails(self, monkeypatch):
         container = StubContainer(None, should_raise=True)

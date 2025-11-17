@@ -67,9 +67,7 @@ def test_celery_app_beat_schedule():
     health_entry = beat_schedule["check-system-health"]
     assert health_entry["task"] == "core.tasks.health_tasks.check_system_health_task"
 
-    assert "check-instagram-token-expiration" in beat_schedule
-    token_entry = beat_schedule["check-instagram-token-expiration"]
-    assert token_entry["task"] == "core.tasks.instagram_token_tasks.check_instagram_token_expiration_task"
+    assert "check-instagram-token-expiration" not in beat_schedule
 
 
 @pytest.mark.unit

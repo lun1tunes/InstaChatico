@@ -295,9 +295,9 @@ async def test_proxy_media_image_refresh_on_expired_url():
     result = await use_case.execute("media1")
     assert result.media_url == "https://cdninstagram.com/new.jpg"
 
-    assert media_service.calls == ["media1"]
+    assert media_service.calls == ["media1", "media1"]
     assert proxy_service.requested_urls == [
-        "https://cdninstagram.com/expired.jpg",
+        "https://cdninstagram.com/new.jpg",
         "https://cdninstagram.com/new.jpg",
     ]
 
@@ -308,7 +308,8 @@ async def test_proxy_media_image_refresh_failure():
     repository = FakeMediaRepository(media_by_id={"media1": original})
 
     proxy_service = FakeMediaProxyService(
-        sequence=[FakeFetchResult(status=403)]
+        fetch_result=FakeFetchResult(status=403),
+        sequence=[FakeFetchResult(status=403)],
     )
     media_service = FakeMediaService(repository, refreshed_media=None)
 
@@ -324,4 +325,4 @@ async def test_proxy_media_image_refresh_failure():
         await use_case.execute("media1")
 
     assert exc.value.code == 5003
-    assert media_service.calls == ["media1"]
+    assert media_service.calls == ["media1", "media1"]
