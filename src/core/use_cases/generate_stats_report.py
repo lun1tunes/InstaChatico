@@ -164,7 +164,7 @@ class GenerateStatsReportUseCase:
         replies_metrics = await self._call_insights(
             account_id,
             {
-                "metric": "replies",
+                "metric": "replies,accounts_engaged",
                 "period": "day",
                 "metric_type": "total_value",
                 **timelines,
@@ -185,7 +185,7 @@ class GenerateStatsReportUseCase:
         follow_type_metrics = await self._call_insights(
             account_id,
             {
-                "metric": "views,reach",
+                "metric": "views,reach,follows_and_unfollows",
                 "period": "day",
                 "breakdown": "follow_type",
                 "metric_type": "total_value",
