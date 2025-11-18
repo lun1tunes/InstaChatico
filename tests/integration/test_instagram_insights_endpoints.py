@@ -119,6 +119,8 @@ async def test_instagram_moderation_stats_endpoint(integration_environment):
             is_deleted=True,
             deleted_at=now + timedelta(minutes=5),
         )
+        comment.hidden_by_ai = True
+        comment.deleted_by_ai = True
         classification = CommentClassification(
             comment_id=comment.id,
             processing_status=ProcessingStatus.COMPLETED,
@@ -139,4 +141,4 @@ async def test_instagram_moderation_stats_endpoint(integration_environment):
     )
     assert current_month["summary"]["total_verified_content"] >= 1
     assert current_month["violations"]["spam_advertising"] >= 1
-    assert current_month["ai_moderator"]["hidden_comments"] >= 1
+    assert current_month["ai_moderator"]["hidden_comments"]["ai"] >= 1

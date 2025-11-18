@@ -570,7 +570,7 @@ async def delete_comment(
 ):
     container = get_container()
     use_case: DeleteCommentUseCase = container.delete_comment_use_case(session=session)
-    result = await use_case.execute(comment_id)
+    result = await use_case.execute(comment_id, initiator="manual")
     status = result.get("status")
     if status == "error":
         reason = result.get("reason")
@@ -590,7 +590,7 @@ async def patch_comment_visibility(
     hide = bool(is_hidden)
     container = get_container()
     use_case: HideCommentUseCase = container.hide_comment_use_case(session=session)
-    result = await use_case.execute(comment_id, hide=hide)
+    result = await use_case.execute(comment_id, hide=hide, initiator="manual")
     if result.get("status") == "error":
         raise JsonApiError(502, 5003, "Failed to update comment visibility")
 

@@ -6,6 +6,7 @@ import pytest
 
 from core.models.comment_classification import CommentClassification, ProcessingStatus
 from core.models.instagram_comment import InstagramComment
+from core.models.question_answer import QuestionAnswer, AnswerStatus
 from core.repositories.moderation_stats import ModerationStatsRepository
 from core.repositories.moderation_stats_report import ModerationStatsReportRepository
 from core.use_cases.generate_moderation_stats import GenerateModerationStatsUseCase
@@ -32,8 +33,10 @@ def _make_comment(
     created_at: datetime,
     is_hidden: bool = False,
     hidden_at: datetime | None = None,
+    hidden_by_ai: bool = False,
     is_deleted: bool = False,
     deleted_at: datetime | None = None,
+    deleted_by_ai: bool = False,
 ) -> InstagramComment:
     return InstagramComment(
         id=comment_id,
@@ -45,8 +48,10 @@ def _make_comment(
         raw_data={},
         is_hidden=is_hidden,
         hidden_at=hidden_at,
+        hidden_by_ai=hidden_by_ai,
         is_deleted=is_deleted,
         deleted_at=deleted_at,
+        deleted_by_ai=deleted_by_ai,
     )
 
 
@@ -116,11 +121,46 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
         created_at=complaint_done_comment.created_at,
     )
 
+    qa_ai_comment = _make_comment(comment_id="qa-ai", created_at=nov_base + timedelta(hours=6))
+    qa_ai_classification = _make_classification(
+        "qa-ai",
+        7,
+        type_label="question / inquiry",
+        created_at=qa_ai_comment.created_at,
+    )
+    qa_ai_answer = QuestionAnswer(
+        comment_id="qa-ai",
+        processing_status=AnswerStatus.COMPLETED,
+        answer="Auto reply",
+        reply_sent=True,
+        reply_sent_at=nov_base + timedelta(hours=6, minutes=30),
+        is_deleted=False,
+        meta_data={},
+    )
+
+    qa_manual_comment = _make_comment(comment_id="qa-manual", created_at=nov_base + timedelta(hours=7))
+    qa_manual_classification = _make_classification(
+        "qa-manual",
+        8,
+        type_label="question / inquiry",
+        created_at=qa_manual_comment.created_at,
+    )
+    qa_manual_answer = QuestionAnswer(
+        comment_id="qa-manual",
+        processing_status=AnswerStatus.COMPLETED,
+        answer="Manual reply",
+        reply_sent=True,
+        reply_sent_at=nov_base + timedelta(hours=7, minutes=15),
+        is_deleted=False,
+        meta_data={"manual_patch": True},
+    )
+
     hidden_comment = _make_comment(
         comment_id="hidden",
         created_at=nov_base,
         is_hidden=True,
         hidden_at=datetime(2025, 11, 12, 8, 0),
+        hidden_by_ai=True,
     )
     hidden_classification = _make_classification(
         "hidden", 7, type_label="spam / irrelevant", created_at=hidden_comment.created_at
@@ -131,6 +171,7 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
         created_at=nov_base,
         is_deleted=True,
         deleted_at=datetime(2025, 11, 13, 9, 0),
+        deleted_by_ai=True,
     )
     deleted_classification = _make_classification(
         "deleted", 8, type_label="spam / irrelevant", created_at=deleted_comment.created_at
@@ -145,6 +186,8 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
             other_comment,
             complaint_created,
             complaint_done_comment,
+            qa_ai_comment,
+            qa_manual_comment,
             hidden_comment,
             deleted_comment,
         ]
@@ -158,8 +201,12 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
             other_classification,
             complaint_pending,
             complaint_done,
+            qa_ai_classification,
+            qa_manual_classification,
             hidden_classification,
             deleted_classification,
+            qa_ai_answer,
+            qa_manual_answer,
         ]
     )
     await db_session.commit()
@@ -176,10 +223,10 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
 
     november_stats = next(item for item in result["months"] if item["month"] == "2025-11")
     summary = november_stats["summary"]
-    assert summary["total_verified_content"] == 7
+    assert summary["total_verified_content"] == 9
     assert summary["complaints_total"] == 2
     assert summary["complaints_processed"] == 1
-    assert summary["average_reaction_time_seconds"] == pytest.approx(7200.0)
+    assert summary["average_reaction_time_seconds"] == pytest.approx(6525.0)
 
     violations = november_stats["violations"]
     assert violations["spam_advertising"] == 3
@@ -189,5 +236,7 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
     assert violations["other"]["examples"] == ["Scam request"]
 
     ai_stats = november_stats["ai_moderator"]
-    assert ai_stats["hidden_comments"] == 1
-    assert ai_stats["deleted_content"] == 1
+    assert ai_stats["hidden_comments"]["ai"] == 1
+    assert ai_stats["hidden_comments"]["manual"] == 0
+    assert ai_stats["deleted_content"]["ai"] == 1
+    assert ai_stats["deleted_content"]["manual"] == 0

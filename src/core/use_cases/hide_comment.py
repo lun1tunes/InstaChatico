@@ -39,7 +39,7 @@ class HideCommentUseCase:
         self.instagram_service = instagram_service
 
     @handle_task_errors()
-    async def execute(self, comment_id: str, hide: bool = True) -> Dict[str, Any]:
+    async def execute(self, comment_id: str, hide: bool = True, initiator: str = "manual") -> Dict[str, Any]:
         """Execute hide/unhide comment use case."""
         logger.info(f"Starting hide/unhide comment | comment_id={comment_id} | hide={hide}")
 
@@ -121,6 +121,7 @@ class HideCommentUseCase:
         logger.info(f"Updating comment hidden status in database | comment_id={comment_id} | hide={hide}")
         comment.is_hidden = hide
         comment.hidden_at = now_db_utc() if hide else None
+        comment.hidden_by_ai = hide and initiator == "ai"
         await self.session.commit()
 
         logger.info(

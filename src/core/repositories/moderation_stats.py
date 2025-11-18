@@ -9,9 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.instagram_comment import InstagramComment
 from ..models.comment_classification import CommentClassification, ProcessingStatus
+from ..models.question_answer import QuestionAnswer, AnswerStatus
 
 
 COMPLAINT_LABEL = "urgent issue / complaint"
+QUESTION_LABEL = "question / inquiry"
 
 
 class ModerationStatsRepository:
@@ -61,7 +63,7 @@ class ModerationStatsRepository:
 
         for label, count in result.all():
             normalized_label = (label or "").strip().lower()
-            if normalized_label == COMPLAINT_LABEL:
+            if normalized_label in {COMPLAINT_LABEL, QUESTION_LABEL}:
                 continue
             category = _categorize_violation(label)
             category_counts[category] += count or 0
@@ -81,24 +83,35 @@ class ModerationStatsRepository:
         }
 
     async def _build_ai_moderator_stats(self, range_start: datetime, range_end: datetime) -> dict[str, Any]:
-        deleted_stmt = select(func.count()).where(
+        deleted_ai = await self._count_deletions(range_start, range_end, ai_only=True)
+        deleted_manual = await self._count_deletions(range_start, range_end, ai_only=False)
+        hidden_ai = await self._count_hidden(range_start, range_end, ai_only=True)
+        hidden_manual = await self._count_hidden(range_start, range_end, ai_only=False)
+
+        return {
+            "deleted_content": {"ai": deleted_ai, "manual": deleted_manual},
+            "hidden_comments": {"ai": hidden_ai, "manual": hidden_manual},
+        }
+
+    async def _count_deletions(self, range_start: datetime, range_end: datetime, ai_only: bool) -> int:
+        stmt = select(func.count()).where(
             InstagramComment.deleted_at.isnot(None),
             InstagramComment.deleted_at >= range_start,
             InstagramComment.deleted_at < range_end,
+            InstagramComment.deleted_by_ai.is_(ai_only),
         )
-        hidden_stmt = select(func.count()).where(
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
+
+    async def _count_hidden(self, range_start: datetime, range_end: datetime, ai_only: bool) -> int:
+        stmt = select(func.count()).where(
             InstagramComment.hidden_at.isnot(None),
             InstagramComment.hidden_at >= range_start,
             InstagramComment.hidden_at < range_end,
+            InstagramComment.hidden_by_ai.is_(ai_only),
         )
-
-        deleted_count = (await self.session.execute(deleted_stmt)).scalar() or 0
-        hidden_count = (await self.session.execute(hidden_stmt)).scalar() or 0
-
-        return {
-            "deleted_content": deleted_count,
-            "hidden_comments": hidden_count,
-        }
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
 
     async def _count_verified(self, range_start: datetime, range_end: datetime) -> int:
         stmt = select(func.count()).where(
@@ -138,10 +151,47 @@ class ModerationStatsRepository:
         return result.scalar() or 0
 
     async def _average_reaction_time(self, range_start: datetime, range_end: datetime) -> float | None:
+        durations: list[float] = []
+        durations.extend(await self._answer_reaction_durations(range_start, range_end))
+        durations.extend(await self._classification_reaction_durations(range_start, range_end))
+        if not durations:
+            return None
+        return sum(durations) / len(durations)
+
+    async def _answer_reaction_durations(self, range_start: datetime, range_end: datetime) -> list[float]:
         stmt = (
             select(
-                CommentClassification.processing_completed_at,
                 InstagramComment.created_at,
+                QuestionAnswer.reply_sent_at,
+                QuestionAnswer.meta_data,
+            )
+            .join(QuestionAnswer, QuestionAnswer.comment_id == InstagramComment.id)
+            .join(CommentClassification, CommentClassification.comment_id == InstagramComment.id)
+            .where(
+                QuestionAnswer.reply_sent.is_(True),
+                QuestionAnswer.reply_sent_at.isnot(None),
+                QuestionAnswer.is_deleted.is_(False),
+                QuestionAnswer.processing_status == AnswerStatus.COMPLETED,
+                QuestionAnswer.reply_sent_at >= range_start,
+                QuestionAnswer.reply_sent_at < range_end,
+                func.lower(CommentClassification.type) == QUESTION_LABEL,
+            )
+        )
+        rows = await self.session.execute(stmt)
+        durations: list[float] = []
+        for created_at, reply_sent_at, meta in rows.all():
+            if not created_at or not reply_sent_at:
+                continue
+            if _is_manual_meta(meta):
+                continue
+            durations.append((reply_sent_at - created_at).total_seconds())
+        return durations
+
+    async def _classification_reaction_durations(self, range_start: datetime, range_end: datetime) -> list[float]:
+        stmt = (
+            select(
+                InstagramComment.created_at,
+                CommentClassification.processing_completed_at,
             )
             .join(InstagramComment, InstagramComment.id == CommentClassification.comment_id)
             .where(
@@ -149,16 +199,15 @@ class ModerationStatsRepository:
                 CommentClassification.processing_completed_at.isnot(None),
                 CommentClassification.processing_completed_at >= range_start,
                 CommentClassification.processing_completed_at < range_end,
+                func.coalesce(func.lower(CommentClassification.type), "") != QUESTION_LABEL,
             )
         )
         rows = await self.session.execute(stmt)
-        durations = []
-        for completed_at, created_at in rows.all():
-            if completed_at and created_at:
+        durations: list[float] = []
+        for created_at, completed_at in rows.all():
+            if created_at and completed_at:
                 durations.append((completed_at - created_at).total_seconds())
-        if not durations:
-            return None
-        return sum(durations) / len(durations)
+        return durations
 
 
 def _categorize_violation(label: str | None) -> str:
@@ -172,3 +221,9 @@ def _categorize_violation(label: str | None) -> str:
     if "toxic" in normalized or "abusive" in normalized or "insult" in normalized or "harass" in normalized:
         return "insults_toxicity"
     return "other"
+
+
+def _is_manual_meta(meta: Any) -> bool:
+    if isinstance(meta, dict):
+        return bool(meta.get("manual_patch"))
+    return False

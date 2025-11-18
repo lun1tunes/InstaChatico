@@ -176,7 +176,7 @@ class CommentRepository(BaseRepository[InstagramComment]):
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 
-    async def mark_deleted_with_descendants(self, comment_id: str) -> int:
+    async def mark_deleted_with_descendants(self, comment_id: str, deleted_by_ai: bool = False) -> int:
         """
         Soft-delete a comment and all of its descendants.
 
@@ -208,5 +208,6 @@ class CommentRepository(BaseRepository[InstagramComment]):
             comment.is_hidden = False
             comment.hidden_at = None
             comment.deleted_at = timestamp
+            comment.deleted_by_ai = deleted_by_ai
 
         return len(comments)

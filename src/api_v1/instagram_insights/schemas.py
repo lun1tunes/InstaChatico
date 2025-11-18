@@ -61,9 +61,14 @@ class ModerationViolationsDTO(BaseModel):
     other: ModerationOtherViolations
 
 
+class ActionBreakdown(BaseModel):
+    ai: int = 0
+    manual: int = 0
+
+
 class AIModeratorStatsDTO(BaseModel):
-    deleted_content: int
-    hidden_comments: int
+    deleted_content: ActionBreakdown
+    hidden_comments: ActionBreakdown
 
 
 class ModerationMonthInsightsDTO(BaseModel):

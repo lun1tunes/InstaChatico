@@ -93,7 +93,7 @@ async def hide_instagram_comment_task(self, comment_id: str):
             async with get_db_session() as session:
                 container = get_container()
                 use_case = container.hide_comment_use_case(session=session)
-                result = await use_case.execute(comment_id, hide=True)
+                result = await use_case.execute(comment_id, hide=True, initiator="ai")
 
                 if result["status"] == "retry" and self.request.retries < self.max_retries:
                     delay = get_retry_delay(self.request.retries)

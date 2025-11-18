@@ -31,7 +31,7 @@ class DeleteCommentUseCase:
         self.comment_repo: ICommentRepository = comment_repository_factory(session=session)
 
     @handle_task_errors()
-    async def execute(self, comment_id: str) -> Dict[str, Any]:
+    async def execute(self, comment_id: str, initiator: str = "manual") -> Dict[str, Any]:
         logger.info("Starting delete comment flow | comment_id=%s", comment_id)
 
         comment = await self.comment_repo.get_by_id(comment_id)
@@ -70,7 +70,9 @@ class DeleteCommentUseCase:
                 "details": error_payload,
             }
 
-        affected = await self.comment_repo.mark_deleted_with_descendants(comment_id)
+        affected = await self.comment_repo.mark_deleted_with_descendants(
+            comment_id, deleted_by_ai=(initiator == "ai")
+        )
         await self.session.commit()
 
         logger.info(

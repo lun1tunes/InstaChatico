@@ -29,6 +29,7 @@ class InstagramComment(Base):
         Boolean, default=False, nullable=False, comment="Whether comment is hidden on Instagram"
     )
     hidden_at: Mapped[datetime | None] = mapped_column(nullable=True, comment="Timestamp when comment was hidden")
+    hidden_by_ai: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Parent comment ID for replies (nullable)
     parent_id: Mapped[str | None] = mapped_column(
@@ -54,6 +55,7 @@ class InstagramComment(Base):
     )
 
     deleted_at: Mapped[datetime | None] = mapped_column(nullable=True, comment="Timestamp when comment was deleted")
+    deleted_by_ai: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationship to classification
     classification: Mapped[CommentClassification] = relationship(
