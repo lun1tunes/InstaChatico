@@ -26,7 +26,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/stats", tags=["Instagram Insights"])
 
 
-@router.get("/instagram_insights", response_model=StatsReportResponse)
+@router.get(
+    "/instagram_insights",
+    response_model=StatsReportResponse,
+    summary="Get Instagram insights for the selected period",
+    description=(
+        "Returns a consolidated report for the requested period. "
+        "Past months are served from the `stats_reports` cache, while the current month "
+        "is fetched from the Instagram API and stored for reuse."
+    ),
+)
 async def get_stats_report(
     period: StatsPeriod = Query(StatsPeriod.LAST_MONTH),
     use_case: GenerateStatsReportUseCase = Depends(get_generate_stats_report_use_case),
@@ -41,7 +50,15 @@ async def get_stats_report(
     return StatsReportResponse(meta=SimpleMeta(), payload=payload)
 
 
-@router.get("/account", response_model=AccountInsightsResponse)
+@router.get(
+    "/account",
+    response_model=AccountInsightsResponse,
+    summary="Get Instagram account profile counters",
+    description=(
+        "Fetches `username`, `media_count`, `followers_count`, `follows_count`, "
+        "and `id` for the configured Instagram business account."
+    ),
+)
 async def get_account_insights(
     container = Depends(get_container),
 ):
