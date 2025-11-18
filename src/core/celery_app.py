@@ -93,7 +93,7 @@ celery_app.conf.beat_schedule = {
     },
     "check-system-health": {
         "task": "core.tasks.health_tasks.check_system_health_task",
-        "schedule": crontab(minute=0, hour="*/1"),
+        "schedule": crontab(minute=0, hour="*"),
     },
     "record-instagram-followers": {
         "task": "core.tasks.stats_tasks.record_follower_snapshot_task",
