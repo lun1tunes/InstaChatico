@@ -13,6 +13,7 @@ __all__ = (
     "ExpiredToken",
     "InstrumentTokenUsage",
     "StatsReport",
+    "ModerationStatsReport",
     "FollowersDynamic",
 )
 
@@ -27,4 +28,5 @@ from .document import Document
 from .expired_token import ExpiredToken
 from .instrument_token_usage import InstrumentTokenUsage
 from .stats_report import StatsReport
+from .moderation_stats_report import ModerationStatsReport
 from .followers_dynamic import FollowersDynamic

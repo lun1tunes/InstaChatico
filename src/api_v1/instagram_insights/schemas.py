@@ -40,3 +40,46 @@ class AccountInsightsPayload(BaseModel):
 class AccountInsightsResponse(BaseModel):
     meta: SimpleMeta
     payload: AccountInsightsPayload
+
+
+class ModerationSummaryDTO(BaseModel):
+    total_verified_content: int
+    complaints_total: int
+    complaints_processed: int
+    average_reaction_time_seconds: float | None = None
+
+
+class ModerationOtherViolations(BaseModel):
+    count: int
+    examples: List[str] = Field(default_factory=list)
+
+
+class ModerationViolationsDTO(BaseModel):
+    spam_advertising: int
+    adult_content: int
+    insults_toxicity: int
+    other: ModerationOtherViolations
+
+
+class AIModeratorStatsDTO(BaseModel):
+    deleted_content: int
+    hidden_comments: int
+
+
+class ModerationMonthInsightsDTO(BaseModel):
+    month: str
+    range: StatsRangeDTO
+    summary: ModerationSummaryDTO
+    violations: ModerationViolationsDTO
+    ai_moderator: AIModeratorStatsDTO
+
+
+class ModerationStatsPayload(BaseModel):
+    period: str
+    generated_at: str
+    months: List[ModerationMonthInsightsDTO]
+
+
+class ModerationStatsResponse(BaseModel):
+    meta: SimpleMeta
+    payload: ModerationStatsPayload

@@ -10,6 +10,7 @@ from sqlalchemy.sql import Select
 from .base import BaseRepository
 from ..models.instagram_comment import InstagramComment
 from ..models.comment_classification import CommentClassification, ProcessingStatus
+from ..utils.time import now_db_utc
 
 logger = logging.getLogger(__name__)
 
@@ -201,9 +202,11 @@ class CommentRepository(BaseRepository[InstagramComment]):
             select(InstagramComment).where(InstagramComment.id.in_(ids))
         )
         comments = list(comments_result.scalars().all())
+        timestamp = now_db_utc()
         for comment in comments:
             comment.is_deleted = True
             comment.is_hidden = False
             comment.hidden_at = None
+            comment.deleted_at = timestamp
 
         return len(comments)

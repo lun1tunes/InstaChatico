@@ -30,6 +30,7 @@ from .use_cases.process_media import ProcessMediaUseCase, AnalyzeMediaUseCase
 from .use_cases.process_document import ProcessDocumentUseCase
 from .use_cases.test_comment_processing import TestCommentProcessingUseCase
 from .use_cases.generate_stats_report import GenerateStatsReportUseCase, StatsPeriod
+from .use_cases.generate_moderation_stats import GenerateModerationStatsUseCase
 
 # Import repositories
 from .repositories.comment import CommentRepository
@@ -162,6 +163,14 @@ def get_generate_stats_report_use_case(
 ) -> GenerateStatsReportUseCase:
     """Provide GenerateStatsReportUseCase."""
     return container.generate_stats_report_use_case(session=session)
+
+
+def get_generate_moderation_stats_use_case(
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+) -> GenerateModerationStatsUseCase:
+    """Provide GenerateModerationStatsUseCase."""
+    return container.generate_moderation_stats_use_case(session=session)
 
 
 # Generic factory for creating dependency providers

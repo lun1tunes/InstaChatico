@@ -10,15 +10,22 @@ from api_v1.instagram_insights.schemas import (
     StatsReportResponse,
     StatsReportPayload,
     AccountInsightsResponse,
+    ModerationStatsResponse,
+    ModerationStatsPayload,
 )
 from core.dependencies import (
     get_generate_stats_report_use_case,
     get_container,
+    get_generate_moderation_stats_use_case,
 )
 from core.use_cases.generate_stats_report import (
     GenerateStatsReportUseCase,
     StatsPeriod,
     StatsReportError,
+)
+from core.use_cases.generate_moderation_stats import (
+    GenerateModerationStatsUseCase,
+    ModerationStatsError,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +55,26 @@ async def get_stats_report(
 
     payload = StatsReportPayload(**result)
     return StatsReportResponse(meta=SimpleMeta(), payload=payload)
+
+
+@router.get(
+    "/moderation",
+    response_model=ModerationStatsResponse,
+    summary="Get moderation statistics for the selected period",
+    description="Aggregates comment classification, complaint, and moderation action metrics per month.",
+)
+async def get_moderation_stats_report(
+    period: StatsPeriod = Query(StatsPeriod.LAST_MONTH),
+    use_case: GenerateModerationStatsUseCase = Depends(get_generate_moderation_stats_use_case),
+):
+    try:
+        result = await use_case.execute(period)
+    except ModerationStatsError as exc:
+        logger.error("Moderation stats error | period=%s | error=%s", period.value, exc)
+        raise JsonApiError(exc.status_code, 5010, str(exc))
+
+    payload = ModerationStatsPayload(**result)
+    return ModerationStatsResponse(meta=SimpleMeta(), payload=payload)
 
 
 @router.get(

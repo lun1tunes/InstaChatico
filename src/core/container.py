@@ -47,6 +47,7 @@ from .use_cases.proxy_media_image import ProxyMediaImageUseCase
 from .use_cases.replace_answer import ReplaceAnswerUseCase
 from .use_cases.create_manual_answer import CreateManualAnswerUseCase
 from .use_cases.generate_stats_report import GenerateStatsReportUseCase
+from .use_cases.generate_moderation_stats import GenerateModerationStatsUseCase
 from .use_cases.record_follower_snapshot import RecordFollowerSnapshotUseCase
 
 # Repositories
@@ -57,6 +58,8 @@ from .repositories.media import MediaRepository
 from .repositories.document import DocumentRepository
 from .repositories.instrument_token_usage import InstrumentTokenUsageRepository
 from .repositories.stats_report import StatsReportRepository
+from .repositories.moderation_stats import ModerationStatsRepository
+from .repositories.moderation_stats_report import ModerationStatsReportRepository
 from .repositories.followers_dynamic import FollowersDynamicRepository
 
 
@@ -104,6 +107,8 @@ class Container(containers.DeclarativeContainer):
     document_repository_factory = providers.Factory(DocumentRepository)
     instrument_token_usage_repository_factory = providers.Factory(InstrumentTokenUsageRepository)
     stats_report_repository_factory = providers.Factory(StatsReportRepository)
+    moderation_stats_repository_factory = providers.Factory(ModerationStatsRepository)
+    moderation_stats_report_repository_factory = providers.Factory(ModerationStatsReportRepository)
     followers_dynamic_repository_factory = providers.Factory(FollowersDynamicRepository)
 
     agent_session_service = providers.Singleton(
@@ -296,6 +301,12 @@ class Container(containers.DeclarativeContainer):
         GenerateStatsReportUseCase,
         stats_report_repository_factory=stats_report_repository_factory.provider,
         instagram_service=instagram_service,
+    )
+
+    generate_moderation_stats_use_case = providers.Factory(
+        GenerateModerationStatsUseCase,
+        moderation_stats_repository_factory=moderation_stats_repository_factory.provider,
+        moderation_stats_report_repository_factory=moderation_stats_report_repository_factory.provider,
     )
 
     record_follower_snapshot_use_case = providers.Factory(

@@ -92,6 +92,26 @@ class IStatsReportRepository(Protocol):
         ...
 
 
+class IModerationStatsRepository(Protocol):
+    async def gather_metrics(self, range_start, range_end) -> dict:
+        ...
+
+
+class IModerationStatsReportRepository(Protocol):
+    async def get_by_range(self, range_start, range_end):
+        ...
+
+    async def save_month_report(
+        self,
+        *,
+        period_label: str,
+        range_start,
+        range_end,
+        payload: dict,
+    ):
+        ...
+
+
 class IFollowersDynamicRepository(Protocol):
     async def get_by_snapshot_date(self, snapshot_date) -> Optional["FollowersDynamic"]:
         ...

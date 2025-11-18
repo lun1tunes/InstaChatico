@@ -25,7 +25,9 @@ class InstagramComment(Base):
     raw_data = mapped_column(JSONB)
 
     # Comment hiding fields
-    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="Whether comment is hidden on Instagram")
+    is_hidden: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, comment="Whether comment is hidden on Instagram"
+    )
     hidden_at: Mapped[datetime | None] = mapped_column(nullable=True, comment="Timestamp when comment was hidden")
 
     # Parent comment ID for replies (nullable)
@@ -50,6 +52,8 @@ class InstagramComment(Base):
         nullable=False,
         comment="Soft delete flag to track comments removed from Instagram",
     )
+
+    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True, comment="Timestamp when comment was deleted")
 
     # Relationship to classification
     classification: Mapped[CommentClassification] = relationship(

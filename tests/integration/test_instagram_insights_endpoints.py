@@ -1,8 +1,12 @@
 import pytest
+from datetime import timedelta
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from core.models.stats_report import StatsReport
+from core.models.instagram_comment import InstagramComment
+from core.models.comment_classification import CommentClassification, ProcessingStatus
+from core.utils.time import now_db_utc
 
 
 @pytest.mark.asyncio
@@ -93,3 +97,46 @@ async def test_instagram_account_insights_exception(integration_environment):
     body = response.json()
     assert body["meta"]["error"]["code"] == 5009
     assert body["payload"] is None
+
+
+@pytest.mark.asyncio
+async def test_instagram_moderation_stats_endpoint(integration_environment):
+    client: AsyncClient = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+    now = now_db_utc().replace(tzinfo=None)
+
+    async with session_factory() as session:
+        comment = InstagramComment(
+            id="mod-endpoint",
+            media_id="media-1",
+            user_id="user-1",
+            username="tester",
+            text="spam content",
+            created_at=now,
+            raw_data={},
+            is_hidden=True,
+            hidden_at=now,
+            is_deleted=True,
+            deleted_at=now + timedelta(minutes=5),
+        )
+        classification = CommentClassification(
+            comment_id=comment.id,
+            processing_status=ProcessingStatus.COMPLETED,
+            processing_completed_at=now + timedelta(hours=1),
+            type="spam / irrelevant",
+        )
+        session.add(comment)
+        session.add(classification)
+        await session.commit()
+
+    response = await client.get("/api/v1/stats/moderation")
+
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert payload["months"]
+    current_month = next(
+        month for month in payload["months"] if month["month"] == now.strftime("%Y-%m")
+    )
+    assert current_month["summary"]["total_verified_content"] >= 1
+    assert current_month["violations"]["spam_advertising"] >= 1
+    assert current_month["ai_moderator"]["hidden_comments"] >= 1
