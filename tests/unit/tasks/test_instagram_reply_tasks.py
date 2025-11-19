@@ -195,7 +195,7 @@ def test_hide_comment_success(monkeypatch):
     result = _run_hide_task(task, "c1")
 
     assert result == {"status": "success"}
-    use_case.execute.assert_awaited_once_with("c1", hide=True)
+    use_case.execute.assert_awaited_once_with("c1", hide=True, initiator="ai")
     assert container.hide_sessions == [session_obj]
 
 

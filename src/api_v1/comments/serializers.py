@@ -155,7 +155,7 @@ def serialize_answer(answer: QuestionAnswer) -> AnswerDTO:
         reply_sent=answer.reply_sent,
         reply_status=answer.reply_status,
         reply_error=answer.reply_error,
-        author=(answer.meta_data or {}).get("author_id") if answer.meta_data else None,
+        is_ai_generated=bool(getattr(answer, "is_ai_generated", True)),
         is_deleted=bool(getattr(answer, "is_deleted", False)),
     )
 

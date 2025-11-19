@@ -44,7 +44,6 @@ class TestGenerateAnswerUseCase:
             input_tokens=200,
             output_tokens=150,
             processing_time_ms=1200,
-            meta_data={"model": "gpt-4"},
         )
 
         # Mock services
@@ -333,7 +332,7 @@ class TestGenerateAnswerUseCase:
         # Assert
         assert result["status"] == "success"
         assert answer_record.llm_raw_response is None
-        assert answer_record.meta_data is None
+        assert answer_record.is_ai_generated is True
 
     async def test_execute_marks_processing_status(self, db_session, comment_factory):
         """Test that processing status is correctly updated throughout execution."""

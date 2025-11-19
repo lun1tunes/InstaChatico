@@ -114,7 +114,7 @@ class GenerateAnswerUseCase:
         answer_record.input_tokens = answer_result.input_tokens
         answer_record.output_tokens = answer_result.output_tokens
         answer_record.processing_time_ms = answer_result.processing_time_ms
-        answer_record.meta_data = getattr(answer_result, 'meta_data', None)
+        answer_record.is_ai_generated = True
         answer_record.processing_status = AnswerStatus.COMPLETED
         answer_record.processing_completed_at = now_db_utc()
 

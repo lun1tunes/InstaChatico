@@ -91,8 +91,6 @@ class CreateManualAnswerUseCase:
         reply_id = send_result.get("reply_id")
         now = now_db_utc()
 
-        manual_meta = {"manual_patch": True}
-
         new_answer = QuestionAnswer(
             comment_id=comment_id,
             processing_status=AnswerStatus.COMPLETED,
@@ -101,13 +99,13 @@ class CreateManualAnswerUseCase:
             answer_quality_score=100,
             retry_count=0,
             max_retries=5,
-            meta_data=manual_meta,
             reply_sent=True,
             reply_sent_at=now,
             reply_status="sent",
             reply_error=None,
             reply_response=send_result.get("response"),
             reply_id=reply_id,
+            is_ai_generated=False,
         )
 
         try:

@@ -35,7 +35,7 @@
     "reply_sent",
     "reply_status",
     "reply_error",
-    "author",
+    "is_ai_generated",
     "is_deleted"
   ],
   "CommentDTO": [

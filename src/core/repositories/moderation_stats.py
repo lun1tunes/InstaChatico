@@ -163,7 +163,7 @@ class ModerationStatsRepository:
             select(
                 InstagramComment.created_at,
                 QuestionAnswer.reply_sent_at,
-                QuestionAnswer.meta_data,
+                QuestionAnswer.is_ai_generated,
             )
             .join(QuestionAnswer, QuestionAnswer.comment_id == InstagramComment.id)
             .join(CommentClassification, CommentClassification.comment_id == InstagramComment.id)
@@ -172,6 +172,7 @@ class ModerationStatsRepository:
                 QuestionAnswer.reply_sent_at.isnot(None),
                 QuestionAnswer.is_deleted.is_(False),
                 QuestionAnswer.processing_status == AnswerStatus.COMPLETED,
+                QuestionAnswer.is_ai_generated.is_(True),
                 QuestionAnswer.reply_sent_at >= range_start,
                 QuestionAnswer.reply_sent_at < range_end,
                 func.lower(CommentClassification.type) == QUESTION_LABEL,
@@ -179,10 +180,8 @@ class ModerationStatsRepository:
         )
         rows = await self.session.execute(stmt)
         durations: list[float] = []
-        for created_at, reply_sent_at, meta in rows.all():
+        for created_at, reply_sent_at, _ in rows.all():
             if not created_at or not reply_sent_at:
-                continue
-            if _is_manual_meta(meta):
                 continue
             durations.append((reply_sent_at - created_at).total_seconds())
         return durations
@@ -222,8 +221,3 @@ def _categorize_violation(label: str | None) -> str:
         return "insults_toxicity"
     return "other"
 
-
-def _is_manual_meta(meta: Any) -> bool:
-    if isinstance(meta, dict):
-        return bool(meta.get("manual_patch"))
-    return False

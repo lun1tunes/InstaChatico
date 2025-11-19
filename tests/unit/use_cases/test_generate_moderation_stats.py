@@ -135,7 +135,7 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
         reply_sent=True,
         reply_sent_at=nov_base + timedelta(hours=6, minutes=30),
         is_deleted=False,
-        meta_data={},
+        is_ai_generated=True,
     )
 
     qa_manual_comment = _make_comment(comment_id="qa-manual", created_at=nov_base + timedelta(hours=7))
@@ -152,7 +152,7 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
         reply_sent=True,
         reply_sent_at=nov_base + timedelta(hours=7, minutes=15),
         is_deleted=False,
-        meta_data={"manual_patch": True},
+        is_ai_generated=False,
     )
 
     hidden_comment = _make_comment(

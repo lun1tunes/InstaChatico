@@ -104,9 +104,6 @@ class ReplaceAnswerUseCase:
             answer.reply_status = "deleted"
             answer.reply_error = None
 
-            manual_meta = dict(answer.meta_data or {})
-            manual_meta["manual_patch"] = True
-
             new_answer = QuestionAnswer(
                 comment_id=comment_id,
                 processing_status=AnswerStatus.COMPLETED,
@@ -116,13 +113,13 @@ class ReplaceAnswerUseCase:
                 last_error=None,
                 retry_count=0,
                 max_retries=answer.max_retries,
-                meta_data=manual_meta,
                 reply_sent=True,
                 reply_sent_at=now,
                 reply_status="sent",
                 reply_error=None,
                 reply_response=send_result.get("response"),
                 reply_id=reply_id,
+                is_ai_generated=False,
             )
 
             self.session.add(new_answer)

@@ -296,22 +296,22 @@ class TestAnswerRepository:
         assert answer1.answer == "Answer 1"
         assert answer2.answer == "Answer 2"
 
-    async def test_answer_with_metadata(self, db_session, instagram_comment_factory):
-        """Test creating answer with metadata."""
+    async def test_answer_with_ai_flag(self, db_session, instagram_comment_factory):
+        """Test creating answer with explicit ai/manual flag."""
         # Arrange
         comment = await instagram_comment_factory()
         repo = AnswerRepository(db_session)
         answer_entity = QuestionAnswer(
             comment_id=comment.id,
-            answer="Answer with metadata",
-            meta_data={"source": "agent", "version": "1.0"},
+            answer="Manual answer",
+            is_ai_generated=False,
         )
 
         # Act
         answer = await repo.create(answer_entity)
 
         # Assert
-        assert answer.meta_data == {"source": "agent", "version": "1.0"}
+        assert answer.is_ai_generated is False
 
     async def test_get_pending_answers_empty_result(self, db_session):
         """Test get_pending_answers returns empty list when no pending answers."""

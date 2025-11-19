@@ -50,7 +50,7 @@ class QuestionAnswer(Base):
     processing_time_ms: Mapped[int | None] = mapped_column(nullable=True)
 
     # Additional metadata
-    meta_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Instagram reply tracking
     reply_sent: Mapped[bool] = mapped_column(default=False)
