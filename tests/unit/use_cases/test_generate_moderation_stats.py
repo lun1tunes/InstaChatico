@@ -155,6 +155,17 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
         is_ai_generated=False,
     )
 
+    legacy_comment = _make_comment(
+        comment_id="legacy",
+        created_at=datetime(2025, 9, 1, 10, 0),
+    )
+    legacy_classification = CommentClassification(
+        comment_id="legacy",
+        processing_status=ProcessingStatus.COMPLETED,
+        processing_completed_at=datetime(2025, 11, 12, 10, 0),
+        type="spam / irrelevant",
+    )
+
     hidden_comment = _make_comment(
         comment_id="hidden",
         created_at=nov_base,
@@ -190,6 +201,7 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
             qa_manual_comment,
             hidden_comment,
             deleted_comment,
+            legacy_comment,
         ]
     )
     db_session.add_all(
@@ -207,6 +219,7 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
             deleted_classification,
             qa_ai_answer,
             qa_manual_answer,
+            legacy_classification,
         ]
     )
     await db_session.commit()
@@ -223,13 +236,13 @@ async def test_generate_moderation_stats(monkeypatch, db_session):
 
     november_stats = next(item for item in result["months"] if item["month"] == "2025-11")
     summary = november_stats["summary"]
-    assert summary["total_verified_content"] == 9
+    assert summary["total_verified_content"] == 10
     assert summary["complaints_total"] == 2
     assert summary["complaints_processed"] == 1
     assert summary["average_reaction_time_seconds"] == pytest.approx(6525.0)
 
     violations = november_stats["violations"]
-    assert violations["spam_advertising"] == 3
+    assert violations["spam_advertising"] == 4
     assert violations["adult_content"] == 1
     assert violations["insults_toxicity"] == 1
     assert violations["other"]["count"] == 1

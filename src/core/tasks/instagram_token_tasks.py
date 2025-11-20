@@ -40,6 +40,9 @@ async def check_instagram_token_expiration_task():
         return {"status": "error", "reason": str(exc)}
 
     if not result.get("success"):
+        if result.get("error_code") == "missing_app_credentials":
+            logger.info("Instagram app credentials not configured; skipping token expiration check.")
+            return {"status": "skipped", "reason": "missing_app_credentials"}
         logger.warning("Unable to retrieve Instagram token expiration metadata: %s", result.get("error"))
         await log_alert_service.send_log_alert(
             {

@@ -21,6 +21,7 @@ from core.models import (
 from core.utils.time import now_db_utc
 from core.logging_config import configure_logging
 from main import app
+from tests.integration.json_api_helpers import auth_headers
 
 
 class StubTaskQueue:
@@ -322,6 +323,13 @@ async def integration_environment(test_engine):
     container.db_session_factory.override(providers.Callable(lambda: session_factory))
     container.db_engine.override(providers.Callable(lambda: test_engine))
 
+    json_api_env = {
+        "json_api_secret": settings.json_api.secret_key,
+        "json_api_algorithm": settings.json_api.algorithm,
+        "json_api_expire": settings.json_api.expire_minutes,
+    }
+    default_auth_headers = auth_headers(json_api_env)
+
     try:
         configure_logging()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -334,9 +342,8 @@ async def integration_environment(test_engine):
                 "s3_service": s3_service,
                 "document_processor": document_processor,
                 "telegram_service": telegram_service,
-                "json_api_secret": settings.json_api.secret_key,
-                "json_api_algorithm": settings.json_api.algorithm,
-                "json_api_expire": settings.json_api.expire_minutes,
+                "auth_headers": default_auth_headers,
+                **json_api_env,
             }
     finally:
         container.task_queue.reset_override()

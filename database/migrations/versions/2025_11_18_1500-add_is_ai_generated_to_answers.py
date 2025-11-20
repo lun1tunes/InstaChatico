@@ -31,14 +31,37 @@ def upgrade() -> None:
     )
     conn = op.get_bind()
     rows = conn.execute(sa.select(answers_table.c.id, answers_table.c.meta_data)).fetchall()
+    manual_ids: list[int] = []
+    manual_markers = {"manual", "manual_answer", "manual_replace"}
+
     for row in rows:
         meta = row.meta_data or {}
-        if isinstance(meta, dict) and meta.get("manual_patch"):
-            conn.execute(
-                answers_table.update()
-                .where(answers_table.c.id == row.id)
-                .values(is_ai_generated=False)
-            )
+        if not isinstance(meta, dict):
+            continue
+
+        source = str(meta.get("source", "")).lower()
+        created_by = str(meta.get("created_by", "")).lower()
+        manual_patch = str(meta.get("manual_patch", "")).lower()
+
+        is_manual = False
+        if manual_patch in {"true", "1", "yes"}:
+            is_manual = True
+        elif source in manual_markers:
+            is_manual = True
+        elif created_by in {"operator", "human", "support_agent"}:
+            is_manual = True
+
+        if is_manual:
+            manual_ids.append(row.id)
+
+    if manual_ids:
+        conn.execute(
+            answers_table.update()
+            .where(answers_table.c.id.in_(manual_ids))
+            .values(is_ai_generated=False)
+        )
+
+    op.alter_column("question_messages_answers", "is_ai_generated", server_default=None)
     op.drop_column("question_messages_answers", "meta_data")
 
 

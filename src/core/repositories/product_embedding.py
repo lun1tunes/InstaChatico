@@ -3,7 +3,10 @@
 import asyncio
 import logging
 from typing import Optional, List, Dict
-from sqlalchemy import select, text
+
+import sqlalchemy as sa
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseRepository
@@ -25,6 +28,7 @@ class ProductEmbeddingRepository(BaseRepository[ProductEmbedding]):
         category_filter: Optional[str] = None,
         include_inactive: bool = False,
         similarity_threshold: float = 0.0,
+        include_low_similarity: bool = False,
     ) -> List[Dict]:
         """
         Search products using cosine similarity with pgvector.
@@ -39,67 +43,63 @@ class ProductEmbeddingRepository(BaseRepository[ProductEmbedding]):
         Returns:
             List of dicts with product info and similarity scores
         """
-        # Build the SQL query with pgvector's cosine distance operator (<=>)
-        # Cosine distance = 1 - cosine_similarity
-        # So similarity = 1 - distance
-        sql_query = """
-            SELECT
-                id,
-                title,
-                description,
-                category,
-                price,
-                tags,
-                url,
-                image_url,
-                1 - (embedding <=> :query_embedding) as similarity
-            FROM product_embeddings
-            WHERE 1=1
-        """
+        limit = max(1, limit)
 
-        # Add filters
-        params = {"query_embedding": str(query_embedding), "limit": limit}
+        column_type = (
+            getattr(ProductEmbedding.embedding.type, "dimensions", None)
+            or getattr(ProductEmbedding.embedding.type, "dims", None)
+            or getattr(ProductEmbedding.embedding.type, "dim", None)
+        )
+        embedding_type = Vector(column_type or 1536)
+        embedding_param = sa.bindparam("query_embedding", type_=embedding_type)
+        distance_expr = ProductEmbedding.embedding.cosine_distance(embedding_param)
+        similarity_expr = (1 - distance_expr).label("similarity")
+
+        stmt = select(
+            ProductEmbedding.id,
+            ProductEmbedding.title,
+            ProductEmbedding.description,
+            ProductEmbedding.category,
+            ProductEmbedding.price,
+            ProductEmbedding.tags,
+            ProductEmbedding.url,
+            ProductEmbedding.image_url,
+            similarity_expr,
+        )
 
         if not include_inactive:
-            sql_query += " AND is_active = true"
+            stmt = stmt.where(ProductEmbedding.is_active.is_(True))
 
         if category_filter:
-            sql_query += " AND category = :category"
-            params["category"] = category_filter
+            stmt = stmt.where(ProductEmbedding.category == category_filter)
 
-        # Order by similarity (highest first) and limit
-        sql_query += " ORDER BY embedding <=> :query_embedding LIMIT :limit"
+        stmt = stmt.order_by(distance_expr).limit(limit)
 
-        # Execute the query with retry logic for concurrency issues
+        rows = []
         max_retries = 3
-        retry_delay = 0.1  # 100ms
+        retry_delay = 0.1
 
         for attempt in range(max_retries):
             try:
-                result = await self.session.execute(text(sql_query), params)
+                result = await self.session.execute(stmt, {"query_embedding": query_embedding})
                 rows = result.fetchall()
-                break  # Success, exit retry loop
+                break
             except Exception as e:
-                if "another operation is in progress" in str(e) and attempt < max_retries - 1:
+                if "another operation is in progress" in str(e).lower() and attempt < max_retries - 1:
                     logger.warning(
-                        f"Database concurrency issue, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})"
+                        "Database concurrency issue in product search, retrying in %.2fs (attempt %s/%s)",
+                        retry_delay,
+                        attempt + 1,
+                        max_retries,
                     )
                     await asyncio.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay *= 2
                     continue
-                else:
-                    # Re-raise if it's not a concurrency issue or we've exhausted retries
-                    raise
+                raise
 
-        # Process results
-        results = []
+        results: List[Dict] = []
         for row in rows:
-            similarity = float(row.similarity)
-
-            # Skip results below threshold
-            if similarity < similarity_threshold:
-                continue
-
+            similarity = float(row.similarity or 0)
             result_dict = {
                 "id": row.id,
                 "title": row.title,
@@ -112,10 +112,10 @@ class ProductEmbeddingRepository(BaseRepository[ProductEmbedding]):
                 "similarity": round(similarity, 4),
                 "is_ood": similarity < similarity_threshold,
             }
+            if include_low_similarity or similarity >= similarity_threshold:
+                results.append(result_dict)
 
-            results.append(result_dict)
-
-        logger.debug(f"Found {len(results)} similar products")
+        logger.debug("Found %s similar products", len(results))
         return results
 
     async def get_by_category(self, category: str, include_inactive: bool = False) -> List[ProductEmbedding]:

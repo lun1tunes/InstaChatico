@@ -24,10 +24,15 @@ from core.dependencies import (
     get_task_queue,
     get_document_context_service,
 )
+from api_v1.comments.views import require_service_token
 from .schemas import DocumentUploadResponse, DocumentResponse, DocumentListResponse, DocumentSummaryResponse
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(
+    prefix="/documents",
+    tags=["documents"],
+    dependencies=[Depends(require_service_token)],
+)
 
 
 async def _create_document_record(

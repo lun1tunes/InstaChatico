@@ -149,7 +149,7 @@ class ProcessWebhookCommentUseCase:
                 f"username={username} | text_length={len(text)} | has_parent={bool(parent_id)}"
             )
 
-            from datetime import datetime
+            from datetime import datetime, timezone
 
             new_comment = InstagramComment(
                 id=comment_id,
@@ -157,7 +157,8 @@ class ProcessWebhookCommentUseCase:
                 user_id=user_id,
                 username=username,
                 text=text,
-                created_at=datetime.fromtimestamp(entry_timestamp),
+                # Store timestamps in UTC to keep reaction-time stats accurate
+                created_at=datetime.fromtimestamp(entry_timestamp, tz=timezone.utc).replace(tzinfo=None),
                 parent_id=parent_id,
                 raw_data=raw_data or {},
             )

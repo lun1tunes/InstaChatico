@@ -131,6 +131,7 @@ class EmbeddingService:
                         category_filter=category_filter,
                         include_inactive=include_inactive,
                         similarity_threshold=self.SIMILARITY_THRESHOLD,
+                        include_low_similarity=True,
                     )
                     break  # Success, exit retry loop
                 except Exception as e:

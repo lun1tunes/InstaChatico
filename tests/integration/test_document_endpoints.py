@@ -21,6 +21,7 @@ async def test_register_document_success(integration_environment):
     response = await client.post(
         "/api/v1/documents/register",
         data={"s3_url": s3_url, "document_name": "test.pdf", "description": "Test document"},
+        headers=integration_environment["auth_headers"],
     )
     assert response.status_code == 200
     data = response.json()
@@ -43,6 +44,7 @@ async def test_register_document_invalid_url_format(integration_environment):
     response = await client.post(
         "/api/v1/documents/register",
         data={"s3_url": s3_url, "document_name": "file.pdf"},
+        headers=integration_environment["auth_headers"],
     )
     assert response.status_code == 400
 
@@ -55,6 +57,7 @@ async def test_register_document_rejects_legacy_doc(integration_environment):
     response = await client.post(
         "/api/v1/documents/register",
         data={"s3_url": s3_url, "document_name": "legacy.doc"},
+        headers=integration_environment["auth_headers"],
     )
 
     assert response.status_code == 400
@@ -71,6 +74,7 @@ async def test_upload_document_success(integration_environment):
         "/api/v1/documents/upload",
         files={"file": ("guide.pdf", b"pdf-bytes", "application/pdf")},
         data={"description": "Upload test"},
+        headers=integration_environment["auth_headers"],
     )
 
     assert response.status_code == 200
@@ -92,6 +96,7 @@ async def test_upload_document_unsupported_type(integration_environment):
     response = await client.post(
         "/api/v1/documents/upload",
         files={"file": ("malware.exe", b"binary", "application/octet-stream")},
+        headers=integration_environment["auth_headers"],
     )
     assert response.status_code == 400
 
@@ -102,6 +107,7 @@ async def test_upload_document_rejects_legacy_doc(integration_environment):
     response = await client.post(
         "/api/v1/documents/upload",
         files={"file": ("legacy.doc", b"legacy-bytes", "application/msword")},
+        headers=integration_environment["auth_headers"],
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "Unsupported file type. Supported: PDF, Excel, CSV, DOCX, TXT"
@@ -126,11 +132,11 @@ async def test_list_documents_and_summary(integration_environment):
         session.add(doc)
         await session.commit()
 
-    list_response = await client.get("/api/v1/documents")
+    list_response = await client.get("/api/v1/documents", headers=integration_environment["auth_headers"])
     assert list_response.status_code == 200
     assert list_response.json()["total"] >= 1
 
-    summary_response = await client.get("/api/v1/documents/summary")
+    summary_response = await client.get("/api/v1/documents/summary", headers=integration_environment["auth_headers"])
     assert summary_response.status_code == 200
     summary = summary_response.json()
     assert summary["total_documents"] >= 1
@@ -140,7 +146,7 @@ async def test_list_documents_and_summary(integration_environment):
 async def test_get_document_not_found(integration_environment):
     client: AsyncClient = integration_environment["client"]
     missing_id = uuid4()
-    response = await client.get(f"/api/v1/documents/{missing_id}")
+    response = await client.get(f"/api/v1/documents/{missing_id}", headers=integration_environment["auth_headers"])
     assert response.status_code == 404
 
 
@@ -165,7 +171,7 @@ async def test_reprocess_document(integration_environment):
         await session.commit()
         doc_id = doc.id
 
-    response = await client.post(f"/api/v1/documents/{doc_id}/reprocess")
+    response = await client.post(f"/api/v1/documents/{doc_id}/reprocess", headers=integration_environment["auth_headers"])
     assert response.status_code == 200
     assert any(
         entry["task"] == "core.tasks.document_tasks.process_document_task" and entry["args"][0] == str(doc_id)

@@ -296,6 +296,14 @@ class InstagramGraphAPIService:
                 "raw": token_data,
             }
 
+        except ValueError as exc:
+            logger.warning("Skipping token expiration check: %s", exc)
+            return {
+                "success": False,
+                "error": str(exc),
+                "status_code": 400,
+                "error_code": "missing_app_credentials",
+            }
         except Exception as exc:
             logger.exception("Exception while fetching Instagram token expiration metadata")
             return {"success": False, "error": str(exc), "status_code": None}

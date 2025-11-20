@@ -175,6 +175,8 @@ class ModerationStatsRepository:
                 QuestionAnswer.is_ai_generated.is_(True),
                 QuestionAnswer.reply_sent_at >= range_start,
                 QuestionAnswer.reply_sent_at < range_end,
+                InstagramComment.created_at >= range_start,
+                InstagramComment.created_at < range_end,
                 func.lower(CommentClassification.type) == QUESTION_LABEL,
             )
         )
@@ -183,7 +185,9 @@ class ModerationStatsRepository:
         for created_at, reply_sent_at, _ in rows.all():
             if not created_at or not reply_sent_at:
                 continue
-            durations.append((reply_sent_at - created_at).total_seconds())
+            seconds = (reply_sent_at - created_at).total_seconds()
+            if 0 <= seconds <= _MAX_REACTION_SECONDS:
+                durations.append(seconds)
         return durations
 
     async def _classification_reaction_durations(self, range_start: datetime, range_end: datetime) -> list[float]:
@@ -198,6 +202,8 @@ class ModerationStatsRepository:
                 CommentClassification.processing_completed_at.isnot(None),
                 CommentClassification.processing_completed_at >= range_start,
                 CommentClassification.processing_completed_at < range_end,
+                InstagramComment.created_at >= range_start,
+                InstagramComment.created_at < range_end,
                 func.coalesce(func.lower(CommentClassification.type), "") != QUESTION_LABEL,
             )
         )
@@ -205,7 +211,9 @@ class ModerationStatsRepository:
         durations: list[float] = []
         for created_at, completed_at in rows.all():
             if created_at and completed_at:
-                durations.append((completed_at - created_at).total_seconds())
+                seconds = (completed_at - created_at).total_seconds()
+                if 0 <= seconds <= _MAX_REACTION_SECONDS:
+                    durations.append(seconds)
         return durations
 
 
@@ -220,4 +228,4 @@ def _categorize_violation(label: str | None) -> str:
     if "toxic" in normalized or "abusive" in normalized or "insult" in normalized or "harass" in normalized:
         return "insults_toxicity"
     return "other"
-
+_MAX_REACTION_SECONDS = 6 * 60 * 60  # cap outliers at 6 hours to avoid skew
