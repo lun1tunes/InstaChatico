@@ -47,9 +47,9 @@ class InstagramGraphAPIService:
     ):
         self.access_token = access_token or settings.instagram.access_token
         self.base_url = f"https://graph.instagram.com/{settings.instagram.api_version}"
-
-        if not self.access_token:
-            raise ValueError("Instagram access token is required")
+        self._enabled = bool(self.access_token)
+        if not self._enabled:
+            logger.info("InstagramGraphAPIService initialized without access token; service is disabled")
 
         self._session = session
         self._should_close_session = session is None
@@ -64,6 +64,22 @@ class InstagramGraphAPIService:
                 )
             )
             self._owns_rate_limiter = True
+
+    def _require_access_token(self, operation: str) -> Optional[Dict[str, Any]]:
+        if self.access_token:
+            return None
+
+        logger.warning(
+            "Instagram service disabled: missing access token | operation=%s",
+            operation,
+        )
+        return {
+            "success": False,
+            "error": "Instagram access token is not configured; Instagram features are disabled",
+            "status_code": 400,
+            "error_code": "missing_access_token",
+            "operation": operation,
+        }
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
@@ -99,6 +115,9 @@ class InstagramGraphAPIService:
 
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
         """Send reply to Instagram comment via Graph API."""
+        if error := self._require_access_token("send_reply_to_comment"):
+            return error
+
         url = f"{self.base_url}/{comment_id}/replies"
         params = {"access_token": self.access_token, "message": message}
 
@@ -175,6 +194,9 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing comment information
         """
+        if error := self._require_access_token("get_comment_info"):
+            return error
+
         url = f"{self.base_url}/{comment_id}"
         params = {
             "access_token": self.access_token,
@@ -222,6 +244,9 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing validation result
         """
+        if error := self._require_access_token("validate_token"):
+            return error
+
         try:
             status_code, response_data = await self._fetch_debug_token()
             logger.debug(f"Token validation response status: {status_code}")
@@ -253,6 +278,9 @@ class InstagramGraphAPIService:
         Returns:
             Dict with success flag, expires_at (datetime | None), expires_in (seconds | None)
         """
+        if error := self._require_access_token("get_token_expiration"):
+            return error
+
         try:
             status_code, response_data = await self._fetch_debug_token()
             if status_code != 200:
@@ -318,6 +346,9 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing media information
         """
+        if error := self._require_access_token("get_media_info"):
+            return error
+
         url = f"{self.base_url}/{media_id}"
         params = {
             "access_token": self.access_token,
@@ -362,6 +393,9 @@ class InstagramGraphAPIService:
 
     async def get_insights(self, account_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Fetch insights from Instagram Graph API for the given account."""
+        if error := self._require_access_token("get_insights"):
+            return error
+
         if not account_id:
             raise ValueError("Instagram account ID is required for insights")
 
@@ -407,6 +441,9 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing page information
         """
+        if error := self._require_access_token("get_page_info"):
+            return error
+
         url = f"{self.base_url}/me"
         params = {"access_token": self.access_token, "fields": "id,name,username"}
 
@@ -441,6 +478,9 @@ class InstagramGraphAPIService:
 
     async def get_account_profile(self, account_id: Optional[str] = None) -> Dict[str, Any]:
         """Fetch account profile information: username, media_count, followers, follows."""
+        if error := self._require_access_token("get_account_profile"):
+            return error
+
         target_id = account_id or settings.instagram.base_account_id
         if not target_id:
             return {"success": False, "error": "Missing Instagram base account ID", "status_code": 400}
@@ -481,6 +521,9 @@ class InstagramGraphAPIService:
 
     async def set_media_comment_status(self, media_id: str, enabled: bool) -> Dict[str, Any]:
         """Enable or disable comments for a specific media item."""
+        if error := self._require_access_token("set_media_comment_status"):
+            return error
+
         url = f"{self.base_url}/{media_id}"
         params = {
             "access_token": self.access_token,
@@ -535,6 +578,9 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing success status, response data, and status code
         """
+        if error := self._require_access_token("hide_comment"):
+            return error
+
         url = f"{self.base_url}/{comment_id}"
         params = {"access_token": self.access_token, "hide": str(hide).lower()}
 
@@ -591,6 +637,9 @@ class InstagramGraphAPIService:
 
     async def delete_comment(self, comment_id: str, *, resource_type: str = "comment") -> Dict[str, Any]:
         """Delete an Instagram comment or reply by ID."""
+        if error := self._require_access_token("delete_comment"):
+            return error
+
         url = f"{self.base_url}/{comment_id}"
         params = {"access_token": self.access_token}
 

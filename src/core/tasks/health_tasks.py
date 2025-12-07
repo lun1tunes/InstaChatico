@@ -19,6 +19,36 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 
 
+def _acquire_task_lock(ttl_seconds: int = 60) -> bool:
+    """
+    Acquire a short-lived lock so concurrent health checks don't run twice.
+
+    Returns True if lock acquired or Redis unavailable (best-effort),
+    False if another instance holds the lock.
+    """
+    if not redis:
+        return True
+
+    client = None
+    try:
+        client = redis.Redis.from_url(
+            settings.celery.broker_url,
+            socket_connect_timeout=3,
+            socket_timeout=3,
+        )
+        return bool(client.set("health_check:run_lock", "1", nx=True, ex=ttl_seconds))
+    except Exception:
+        # Do not fail the task because lock failed; proceed best-effort
+        logger.warning("Unable to acquire health check lock; continuing without lock", exc_info=False)
+        return True
+    finally:
+        if client:
+            try:
+                client.close()  # type: ignore[arg-type]
+            except Exception:
+                pass
+
+
 def _bytes_to_mb(value: float | int) -> float:
     return float(value) / (1024 * 1024)
 
@@ -283,6 +313,15 @@ def check_system_health_task():
     Returns a structured payload with per-metric statuses so dashboards
     or alerting hooks can reason about system health.
     """
+    # Align lock TTL just under the hourly schedule (3600s) to prevent overlaps
+    if not _acquire_task_lock(ttl_seconds=300):
+        logger.info("Skipping duplicate system health check (lock held)")
+        return {
+            "time": iso_utc(),
+            "status": "skipped",
+            "reason": "duplicate",
+        }
+
     metrics = {
         "cpu": _evaluate_cpu_metric(),
         "memory": _evaluate_memory_metric(),

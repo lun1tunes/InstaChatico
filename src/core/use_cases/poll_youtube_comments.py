@@ -1,0 +1,335 @@
+"""Poll YouTube comments and persist them, enqueuing classification tasks."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from typing import Callable, Optional, Sequence
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.config import settings
+from core.interfaces.services import IYouTubeService
+from core.repositories.comment import CommentRepository
+from core.repositories.media import MediaRepository
+from core.repositories.classification import ClassificationRepository
+from core.models.instagram_comment import InstagramComment
+from core.models.comment_classification import CommentClassification
+from core.utils.time import now_db_utc
+from core.services.youtube_service import MissingYouTubeAuth, QuotaExceeded
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_datetime(value: str | None) -> datetime:
+    if not value:
+        return now_db_utc()
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        return now_db_utc()
+
+
+class PollYouTubeCommentsUseCase:
+    """Fetch latest YouTube comments for channel/videos and queue classification."""
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        youtube_service: IYouTubeService,
+        youtube_media_service,
+        task_queue,
+        comment_repository_factory: Callable[..., CommentRepository],
+        media_repository_factory: Callable[..., MediaRepository],
+        classification_repository_factory: Callable[..., ClassificationRepository],
+    ):
+        self.session = session
+        self.youtube_service = youtube_service
+        self.youtube_media_service = youtube_media_service
+        self.task_queue = task_queue
+        self.comment_repo = comment_repository_factory(session=session)
+        self.media_repo = media_repository_factory(session=session)
+        self.classification_repo = classification_repository_factory(session=session)
+
+    async def execute(
+        self,
+        channel_id: Optional[str] = None,
+        video_ids: Optional[Sequence[str]] = None,
+        page_token: Optional[str] = None,
+    ) -> dict:
+        """Poll comments for provided videos or latest channel uploads."""
+        poll_started = now_db_utc()
+        try:
+            videos = list(video_ids) if video_ids else await self._fetch_recent_video_ids(channel_id, page_token)
+        except MissingYouTubeAuth as exc:
+            logger.warning("YouTube auth missing; skipping poll | reason=%s", exc)
+            return {"status": "error", "reason": str(exc), "video_count": 0, "new_comments": 0, "api_errors": 0, "duration_seconds": 0.0}
+        except QuotaExceeded as exc:
+            logger.warning("YouTube quota exhausted; skipping poll without retry | reason=%s", exc)
+            return {
+                "status": "quota_exceeded",
+                "reason": str(exc),
+                "video_count": 0,
+                "new_comments": 0,
+                "api_errors": 1,
+                "duration_seconds": 0.0,
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to fetch video list | error=%s", exc)
+            return {"status": "error", "reason": str(exc)}
+
+        new_comments = 0
+        api_errors = 0
+        # Any comment older than this will be ignored (prevents ingesting historical backlog on first connect)
+        cutoff_created_at = poll_started - timedelta(seconds=settings.youtube.poll_interval_seconds)
+        for video_id in videos:
+            media = await self.youtube_media_service.get_or_create_video(video_id, self.session)
+            if not media:
+                continue
+            try:
+                fetched = await self._process_video_comments(video_id, cutoff_created_at=cutoff_created_at)
+            except Exception as exc:  # noqa: BLE001
+                api_errors += 1
+                logger.error("Failed processing comments | video_id=%s | error=%s", video_id, exc)
+                continue
+            new_comments += fetched
+
+        duration = (now_db_utc() - poll_started).total_seconds()
+        logger.info(
+            "YouTube poll finished | videos=%s | new_comments=%s | api_errors=%s | duration=%.2fs",
+            len(videos),
+            new_comments,
+            api_errors,
+            duration,
+        )
+        return {
+            "status": "success",
+            "video_count": len(videos),
+            "new_comments": new_comments,
+            "api_errors": api_errors,
+            "duration_seconds": duration,
+        }
+
+    async def _fetch_recent_video_ids(self, channel_id: Optional[str], page_token: Optional[str]) -> list[str]:
+        target_channel = channel_id
+
+        # Prefer dynamically discovered account id, but gracefully fall back to static config
+        if not target_channel and hasattr(self.youtube_service, "get_account_id"):
+            try:
+                target_channel = await self.youtube_service.get_account_id()  # type: ignore[attr-defined]
+            except Exception:
+                logger.debug("Failed to resolve YouTube account id dynamically; falling back to config")
+
+        if not target_channel:
+            target_channel = settings.youtube.channel_id
+
+        if not target_channel:
+            logger.warning("No YouTube channel id available; skipping poll")
+            return []
+        resp = await self.youtube_service.list_channel_videos(
+            channel_id=target_channel,
+            page_token=page_token,
+            max_results=settings.youtube.poll_max_videos,
+        )
+        ids: list[str] = []
+        for item in resp.get("items", []):
+            # Prefer playlistItems contentDetails.videoId; fallback to legacy search id.videoId
+            id_block = item.get("contentDetails", {}) or item.get("id", {}) or {}
+            video_id = id_block.get("videoId")
+            if video_id:
+                ids.append(video_id)
+        return ids
+
+    async def _process_video_comments(self, video_id: str, cutoff_created_at: datetime) -> int:
+        page_token = None
+        added = 0
+        latest_seen = await self.comment_repo.get_latest_comment_timestamp(video_id)
+        while True:
+            resp = await self.youtube_service.list_comment_threads(video_id=video_id, page_token=page_token)
+            threads = resp.get("items", [])
+            for thread in threads:
+                stop_early, created = await self._persist_thread(
+                    thread,
+                    video_id,
+                    latest_seen=latest_seen,
+                    cutoff_created_at=cutoff_created_at,
+                )
+                added += created
+                if stop_early:
+                    return added
+
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+        return added
+
+    async def _persist_thread(
+        self,
+        thread: dict,
+        video_id: str,
+        latest_seen: Optional[datetime],
+        cutoff_created_at: datetime,
+    ) -> tuple[bool, int]:
+        top = thread.get("snippet", {}).get("topLevelComment", {})
+        top_snippet = top.get("snippet", {}) if top else {}
+        top_id = top.get("id")
+        added = 0
+        stop_early = False
+        total_reply_count = thread.get("snippet", {}).get("totalReplyCount") or 0
+
+        published_at_str = top_snippet.get("publishedAt")
+        published_at = _parse_datetime(published_at_str) if published_at_str else None
+        # Strictly older? stop; equal timestamps may occur due to rounding, so allow processing when equal
+        if latest_seen and published_at and published_at < latest_seen:
+            return True, 0
+
+        # Apply cutoff only on first ingest (when we have no latest_seen). If we already have comments,
+        # rely on latest_seen to avoid skipping legitimate new comments posted after a long gap.
+        within_cutoff = (
+            not latest_seen
+            and (not cutoff_created_at or (published_at and published_at >= cutoff_created_at))
+        ) or latest_seen is not None
+
+        if top_id and within_cutoff:
+            created = await self._persist_comment(
+                comment_id=top_id,
+                video_id=video_id,
+                snippet=top_snippet,
+                parent_id=None,
+                raw=top,
+            )
+            added += int(created)
+        elif top_id:
+            # Older than cutoff; stop early to avoid processing history
+            return True, added
+
+        # Replies (if expanded)
+        replies = thread.get("replies", {}).get("comments", []) or []
+        reply_stop = False
+        for reply in replies:
+            reply_snippet = reply.get("snippet", {})
+            reply_id = reply.get("id")
+            if reply_id:
+                reply_published_str = reply_snippet.get("publishedAt")
+                reply_published = _parse_datetime(reply_published_str) if reply_published_str else None
+                if latest_seen and reply_published and reply_published < latest_seen:
+                    reply_stop = True
+                    continue
+                if not latest_seen and cutoff_created_at and reply_published and reply_published < cutoff_created_at:
+                    reply_stop = True
+                    continue
+                created = await self._persist_comment(
+                    comment_id=reply_id,
+                    video_id=video_id,
+                    snippet=reply_snippet,
+                    parent_id=top_id,
+                    raw=reply,
+                )
+                added += int(created)
+
+        # If API didn't return all replies (common), fetch remaining via comments.list
+        if top_id and total_reply_count > len(replies):
+            fetched, stop_due_cutoff = await self._fetch_additional_replies(
+                parent_id=top_id,
+                video_id=video_id,
+                latest_seen=latest_seen,
+                cutoff_created_at=cutoff_created_at,
+            )
+            added += fetched
+            stop_early = stop_early or stop_due_cutoff
+
+        # Propagate stop if inline replies indicated historical data only
+        return stop_early or reply_stop, added
+
+    async def _fetch_additional_replies(
+        self,
+        parent_id: str,
+        video_id: str,
+        latest_seen: Optional[datetime],
+        cutoff_created_at: datetime,
+    ) -> tuple[int, bool]:
+        """Fetch replies via comments.list for a parent comment."""
+        page_token = None
+        added = 0
+        stop_early = False
+
+        while True:
+            resp = await self.youtube_service.list_comment_replies(
+                parent_id=parent_id,
+                page_token=page_token,
+                max_results=100,
+            )
+            comments = resp.get("items", []) or []
+            page_all_old = True
+            for reply in comments:
+                reply_snippet = reply.get("snippet", {}) or {}
+                reply_id = reply.get("id")
+                if not reply_id:
+                    continue
+                reply_published_str = reply_snippet.get("publishedAt")
+                reply_published = _parse_datetime(reply_published_str) if reply_published_str else None
+                if latest_seen and reply_published and reply_published < latest_seen:
+                    # This reply is older than we've already seen; keep scanning the page
+                    continue
+                if not latest_seen and cutoff_created_at and reply_published and reply_published < cutoff_created_at:
+                    # When no latest_seen, cutoff is only for initial backfill
+                    continue
+                page_all_old = False
+                created = await self._persist_comment(
+                    comment_id=reply_id,
+                    video_id=video_id,
+                    snippet=reply_snippet,
+                    parent_id=parent_id,
+                    raw=reply,
+                )
+                added += int(created)
+
+            page_token = resp.get("nextPageToken")
+            # Only break if there is no next page OR all replies on this page were older than thresholds
+            if not page_token or page_all_old:
+                break
+
+        return added, stop_early
+
+    async def _persist_comment(
+        self,
+        comment_id: str,
+        video_id: str,
+        snippet: dict,
+        parent_id: Optional[str],
+        raw: dict,
+    ) -> bool:
+        existing = await self.comment_repo.get_by_id(comment_id)
+        if existing:
+            return False
+
+        author_channel_id = None
+        author_channel_obj = snippet.get("authorChannelId") or {}
+        if isinstance(author_channel_obj, dict):
+            author_channel_id = author_channel_obj.get("value")
+
+        new_comment = InstagramComment(
+            id=comment_id,
+            media_id=video_id,
+            user_id=author_channel_id or snippet.get("authorDisplayName") or "unknown",
+            username=snippet.get("authorDisplayName") or "unknown",
+            text=snippet.get("textOriginal") or snippet.get("textDisplay") or "",
+            created_at=_parse_datetime(snippet.get("publishedAt")),
+            parent_id=parent_id,
+            platform="youtube",
+            raw_data=raw,
+        )
+        new_comment.classification = CommentClassification(comment_id=comment_id)
+
+        self.session.add(new_comment)
+        await self.session.commit()
+
+        # Enqueue classification
+        try:
+            self.task_queue.enqueue(
+                "core.tasks.classification_tasks.classify_comment_task",
+                comment_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to enqueue classification | comment_id=%s | error=%s", comment_id, exc)
+        return True

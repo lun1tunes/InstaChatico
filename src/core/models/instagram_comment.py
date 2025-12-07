@@ -22,6 +22,13 @@ class InstagramComment(Base):
     username: Mapped[str]
     text: Mapped[str]
     created_at: Mapped[datetime]
+    platform: Mapped[str] = mapped_column(
+        String(20),
+        default="instagram",
+        nullable=False,
+        index=True,
+        comment="Origin platform of the comment (instagram|youtube|...)",  # future-proof for more platforms
+    )
     raw_data = mapped_column(JSONB)
 
     # Comment hiding fields

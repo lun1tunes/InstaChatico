@@ -3,11 +3,19 @@ from celery.schedules import crontab
 from datetime import timedelta
 from .config import settings
 import os
+import logging
 from celery.signals import before_task_publish, task_prerun
 from core.logging_config import trace_id_ctx
 
+try:
+    import redis  # type: ignore
+except Exception:  # pragma: no cover
+    redis = None
+
+logger = logging.getLogger(__name__)
+
 celery_app = Celery(
-    "instagram_classifier",
+    "youtube_comment_manager",
     broker=settings.celery.broker_url,
     backend=settings.celery.result_backend,
     include=[
@@ -20,6 +28,7 @@ celery_app = Celery(
         "core.tasks.document_tasks",
         "core.tasks.instagram_token_tasks",
         "core.tasks.stats_tasks",
+        "core.tasks.youtube_tasks",
     ],
 )
 
@@ -69,6 +78,10 @@ celery_app.conf.update(
         "core.tasks.instagram_reply_tasks.send_instagram_reply_task": {"queue": "instagram_queue"},
         "core.tasks.instagram_reply_tasks.hide_instagram_comment_task": {"queue": "instagram_queue"},
         "core.tasks.telegram_tasks.send_telegram_notification_task": {"queue": "instagram_queue"},
+        # YouTube moderation/replies
+        "core.tasks.youtube_tasks.poll_youtube_comments_task": {"queue": "youtube_queue"},
+        "core.tasks.youtube_tasks.send_youtube_reply_task": {"queue": "youtube_queue"},
+        "core.tasks.youtube_tasks.delete_youtube_comment_task": {"queue": "youtube_queue"},
         # Periodic/scheduled jobs – route them explicitly so Celery Beat doesn't fall back to the default queue
         "core.tasks.classification_tasks.retry_failed_classifications": {"queue": "llm_queue"},
         "core.tasks.health_tasks.check_system_health_task": {"queue": "instagram_queue"},
@@ -95,24 +108,31 @@ celery_app.conf.beat_schedule = {
         "task": "core.tasks.health_tasks.check_system_health_task",
         "schedule": crontab(minute=0, hour="*"),
     },
+    # Instagram follower snapshot retained for compatibility; keep disabled if not needed
     "record-instagram-followers": {
         "task": "core.tasks.stats_tasks.record_follower_snapshot_task",
         # enable_utc=True ensures this executes at 00:00 UTC
         "schedule": crontab(minute=0, hour=0),
     },
+    "poll-youtube-comments": {
+        "task": "core.tasks.youtube_tasks.poll_youtube_comments_task",
+        "schedule": timedelta(seconds=settings.youtube.poll_interval_seconds),
+        "options": {"queue": "youtube_queue"},
+    },
 }
 
 
 @celery_app.on_after_configure.connect
-def run_initial_health_check(sender, **kwargs):
-    """Ensure a health snapshot runs once on startup for immediate visibility."""
+def run_initial_classification_retry(sender, **kwargs):
+    """Kick off a one-time retry scan for pending classifications at startup."""
     try:
         sender.send_task(
-            "core.tasks.health_tasks.check_system_health_task",
-            countdown=5,
+            "core.tasks.classification_tasks.retry_failed_classifications",
+            queue="llm_queue",
+            countdown=10,
         )
     except Exception:
-        # Avoid crashing startup if broker temporarily unavailable
+        # Best effort; do not block startup
         pass
 
 

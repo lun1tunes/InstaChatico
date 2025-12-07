@@ -157,6 +157,7 @@ class ProcessWebhookCommentUseCase:
                 user_id=user_id,
                 username=username,
                 text=text,
+                platform="instagram",
                 # Store timestamps in UTC to keep reaction-time stats accurate
                 created_at=datetime.fromtimestamp(entry_timestamp, tz=timezone.utc).replace(tzinfo=None),
                 parent_id=parent_id,

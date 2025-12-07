@@ -18,6 +18,22 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
+def _ensure_env_var(name: str, value: str) -> None:
+    """Set env var only when missing or empty to satisfy settings validation in tests."""
+    if not os.getenv(name):
+        os.environ[name] = value
+
+
+# Prepopulate required env vars for settings before imports
+_ensure_env_var("APP_SECRET", "dummy_app_secret")
+_ensure_env_var("TOKEN", "dummy_token")
+_ensure_env_var("YOUTUBE_CLIENT_ID", "dummy_youtube_client_id")
+_ensure_env_var("YOUTUBE_CLIENT_SECRET", "dummy_youtube_client_secret")
+_ensure_env_var("YOUTUBE_REFRESH_TOKEN", "dummy_youtube_refresh_token")
+_ensure_env_var("YOUTUBE_API_KEY", "dummy_youtube_api_key")
+_ensure_env_var("YOUTUBE_CHANNEL_ID", "dummy_youtube_channel_id")
+_ensure_env_var("OAUTH_ENCRYPTION_KEY", "1p_UUU0j5OJ9SxWwtUWFI7Ak4luuL8EA3twJY86W0Z0=")
+
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 

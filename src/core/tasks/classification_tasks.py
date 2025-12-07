@@ -5,6 +5,8 @@ import logging
 from ..celery_app import celery_app
 from ..utils.task_helpers import async_task, get_db_session, DEFAULT_RETRY_SCHEDULE, get_retry_delay
 from ..container import get_container
+from ..config import settings
+from ..repositories.comment import CommentRepository
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +21,17 @@ TELEGRAM_QUEUE_CLASSIFICATIONS = {"urgent issue / complaint", "critical feedback
 @celery_app.task(bind=True, max_retries=MAX_RETRIES)
 @async_task
 async def classify_comment_task(self, comment_id: str):
-    """Classify Instagram comment using AI - orchestration only."""
+    """Classify a comment using AI (platform-agnostic) - orchestration only."""
     logger.info(f"Task started | comment_id={comment_id} | retry={self.request.retries}/{self.max_retries}")
+
+    # Guard: skip if OpenAI API key is not configured/placeholder
+    api_key = settings.openai.api_key or ""
+    if not api_key or api_key.startswith("open_ai_token") or api_key.startswith("your_openai_api_key"):
+        logger.error(
+            "Classification skipped: OpenAI API key is not configured. "
+            "Set OPENAI_API_KEY to a valid key to enable classification."
+        )
+        return {"status": "skipped", "reason": "missing_openai_api_key"}
 
     async with get_db_session() as session:
         container = get_container()
@@ -63,6 +74,15 @@ async def _trigger_post_classification_actions(classification_result: dict):
     container = get_container()
     task_queue = container.task_queue()
 
+    # Detect platform to avoid routing Instagram-only actions to YouTube comments
+    platform = ""
+    try:
+        async with get_db_session() as session:
+            repo = CommentRepository(session)
+            comment = await repo.get_by_id(comment_id)
+            platform = (getattr(comment, "platform", None) or "").lower() if comment else ""
+    except Exception:
+        platform = ""
     # Answer generation for questions
     if classification in ANSWER_QUEUE_CLASSIFICATIONS:
         logger.info(f"Queuing answer task | comment_id={comment_id} | classification={classification}")
@@ -75,8 +95,8 @@ async def _trigger_post_classification_actions(classification_result: dict):
         except Exception as e:
             logger.error(f"Failed to queue answer task | comment_id={comment_id} | error={str(e)}", exc_info=True)
 
-    # Hide toxic/complaint comments
-    if classification in HIDE_QUEUE_CLASSIFICATIONS:
+    # Hide toxic/complaint comments (Instagram moderation flow)
+    if classification in HIDE_QUEUE_CLASSIFICATIONS and platform != "youtube":
         logger.info(f"Queuing hide task | comment_id={comment_id} | classification={classification}")
         try:
             task_id = task_queue.enqueue(
@@ -128,11 +148,24 @@ async def retry_failed_classifications_async():
             logger.info(f"Starting classification retry | count={len(retry_classifications)}")
 
             for classification in retry_classifications:
+                # Mark as processing to avoid duplicate enqueues from overlapping schedulers
+                if hasattr(classification_repo, "mark_processing"):
+                    await classification_repo.mark_processing(
+                        classification,
+                        retry_count=getattr(classification, "retry_count", 0) + 1,
+                    )
                 task_queue.enqueue(
                     "core.tasks.classification_tasks.classify_comment_task",
                     classification.comment_id,
                 )
                 logger.debug(f"Retry queued | comment_id={classification.comment_id}")
+
+            # Persist status updates
+            try:
+                await session.commit()
+            except AttributeError:
+                # Unit-test sessions can be bare objects; ignore commit in that case
+                pass
 
             logger.info(f"Classification retry completed | queued_count={len(retry_classifications)}")
             return {"retried_count": len(retry_classifications)}

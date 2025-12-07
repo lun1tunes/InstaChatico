@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Self
 from pydantic import BaseModel, Field, model_validator, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict, EnvSettingsSource
@@ -67,7 +68,8 @@ class InstagramSettings(BaseModel):
     @model_validator(mode="after")
     def _validate(self) -> Self:
         if not self.access_token:
-            raise ValueError("INSTA_TOKEN environment variable must be set.")
+            # Optional for YouTube-only deployments; log-friendly error
+            self.access_token = ""
         return self
 
 
@@ -177,6 +179,40 @@ class S3Settings(BaseSettings):
         return self
 
 
+class YouTubeSettings(BaseModel):
+    """YouTube Data API / OAuth settings."""
+
+    client_id: str = Field(default_factory=lambda: os.getenv("YOUTUBE_CLIENT_ID", "").strip())
+    client_secret: str = Field(default_factory=lambda: os.getenv("YOUTUBE_CLIENT_SECRET", "").strip())
+    refresh_token: str = Field(default_factory=lambda: os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip())
+    api_key: str = Field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY", "").strip())
+    channel_id: str = Field(default_factory=lambda: os.getenv("YOUTUBE_CHANNEL_ID", "").strip())
+    poll_interval_seconds: int = Field(default_factory=lambda: int(os.getenv("YOUTUBE_POLL_INTERVAL_SECONDS", "30")))
+    poll_max_videos: int = Field(default_factory=lambda: int(os.getenv("YOUTUBE_POLL_MAX_VIDEOS", "10")))
+    rate_limit_redis_url: str = Field(default_factory=lambda: os.getenv("YOUTUBE_RATE_LIMIT_REDIS_URL", "redis://localhost:6379/2"))
+    redirect_uri: str = Field(default_factory=lambda: os.getenv("YOUTUBE_REDIRECT_URI", "http://localhost:5291/api/v1/auth/google/callback").strip())
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        # YouTube remains optional: absence of env creds won't fail startup.
+        logger = logging.getLogger(__name__)
+        missing = []
+        if not self.client_id:
+            missing.append("YOUTUBE_CLIENT_ID")
+        if not self.client_secret:
+            missing.append("YOUTUBE_CLIENT_SECRET")
+        if not self.redirect_uri:
+            missing.append("YOUTUBE_REDIRECT_URI")
+        if missing:
+            logger.info(
+                "YouTube credentials not configured (%s); YouTube features will remain inactive until OAuth tokens/env credentials are set.",
+                ", ".join(missing),
+            )
+        if not self.refresh_token:
+            logger.info("YOUTUBE_REFRESH_TOKEN not set; relying solely on stored OAuth tokens.")
+        return self
+
+
 class RelaxedEnvSettingsSource(EnvSettingsSource):
     def decode_complex_value(self, field_name, field, value):
         try:
@@ -203,13 +239,20 @@ class Settings(BaseSettings):
     json_api: JsonApiSettings = JsonApiSettings()
     s3: S3Settings = S3Settings()
     media_proxy: MediaProxySettings = MediaProxySettings()
+    youtube: YouTubeSettings = YouTubeSettings()
+    oauth_encryption_key: str = Field(default_factory=lambda: os.getenv("OAUTH_ENCRYPTION_KEY", "").strip())
 
     @model_validator(mode="after")
     def _validate(self) -> Self:
+        missing = []
         if not self.app_secret:
-            raise ValueError("APP_SECRET environment variable must be set.")
+            missing.append("APP_SECRET")
         if not self.app_webhook_verify_token:
-            raise ValueError("TOKEN environment variable (used as webhook verify token) must be set.")
+            missing.append("TOKEN")
+        if missing:
+            raise ValueError(f"Missing required webhook secrets: {', '.join(missing)}.")
+        if not self.oauth_encryption_key:
+            raise ValueError("OAUTH_ENCRYPTION_KEY environment variable must be set (base64 url-safe 32 bytes).")
         return self
 
     @field_validator("cors_allowed_origins", mode="before")

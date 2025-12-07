@@ -1,7 +1,7 @@
 """Use case for comment classification (Business Logic Layer)."""
 
 import logging
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,8 @@ class ClassifyCommentUseCase:
         self,
         session: AsyncSession,
         classification_service: IClassificationService,
-        media_service: IMediaService,
+        instagram_media_service: IMediaService,
+        youtube_media_service: IMediaService,
         comment_repository_factory: Callable[..., ICommentRepository],
         classification_repository_factory: Callable[..., IClassificationRepository],
     ):
@@ -44,7 +45,8 @@ class ClassifyCommentUseCase:
         self.comment_repo: ICommentRepository = comment_repository_factory(session=session)
         self.classification_repo: IClassificationRepository = classification_repository_factory(session=session)
         self.classification_service = classification_service
-        self.media_service = media_service
+        self.instagram_media_service = instagram_media_service
+        self.youtube_media_service = youtube_media_service
 
     @handle_task_errors()
     async def execute(self, comment_id: str, retry_count: int = 0) -> Dict[str, Any]:
@@ -62,7 +64,8 @@ class ClassifyCommentUseCase:
             return {"status": "error", "reason": "comment_not_found"}
 
         # 2. Ensure media exists
-        media = await self.media_service.get_or_create_media(comment.media_id, self.session)
+        media_service = self._select_media_service(comment)
+        media = await media_service.get_or_create_media(comment.media_id, self.session)
         if not media:
             logger.error(
                 f"Media unavailable | comment_id={comment_id} | media_id={comment.media_id} | "
@@ -219,14 +222,56 @@ class ClassifyCommentUseCase:
 
     def _build_media_context(self, media) -> Dict[str, Any]:
         """Build media context dictionary."""
+        raw_snippet = {}
+        raw_stats = {}
+        raw_data = getattr(media, "raw_data", None)
+        if isinstance(raw_data, dict):
+            raw_snippet = raw_data.get("snippet", {}) or {}
+            raw_stats = raw_data.get("statistics", {}) or {}
+
         return {
             "caption": media.caption,
+            "title": raw_snippet.get("title"),
+            "channel_title": raw_snippet.get("channelTitle"),
             "media_type": media.media_type,
             "media_context": media.media_context,
             "username": media.username,
             "comments_count": media.comments_count,
             "like_count": media.like_count,
+            "view_count": _safe_int(raw_stats.get("viewCount")),
             "permalink": media.permalink,
             "media_url": media.media_url,
             "is_comment_enabled": media.is_comment_enabled,
+            "posted_at": media.posted_at,
         }
+
+    def _select_media_service(self, comment) -> IMediaService:
+        """
+        Choose media service based on comment platform.
+
+        Platform detection priority:
+        1. Explicit comment.platform
+        2. raw_data.kind prefix for YouTube
+        """
+        platform = getattr(comment, "platform", None) or ""
+        platform = platform.lower()
+        if platform == "youtube":
+            return self.youtube_media_service
+
+        raw_kind = ""
+        try:
+            raw_kind = (comment.raw_data or {}).get("kind", "")
+        except Exception:
+            raw_kind = ""
+
+        if isinstance(raw_kind, str) and raw_kind.lower().startswith("youtube#"):
+            return self.youtube_media_service
+
+        return self.instagram_media_service
+
+
+def _safe_int(value) -> Optional[int]:
+    try:
+        return int(value)
+    except Exception:
+        return None
