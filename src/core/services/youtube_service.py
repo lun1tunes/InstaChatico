@@ -80,7 +80,11 @@ class YouTubeService:
     # ------------------------------------------------------------------ #
     async def _build_credentials(self) -> Credentials:
         """
-        Build credentials from stored OAuth tokens if available; fallback to env.
+        Build credentials strictly from stored OAuth tokens.
+
+        Требование продукта: любые операции YouTube (в том числе polling) допускаются
+        только при наличии токенов в нашей базе (OAuthTokenService). Поэтому здесь
+        нет запасного варианта с переменными окружения.
         """
         _ensure_google_imports()
         assert Credentials is not None  # for type checkers
@@ -97,16 +101,6 @@ class YouTubeService:
                 client_secret=self.client_secret,
                 scopes=[YOUTUBE_SCOPE],
                 expiry=tokens.get("expires_at"),
-            )
-
-        if self.refresh_token:
-            return Credentials(
-                None,
-                refresh_token=self.refresh_token,
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id=self.client_id,
-                client_secret=self.client_secret,
-                scopes=[YOUTUBE_SCOPE],
             )
 
         raise MissingYouTubeAuth("No YouTube OAuth tokens available. Complete Google OAuth first.")
@@ -308,7 +302,6 @@ class YouTubeService:
         parent_id: str,
         page_token: Optional[str] = None,
         max_results: int = 100,
-        order: str = "time",
     ) -> dict:
         """Fetch replies for a given top-level comment (comments.list parentId)."""
         youtube = await self._get_youtube()
@@ -320,7 +313,6 @@ class YouTubeService:
                     part="snippet",
                     parentId=parent_id,
                     textFormat="plainText",
-                    order=order,
                     maxResults=max_results,
                     pageToken=page_token,
                 )

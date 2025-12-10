@@ -252,7 +252,6 @@ class IYouTubeService(Protocol):
         parent_id: str,
         page_token: Optional[str] = None,
         max_results: int = 100,
-        order: str = "time",
     ) -> dict:
         """Fetch replies for a specific top-level comment (comments.list with parentId)."""
         ...
