@@ -102,7 +102,7 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "retry-failed-classifications": {
         "task": "core.tasks.classification_tasks.retry_failed_classifications",
-        "schedule": crontab(minute="*/15"),  # Every 15 minutes
+        "schedule": crontab(minute="*/5"),  # Every 5 minutes
     },
     "check-system-health": {
         "task": "core.tasks.health_tasks.check_system_health_task",

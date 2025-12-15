@@ -23,6 +23,8 @@ from .schemas import AuthUrlResponse, AccountStatusResponse, EncryptedTokenPaylo
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["oauth"])
+# Dedicated router for internal token ingest at /oauth/tokens
+tokens_router = APIRouter(tags=["oauth"])
 
 YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",  # manage and moderate YouTube comments
@@ -195,19 +197,15 @@ async def google_account_status(
     }
 
 
-@router.post("/tokens", response_model=TokenStoreResponse)
-async def store_encrypted_tokens(
+async def _store_tokens_impl(
     payload: EncryptedTokenPayload,
-    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
-    container: Container = Depends(get_container),
-    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    session: AsyncSession,
+    container: Container,
+    x_internal_secret: str | None,
 ):
     """
-    Receive encrypted OAuth tokens from an external auth service and persist them.
-
-    Tokens must be encrypted with the shared `OAUTH_ENCRYPTION_KEY` (Fernet urlsafe base64 32 bytes).
+    Shared implementation for storing encrypted YouTube OAuth tokens.
     """
-    # Simple shared-secret auth (server-to-server)
     if not x_internal_secret or x_internal_secret != settings.app_secret:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -248,5 +246,26 @@ async def store_encrypted_tokens(
         logger.exception("Unexpected error storing encrypted tokens | provider=%s | account_id=%s", provider, account_id)
         raise HTTPException(status_code=500, detail="Failed to store tokens") from exc
 
-    # Align with requirement: simple ok payload
     return {"status": "ok", **stored}
+
+
+@router.post("/tokens", response_model=TokenStoreResponse)
+async def store_encrypted_tokens(
+    payload: EncryptedTokenPayload,
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+):
+    """Store encrypted tokens via /auth/google/tokens (existing path)."""
+    return await _store_tokens_impl(payload, session, container, x_internal_secret)
+
+
+@tokens_router.post("/oauth/tokens", response_model=TokenStoreResponse)
+async def store_encrypted_tokens_root(
+    payload: EncryptedTokenPayload,
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+):
+    """Store encrypted tokens via /oauth/tokens (mapper callback path)."""
+    return await _store_tokens_impl(payload, session, container, x_internal_secret)
