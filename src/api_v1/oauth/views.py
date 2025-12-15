@@ -11,7 +11,7 @@ import urllib.parse
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -200,27 +200,47 @@ async def store_encrypted_tokens(
     payload: EncryptedTokenPayload,
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
     container: Container = Depends(get_container),
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
 ):
     """
     Receive encrypted OAuth tokens from an external auth service and persist them.
 
     Tokens must be encrypted with the shared `OAUTH_ENCRYPTION_KEY` (Fernet urlsafe base64 32 bytes).
     """
-    provider = payload.provider.lower()
-    account_id = payload.account_id or "default"
+    # Simple shared-secret auth (server-to-server)
+    if not x_internal_secret or x_internal_secret != settings.app_secret:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    provider = (payload.provider or "").strip().lower()
+    if provider != "youtube":
+        raise HTTPException(status_code=400, detail="provider must be 'youtube'")
+    account_id = (payload.account_id or "").strip()
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id is required")
+
+    # Normalize scope to space-delimited string
+    scope_value = payload.scope
+    if isinstance(scope_value, list):
+        scope_value = " ".join(scope_value)
+    refresh_token_enc = payload.refresh_token_encrypted
+    if not refresh_token_enc:
+        raise HTTPException(status_code=400, detail="refresh_token_encrypted is required for offline access")
 
     oauth_service: OAuthTokenService = container.oauth_token_service(session=session)
     try:
         stored = await oauth_service.store_encrypted_tokens(
-            provider=provider,
+            provider="google",  # internal canonical provider for YouTube tokens
             account_id=account_id,
             access_token_encrypted=payload.access_token_encrypted,
-            refresh_token_encrypted=payload.refresh_token_encrypted,
+            refresh_token_encrypted=refresh_token_enc,
             token_type=payload.token_type,
-            scope=payload.scope,
+            scope=scope_value,
             expires_at=payload.expires_at,
             expires_in=payload.expires_in,
         )
+        # Ensure refresh token presence for offline access
+        if not stored.get("has_refresh_token"):
+            raise ValueError("refresh_token is required for offline access")
     except ValueError as exc:
         logger.error("Failed to store encrypted tokens | provider=%s | account_id=%s | error=%s", provider, account_id, exc)
         raise HTTPException(status_code=400, detail=str(exc))
@@ -228,4 +248,5 @@ async def store_encrypted_tokens(
         logger.exception("Unexpected error storing encrypted tokens | provider=%s | account_id=%s", provider, account_id)
         raise HTTPException(status_code=500, detail="Failed to store tokens") from exc
 
-    return TokenStoreResponse(**stored)
+    # Align with requirement: simple ok payload
+    return {"status": "ok", **stored}

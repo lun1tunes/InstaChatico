@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Union
 
 
 class AuthUrlResponse(BaseModel):
@@ -19,12 +19,13 @@ class EncryptedTokenPayload(BaseModel):
     access_token_encrypted: str
     refresh_token_encrypted: str
     token_type: Optional[str] = None
-    scope: Optional[str] = None
+    scope: Optional[Union[str, List[str]]] = None
     expires_at: Optional[datetime] = None
     expires_in: Optional[int] = None
 
 
 class TokenStoreResponse(BaseModel):
+    status: str = "ok"
     provider: str
     account_id: str
     expires_at: Optional[str] = None
