@@ -52,6 +52,9 @@ class OAuthTokenService:
     @staticmethod
     def _resolve_expires_at(expires_at: Optional[datetime], expires_in: Optional[int]) -> Optional[datetime]:
         if expires_at:
+            # Normalize to naive UTC for storage (DB column is TIMESTAMP WITHOUT TIME ZONE)
+            if expires_at.tzinfo:
+                return expires_at.astimezone(tz=None).replace(tzinfo=None)
             return expires_at
         if expires_in:
             try:

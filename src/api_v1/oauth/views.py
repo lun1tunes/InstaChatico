@@ -11,6 +11,7 @@ import urllib.parse
 from typing import Any, Dict, Optional
 
 import httpx
+import jwt
 from fastapi import APIRouter, HTTPException, Query, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -202,12 +203,12 @@ async def _store_tokens_impl(
     session: AsyncSession,
     container: Container,
     x_internal_secret: str | None,
+    authorization: str | None,
 ):
     """
     Shared implementation for storing encrypted YouTube OAuth tokens.
     """
-    if not x_internal_secret or x_internal_secret != settings.app_secret:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    _authorize_internal_request(authorization=authorization, x_internal_secret=x_internal_secret)
 
     provider = (payload.provider or "").strip().lower()
     if provider != "youtube":
@@ -255,9 +256,10 @@ async def store_encrypted_tokens(
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
     container: Container = Depends(get_container),
     x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    authorization: str | None = Header(None, alias="Authorization"),
 ):
     """Store encrypted tokens via /auth/google/tokens (existing path)."""
-    return await _store_tokens_impl(payload, session, container, x_internal_secret)
+    return await _store_tokens_impl(payload, session, container, x_internal_secret, authorization)
 
 
 @tokens_router.post("/oauth/tokens", response_model=TokenStoreResponse)
@@ -266,6 +268,75 @@ async def store_encrypted_tokens_root(
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
     container: Container = Depends(get_container),
     x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    authorization: str | None = Header(None, alias="Authorization"),
 ):
     """Store encrypted tokens via /oauth/tokens (mapper callback path)."""
-    return await _store_tokens_impl(payload, session, container, x_internal_secret)
+    logger.debug(
+        "Received internal token sync | has_auth_header=%s | has_internal_header=%s",
+        bool(authorization),
+        bool(x_internal_secret),
+    )
+    return await _store_tokens_impl(payload, session, container, x_internal_secret, authorization)
+
+
+def _authorize_internal_request(
+    *,
+    authorization: str | None,
+    x_internal_secret: str | None,
+) -> None:
+    """
+    Validate mapper -> worker calls using a short-lived JWT.
+
+    Falls back to legacy X-Internal-Secret for backward compatibility.
+    """
+    bearer = _extract_bearer_token(authorization)
+    if bearer:
+        try:
+            _validate_internal_jwt(bearer)
+            return
+        except HTTPException:
+            # bubble up after logging context
+            logger.warning("Internal JWT validation failed | header_present=%s", bool(authorization))
+            raise
+
+    if x_internal_secret and x_internal_secret == settings.app_secret:
+        return
+
+    logger.warning(
+        "Internal auth failed | has_authorization=%s | has_x_internal=%s",
+        bool(authorization),
+        bool(x_internal_secret),
+    )
+    raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _extract_bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    parts = authorization.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        token = parts[1].strip()
+        return token or None
+    return None
+
+
+def _validate_internal_jwt(token: str) -> Dict[str, Any]:
+    """
+    Validate internal JWT issued by the mapper app.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.app_secret,
+            algorithms=["HS256"],
+            audience="instagram-worker",
+            options={"require": ["exp", "iat", "iss", "aud"]},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Internal token validation failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Unauthorized") from exc
+
+    if payload.get("iss") != "chatico-mapper":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    return payload
