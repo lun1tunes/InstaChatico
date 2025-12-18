@@ -63,7 +63,14 @@ class PollYouTubeCommentsUseCase:
             videos = list(video_ids) if video_ids else await self._fetch_recent_video_ids(channel_id, page_token)
         except MissingYouTubeAuth as exc:
             logger.warning("YouTube auth missing; skipping poll | reason=%s", exc)
-            return {"status": "error", "reason": str(exc), "video_count": 0, "new_comments": 0, "api_errors": 0, "duration_seconds": 0.0}
+            return {
+                "status": "auth_error",
+                "reason": str(exc),
+                "video_count": 0,
+                "new_comments": 0,
+                "api_errors": 0,
+                "duration_seconds": 0.0,
+            }
         except QuotaExceeded as exc:
             logger.warning("YouTube quota exhausted; skipping poll without retry | reason=%s", exc)
             return {

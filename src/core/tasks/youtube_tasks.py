@@ -31,7 +31,11 @@ async def poll_youtube_comments_task(self, channel_id: str | None = None):
 
         # Guard: skip polling if no OAuth tokens are stored
         oauth_service = container.oauth_token_service(session=session)
-        tokens = await oauth_service.get_tokens("google")
+        try:
+            tokens = await oauth_service.get_tokens("google")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("YouTube polling skipped: failed to load OAuth tokens | error=%s", exc)
+            tokens = None
         if not tokens:
             logger.info("YouTube polling skipped: no OAuth tokens found in storage.")
             return {"status": "skipped", "reason": "missing_auth", "video_count": 0, "new_comments": 0, "api_errors": 0}
@@ -46,6 +50,8 @@ async def poll_youtube_comments_task(self, channel_id: str | None = None):
                 task_id,
                 result.get("reason"),
             )
+        elif status == "auth_error":
+            logger.warning("YouTube auth invalid; skipping retries until user reconnects | task_id=%s", task_id)
         elif status == "error" and self.request.retries < self.max_retries:
             delay = get_retry_delay(self.request.retries)
             logger.warning(

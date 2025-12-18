@@ -126,7 +126,7 @@ services:
         condition: service_healthy
     networks:
       - instagram_network
-    command: sh -c "cd /app/src && python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} --concurrency=4 --without-gossip --without-mingle --without-heartbeat -Q llm_queue,instagram_queue"
+    command: sh -c "cd /app/src && python -c 'import celery_worker' && celery -A celery_worker worker --loglevel=${LOGS_LEVEL_CELERY:-${LOGS_LEVEL:-INFO}} --concurrency=4 --without-gossip --without-mingle --without-heartbeat -Q llm_queue,instagram_queue,youtube_queue"
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped

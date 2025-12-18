@@ -32,7 +32,7 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
             .order_by(OAuthToken.updated_at.desc())
         )
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def upsert(
         self,
@@ -43,7 +43,8 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
         refresh_token_encrypted: str,
         token_type: Optional[str],
         scope: Optional[str],
-        expires_at: Optional[datetime],
+        access_token_expires_at: Optional[datetime],
+        refresh_token_expires_at: Optional[datetime],
     ) -> OAuthToken:
         existing = await self.get_by_provider_account(provider, account_id)
         if existing:
@@ -51,7 +52,8 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
             existing.refresh_token_encrypted = refresh_token_encrypted
             existing.token_type = token_type
             existing.scope = scope
-            existing.expires_at = expires_at
+            existing.access_token_expires_at = access_token_expires_at
+            existing.refresh_token_expires_at = refresh_token_expires_at
             existing.updated_at = datetime.utcnow()
             await self.session.flush()
             return existing
@@ -63,7 +65,8 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
             refresh_token_encrypted=refresh_token_encrypted,
             token_type=token_type,
             scope=scope,
-            expires_at=expires_at,
+            access_token_expires_at=access_token_expires_at,
+            refresh_token_expires_at=refresh_token_expires_at,
         )
         self.session.add(record)
         await self.session.flush()

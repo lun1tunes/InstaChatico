@@ -14,6 +14,11 @@ try:  # pragma: no cover - import guard
     from google.auth.transport.requests import Request  # type: ignore
     from googleapiclient.discovery import build, Resource  # type: ignore
     from googleapiclient.errors import HttpError  # type: ignore
+    try:
+        from google.auth.exceptions import RefreshError  # type: ignore
+    except Exception:  # pragma: no cover - fallback
+        class RefreshError(Exception):  # type: ignore
+            ...
     _google_import_error: Exception | None = None
 except Exception as _exc:  # pragma: no cover - fallback for missing deps
     Credentials = None  # type: ignore
@@ -21,6 +26,7 @@ except Exception as _exc:  # pragma: no cover - fallback for missing deps
     Resource = Any  # type: ignore
     build = None  # type: ignore
     HttpError = Exception  # type: ignore
+    RefreshError = Exception  # type: ignore
     _google_import_error = _exc
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -100,7 +106,7 @@ class YouTubeService:
                 client_id=self.client_id,
                 client_secret=self.client_secret,
                 scopes=[YOUTUBE_SCOPE],
-                expiry=tokens.get("expires_at"),
+                expiry=tokens.get("access_token_expires_at") or tokens.get("expires_at"),
             )
 
         raise MissingYouTubeAuth("No YouTube OAuth tokens available. Complete Google OAuth first.")
@@ -119,6 +125,13 @@ class YouTubeService:
             try:
                 self._credentials.refresh(Request())
                 await self._persist_refreshed_tokens()
+            except RefreshError as exc:  # pragma: no cover - handled at runtime
+                msg = str(exc)
+                if "invalid_grant" in msg or "invalid_client" in msg:
+                    logger.warning("YouTube refresh token invalid or revoked; re-auth required. %s", msg)
+                    raise MissingYouTubeAuth("YouTube refresh token invalid or revoked; reconnect YouTube.") from exc
+                logger.error("Failed to refresh YouTube credentials: %s", exc, exc_info=True)
+                raise
             except Exception as exc:  # noqa: BLE001
                 logger.error("Failed to refresh YouTube credentials: %s", exc, exc_info=True)
                 raise
@@ -180,7 +193,7 @@ class YouTubeService:
                     provider="google",
                     account_id=self._account_id or "default",
                     access_token=self._credentials.token,
-                    expires_at=expires_at,
+                    access_token_expires_at=expires_at,
                     refresh_token=refresh_token,
                 )
         except Exception as exc:  # noqa: BLE001
@@ -369,6 +382,8 @@ class YouTubeService:
                 logger.error("YouTube API error: %s | status=%s", http_err, status)
                 if hasattr(http_err, "error_details") and http_err.error_details:
                     logger.error("YouTube error details: %s", http_err.error_details)
+                    if any(d.get("reason") in {"invalidGrant", "invalidCredentials"} for d in http_err.error_details if isinstance(d, dict)):
+                        raise MissingYouTubeAuth("YouTube credentials invalid; reconnect required.") from http_err
                     # Detect quota exhaustion explicitly
                     if any(d.get("reason") == "quotaExceeded" for d in http_err.error_details if isinstance(d, dict)):
                         raise QuotaExceeded("YouTube quota exceeded") from http_err

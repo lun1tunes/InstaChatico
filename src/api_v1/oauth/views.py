@@ -227,6 +227,16 @@ async def _store_tokens_impl(
 
     oauth_service: OAuthTokenService = container.oauth_token_service(session=session)
     try:
+        access_token_expires_at = (
+            payload.access_token_expires_at
+            if payload.access_token_expires_at is not None
+            else payload.expires_at
+        )
+        access_token_expires_in = (
+            payload.access_token_expires_in
+            if payload.access_token_expires_in is not None
+            else payload.expires_in
+        )
         stored = await oauth_service.store_encrypted_tokens(
             provider="google",  # internal canonical provider for YouTube tokens
             account_id=account_id,
@@ -234,8 +244,10 @@ async def _store_tokens_impl(
             refresh_token_encrypted=refresh_token_enc,
             token_type=payload.token_type,
             scope=scope_value,
-            expires_at=payload.expires_at,
-            expires_in=payload.expires_in,
+            access_token_expires_at=access_token_expires_at,
+            access_token_expires_in=access_token_expires_in,
+            refresh_token_expires_at=payload.refresh_token_expires_at,
+            refresh_token_expires_in=payload.refresh_token_expires_in,
         )
         # Ensure refresh token presence for offline access
         if not stored.get("has_refresh_token"):

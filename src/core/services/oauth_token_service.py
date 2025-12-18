@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Callable, Dict, Any
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -50,17 +50,44 @@ class OAuthTokenService:
             raise ValueError("Stored OAuth token cannot be decrypted. Check encryption key.") from exc
 
     @staticmethod
-    def _resolve_expires_at(expires_at: Optional[datetime], expires_in: Optional[int]) -> Optional[datetime]:
-        if expires_at:
-            # Normalize to naive UTC for storage (DB column is TIMESTAMP WITHOUT TIME ZONE)
-            if expires_at.tzinfo:
-                return expires_at.astimezone(tz=None).replace(tzinfo=None)
-            return expires_at
-        if expires_in:
+    def _normalize_db_datetime(value: Optional[datetime]) -> Optional[datetime]:
+        if not value:
+            return None
+        # DB column is TIMESTAMP WITHOUT TIME ZONE; store as naive UTC
+        if value.tzinfo:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    @classmethod
+    def _resolve_access_token_expires_at(
+        cls,
+        access_token_expires_at: Optional[datetime],
+        access_token_expires_in: Optional[int],
+    ) -> Optional[datetime]:
+        normalized = cls._normalize_db_datetime(access_token_expires_at)
+        if normalized:
+            return normalized
+        if access_token_expires_in is not None:
             try:
-                return datetime.utcnow() + timedelta(seconds=int(expires_in))
+                return datetime.utcnow() + timedelta(seconds=int(access_token_expires_in))
             except Exception as exc:  # noqa: BLE001
-                raise ValueError("Invalid expires_in value; expected integer seconds.") from exc
+                raise ValueError("Invalid access_token_expires_in value; expected integer seconds.") from exc
+        return None
+
+    @classmethod
+    def _resolve_refresh_token_expires_at(
+        cls,
+        refresh_token_expires_at: Optional[datetime],
+        refresh_token_expires_in: Optional[int],
+    ) -> Optional[datetime]:
+        normalized = cls._normalize_db_datetime(refresh_token_expires_at)
+        if normalized:
+            return normalized
+        if refresh_token_expires_in is not None:
+            try:
+                return datetime.utcnow() + timedelta(seconds=int(refresh_token_expires_in))
+            except Exception as exc:  # noqa: BLE001
+                raise ValueError("Invalid refresh_token_expires_in value; expected integer seconds.") from exc
         return None
 
     async def store_tokens(
@@ -85,8 +112,18 @@ class OAuthTokenService:
         if not access_token or not refresh_token:
             raise ValueError("Token response missing access_token or refresh_token")
 
-        expires_in = token_response.get("expires_in")
-        expires_at = self._resolve_expires_at(token_response.get("expires_at"), expires_in)
+        access_expires_in = token_response.get("access_token_expires_in")
+        if access_expires_in is None:
+            access_expires_in = token_response.get("expires_in")
+
+        access_expires_at_raw = token_response.get("access_token_expires_at")
+        if access_expires_at_raw is None:
+            access_expires_at_raw = token_response.get("expires_at")
+        access_expires_at = self._resolve_access_token_expires_at(access_expires_at_raw, access_expires_in)
+
+        refresh_expires_in = token_response.get("refresh_token_expires_in")
+        refresh_expires_at_raw = token_response.get("refresh_token_expires_at")
+        refresh_expires_at = self._resolve_refresh_token_expires_at(refresh_expires_at_raw, refresh_expires_in)
 
         encrypted_refresh = self._encrypt(refresh_token)
 
@@ -97,7 +134,8 @@ class OAuthTokenService:
             refresh_token_encrypted=encrypted_refresh,
             token_type=token_response.get("token_type"),
             scope=token_response.get("scope"),
-            expires_at=expires_at,
+            access_token_expires_at=access_expires_at,
+            refresh_token_expires_at=refresh_expires_at,
         )
 
         await self.session.commit()
@@ -105,7 +143,16 @@ class OAuthTokenService:
         return {
             "provider": record.provider,
             "account_id": record.account_id,
-            "expires_at": record.expires_at.isoformat() if record.expires_at else None,
+            "access_token_expires_at": (
+                record.access_token_expires_at.isoformat() if record.access_token_expires_at else None
+            ),
+            "refresh_token_expires_at": (
+                record.refresh_token_expires_at.isoformat() if record.refresh_token_expires_at else None
+            ),
+            # Backwards-compatible alias
+            "expires_at": (
+                record.access_token_expires_at.isoformat() if record.access_token_expires_at else None
+            ),
             "scope": record.scope,
             "token_type": record.token_type,
             "has_refresh_token": True,
@@ -120,8 +167,10 @@ class OAuthTokenService:
         refresh_token_encrypted: str,
         token_type: Optional[str] = None,
         scope: Optional[str] = None,
-        expires_at: Optional[datetime] = None,
-        expires_in: Optional[int] = None,
+        access_token_expires_at: Optional[datetime] = None,
+        access_token_expires_in: Optional[int] = None,
+        refresh_token_expires_at: Optional[datetime] = None,
+        refresh_token_expires_in: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Persist already-encrypted tokens (encrypted with the shared Fernet key).
@@ -136,8 +185,10 @@ class OAuthTokenService:
                 "refresh_token": refresh_token,
                 "token_type": token_type,
                 "scope": scope,
-                "expires_at": expires_at,
-                "expires_in": expires_in,
+                "access_token_expires_at": access_token_expires_at,
+                "access_token_expires_in": access_token_expires_in,
+                "refresh_token_expires_at": refresh_token_expires_at,
+                "refresh_token_expires_in": refresh_token_expires_in,
             },
         )
 
@@ -155,7 +206,10 @@ class OAuthTokenService:
             "refresh_token": self._decrypt(record.refresh_token_encrypted),
             "token_type": record.token_type,
             "scope": record.scope,
-            "expires_at": record.expires_at,
+            "access_token_expires_at": record.access_token_expires_at,
+            "refresh_token_expires_at": record.refresh_token_expires_at,
+            # Backwards-compatible alias
+            "expires_at": record.access_token_expires_at,
             "account_id": record.account_id,
         }
 
@@ -165,7 +219,7 @@ class OAuthTokenService:
         provider: str,
         account_id: str,
         access_token: str,
-        expires_at: Optional[datetime],
+        access_token_expires_at: Optional[datetime],
         refresh_token: Optional[str] = None,
     ) -> None:
         """
@@ -185,7 +239,7 @@ class OAuthTokenService:
         if record:
             record.access_token_encrypted = self._encrypt(access_token)
             record.refresh_token_encrypted = refresh_encrypted
-            record.expires_at = expires_at
+            record.access_token_expires_at = self._normalize_db_datetime(access_token_expires_at)
             record.updated_at = datetime.utcnow()
         else:
             self.session.add(
@@ -194,7 +248,7 @@ class OAuthTokenService:
                     account_id=account_id,
                     access_token_encrypted=self._encrypt(access_token),
                     refresh_token_encrypted=refresh_encrypted,
-                    expires_at=expires_at,
+                    access_token_expires_at=self._normalize_db_datetime(access_token_expires_at),
                 )
             )
         await self.session.commit()

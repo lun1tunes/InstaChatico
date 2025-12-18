@@ -16,7 +16,8 @@ class OAuthToken(Base):
     refresh_token_encrypted: Mapped[str] = mapped_column(String(2048), nullable=False)
     token_type: Mapped[str] = mapped_column(String(50), nullable=True)
     scope: Mapped[str] = mapped_column(String(1024), nullable=True)
-    expires_at: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
+    access_token_expires_at: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
+    refresh_token_expires_at: Mapped[datetime | None] = mapped_column(nullable=True, index=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
