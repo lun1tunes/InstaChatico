@@ -26,10 +26,11 @@ class ClassifyCommentUseCase:
         self,
         session: AsyncSession,
         classification_service: IClassificationService,
-        instagram_media_service: IMediaService,
-        youtube_media_service: IMediaService,
         comment_repository_factory: Callable[..., ICommentRepository],
         classification_repository_factory: Callable[..., IClassificationRepository],
+        instagram_media_service: IMediaService | None = None,
+        youtube_media_service: IMediaService | None = None,
+        media_service: IMediaService | None = None,
     ):
         """
         Initialize use case with dependencies.
@@ -45,8 +46,14 @@ class ClassifyCommentUseCase:
         self.comment_repo: ICommentRepository = comment_repository_factory(session=session)
         self.classification_repo: IClassificationRepository = classification_repository_factory(session=session)
         self.classification_service = classification_service
-        self.instagram_media_service = instagram_media_service
-        self.youtube_media_service = youtube_media_service
+
+        # Backward compatibility: allow single media_service for all platforms
+        if media_service is not None:
+            self.instagram_media_service = media_service
+            self.youtube_media_service = media_service
+        else:
+            self.instagram_media_service = instagram_media_service
+            self.youtube_media_service = youtube_media_service
 
     @handle_task_errors()
     async def execute(self, comment_id: str, retry_count: int = 0) -> Dict[str, Any]:
@@ -65,6 +72,14 @@ class ClassifyCommentUseCase:
 
         # 2. Ensure media exists
         media_service = self._select_media_service(comment)
+        if media_service is None:
+            logger.error(
+                "No media service configured | comment_id=%s | media_id=%s",
+                comment_id,
+                comment.media_id,
+            )
+            return {"status": "error", "reason": "media_service_unavailable"}
+
         media = await media_service.get_or_create_media(comment.media_id, self.session)
         if not media:
             logger.error(
@@ -256,7 +271,7 @@ class ClassifyCommentUseCase:
         platform = getattr(comment, "platform", None) or ""
         platform = platform.lower()
         if platform == "youtube":
-            return self.youtube_media_service
+            return self.youtube_media_service or self.instagram_media_service
 
         raw_kind = ""
         try:
@@ -265,9 +280,9 @@ class ClassifyCommentUseCase:
             raw_kind = ""
 
         if isinstance(raw_kind, str) and raw_kind.lower().startswith("youtube#"):
-            return self.youtube_media_service
+            return self.youtube_media_service or self.instagram_media_service
 
-        return self.instagram_media_service
+        return self.instagram_media_service or self.youtube_media_service
 
 
 def _safe_int(value) -> Optional[int]:

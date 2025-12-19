@@ -292,6 +292,7 @@ async def integration_environment(test_engine):
     original_json_api_secret = settings.json_api.secret_key
     original_json_api_algorithm = settings.json_api.algorithm
     original_json_api_expire = settings.json_api.expire_minutes
+    original_oauth_key = settings.oauth_encryption_key
 
     settings.app_secret = "test_app_secret"
     settings.app_webhook_verify_token = "verify_token"
@@ -302,6 +303,7 @@ async def integration_environment(test_engine):
     settings.json_api.secret_key = "test-json-secret"
     settings.json_api.algorithm = "HS256"
     settings.json_api.expire_minutes = 60
+    settings.oauth_encryption_key = "1p_UUU0j5OJ9SxWwtUWFI7Ak4luuL8EA3twJY86W0Z0="
 
     reset_container()
     container = get_container()
@@ -367,6 +369,7 @@ async def integration_environment(test_engine):
         settings.json_api.secret_key = original_json_api_secret
         settings.json_api.algorithm = original_json_api_algorithm
         settings.json_api.expire_minutes = original_json_api_expire
+        settings.oauth_encryption_key = original_oauth_key
 
         if original_development_mode is None:
             os.environ.pop("DEVELOPMENT_MODE", None)

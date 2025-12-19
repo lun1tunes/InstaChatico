@@ -45,11 +45,13 @@ class InstagramGraphAPIService:
         session: Optional[aiohttp.ClientSession] = None,
         rate_limiter: Optional[RateLimiterProtocol] = None,
     ):
-        self.access_token = access_token or settings.instagram.access_token
+        resolved_token = access_token if access_token is not None else settings.instagram.access_token
+        if not resolved_token:
+            raise ValueError("Instagram access token is required")
+
+        self.access_token = resolved_token
         self.base_url = f"https://graph.instagram.com/{settings.instagram.api_version}"
         self._enabled = bool(self.access_token)
-        if not self._enabled:
-            logger.info("InstagramGraphAPIService initialized without access token; service is disabled")
 
         self._session = session
         self._should_close_session = session is None

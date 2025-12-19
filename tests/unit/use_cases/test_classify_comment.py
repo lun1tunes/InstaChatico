@@ -155,6 +155,41 @@ class TestClassifyCommentUseCase:
         assert result["status"] == "error"
         assert result["reason"] == "media_unavailable"
 
+    async def test_select_media_service_uses_unified_media_service(self, db_session):
+        """When media_service is provided, it should be used for all platforms."""
+        unified_media_service = MagicMock()
+
+        use_case = ClassifyCommentUseCase(
+            session=db_session,
+            classification_service=MagicMock(),
+            media_service=unified_media_service,
+            comment_repository_factory=lambda session: MagicMock(),
+            classification_repository_factory=lambda session: MagicMock(),
+        )
+
+        youtube_comment = SimpleNamespace(platform="youtube", raw_data={}, media_id="media_yt")
+        instagram_comment = SimpleNamespace(platform="instagram", raw_data={}, media_id="media_ig")
+
+        assert use_case._select_media_service(youtube_comment) is unified_media_service
+        assert use_case._select_media_service(instagram_comment) is unified_media_service
+
+    async def test_select_media_service_falls_back_when_youtube_missing(self, db_session):
+        """Fallback to Instagram media service if YouTube service is absent."""
+        instagram_media_service = MagicMock()
+
+        use_case = ClassifyCommentUseCase(
+            session=db_session,
+            classification_service=MagicMock(),
+            instagram_media_service=instagram_media_service,
+            youtube_media_service=None,
+            comment_repository_factory=lambda session: MagicMock(),
+            classification_repository_factory=lambda session: MagicMock(),
+        )
+
+        youtube_comment = SimpleNamespace(platform="youtube", raw_data={}, media_id="media_yt")
+
+        assert use_case._select_media_service(youtube_comment) is instagram_media_service
+
     async def test_execute_waiting_for_media_context(
         self, db_session, comment_factory, media_factory
     ):
