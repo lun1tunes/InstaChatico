@@ -9,6 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from core.config import settings
+from core.services.youtube_service import MissingYouTubeAuth
 from core.use_cases.poll_youtube_comments import PollYouTubeCommentsUseCase
 
 
@@ -64,3 +65,28 @@ class TestPollYouTubeCommentsUseCase:
 
         assert result["status"] == "success"
         assert result["video_count"] == 1
+
+    async def test_execute_returns_auth_error_when_tokens_missing(
+        self,
+        db_session,
+    ):
+        youtube_service = MagicMock()
+        youtube_service.get_account_id = AsyncMock(return_value=None)
+        youtube_service.list_channel_videos = AsyncMock(side_effect=MissingYouTubeAuth("missing"))
+
+        use_case = PollYouTubeCommentsUseCase(
+            session=db_session,
+            youtube_service=youtube_service,
+            youtube_media_service=MagicMock(),
+            task_queue=MagicMock(),
+            comment_repository_factory=lambda session: MagicMock(),
+            media_repository_factory=lambda session: MagicMock(),
+            classification_repository_factory=lambda session: MagicMock(),
+        )
+
+        result = await use_case.execute()
+
+        youtube_service.list_channel_videos.assert_awaited_once()
+        assert result["status"] == "auth_error"
+        assert result["video_count"] == 0
+        assert result["new_comments"] == 0

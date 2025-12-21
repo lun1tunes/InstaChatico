@@ -263,3 +263,12 @@ class OAuthTokenService:
     async def get_default_account_id(self, provider: str) -> Optional[str]:
         record = await self.repo.get_latest_by_provider(provider)
         return record.account_id if record else None
+
+    async def delete_tokens(self, *, provider: str, account_id: str) -> int:
+        deleted = await self.repo.delete_by_provider_account(provider, account_id)
+        try:
+            await self.session.commit()
+        except Exception as exc:  # noqa: BLE001
+            await self.session.rollback()
+            raise
+        return deleted

@@ -30,6 +30,6 @@ class InstrumentTokenUsage(Base):
     tokens_out: Mapped[Optional[int]] = mapped_column(Integer)
     comment_id: Mapped[Optional[str]] = mapped_column(
         String(100),
-        ForeignKey("instagram_comments.id", ondelete="SET NULL"),
+        ForeignKey("comments.id", ondelete="SET NULL"),
     )
     details: Mapped[Optional[dict]] = mapped_column(JSONB)

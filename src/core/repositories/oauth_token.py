@@ -71,3 +71,11 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
         self.session.add(record)
         await self.session.flush()
         return record
+
+    async def delete_by_provider_account(self, provider: str, account_id: str) -> int:
+        record = await self.get_by_provider_account(provider, account_id)
+        if not record:
+            return 0
+        await self.session.delete(record)
+        await self.session.flush()
+        return 1

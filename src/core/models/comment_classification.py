@@ -22,9 +22,7 @@ class CommentClassification(Base):
     __tablename__ = "comments_classification"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    comment_id: Mapped[str] = mapped_column(
-        ForeignKey("instagram_comments.id", ondelete="CASCADE"), unique=True, index=True
-    )
+    comment_id: Mapped[str] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"), unique=True, index=True)
 
     processing_status: Mapped[ProcessingStatus] = mapped_column(
         SQLEnum(ProcessingStatus, name="processingstatus"), default=ProcessingStatus.PENDING

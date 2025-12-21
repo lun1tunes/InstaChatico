@@ -19,7 +19,13 @@ from core.config import settings
 from core.container import get_container, Container
 from core.models import db_helper
 from core.services.oauth_token_service import OAuthTokenService
-from .schemas import AuthUrlResponse, AccountStatusResponse, EncryptedTokenPayload, TokenStoreResponse
+from .schemas import (
+    AuthUrlResponse,
+    AccountStatusResponse,
+    EncryptedTokenPayload,
+    TokenDeletePayload,
+    TokenStoreResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +297,43 @@ async def store_encrypted_tokens_root(
     return await _store_tokens_impl(payload, session, container, x_internal_secret, authorization)
 
 
+@tokens_router.delete("/oauth/tokens")
+async def delete_tokens_root(
+    payload: TokenDeletePayload,
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    """Delete stored encrypted tokens via /oauth/tokens (mapper disconnect path)."""
+    logger.debug(
+        "Received internal token delete | has_auth_header=%s | has_internal_header=%s",
+        bool(authorization),
+        bool(x_internal_secret),
+    )
+    _authorize_internal_request(authorization=authorization, x_internal_secret=x_internal_secret)
+
+    provider = (payload.provider or "").strip().lower()
+    if provider != "youtube":
+        raise HTTPException(status_code=400, detail="provider must be 'youtube'")
+    account_id = (payload.account_id or "").strip()
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id is required")
+
+    logger.info("Internal token delete requested | provider=%s | account_id=%s", provider, account_id)
+
+    oauth_service: OAuthTokenService = container.oauth_token_service(session=session)
+    deleted = await oauth_service.delete_tokens(provider="google", account_id=account_id)
+
+    logger.info(
+        "Internal token delete completed | provider=%s | account_id=%s | deleted=%s",
+        provider,
+        account_id,
+        deleted,
+    )
+    return {"status": "ok", "account_id": account_id, "deleted": deleted}
+
+
 def _authorize_internal_request(
     *,
     authorization: str | None,
@@ -349,6 +392,19 @@ def _validate_internal_jwt(token: str) -> Dict[str, Any]:
         raise HTTPException(status_code=401, detail="Unauthorized") from exc
 
     if payload.get("iss") != "chatico-mapper":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    raw_scope = payload.get("scope")
+    if raw_scope is None:
+        raw_scope = payload.get("scopes")
+
+    scopes: list[str] = []
+    if isinstance(raw_scope, str):
+        scopes = [part.strip().lower() for part in raw_scope.replace(",", " ").split() if part.strip()]
+    elif isinstance(raw_scope, (list, tuple, set)):
+        scopes = [str(item).strip().lower() for item in raw_scope if str(item).strip()]
+
+    if "internal" not in scopes:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     return payload

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class InstagramComment(Base):
-    __tablename__ = "instagram_comments"
+    __tablename__ = "comments"
 
     id: Mapped[str] = mapped_column(primary_key=True)
     media_id: Mapped[str] = mapped_column(String(100), ForeignKey("media.id"), comment="Foreign key to media table")

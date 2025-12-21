@@ -42,3 +42,8 @@ class TokenStoreResponse(BaseModel):
     scope: Optional[str] = None
     token_type: Optional[str] = None
     has_refresh_token: bool
+
+
+class TokenDeletePayload(BaseModel):
+    provider: str
+    account_id: str

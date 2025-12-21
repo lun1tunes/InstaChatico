@@ -187,16 +187,17 @@ class PollYouTubeCommentsUseCase:
 
         published_at_str = top_snippet.get("publishedAt")
         published_at = _parse_datetime(published_at_str) if published_at_str else None
-        # Strictly older? stop; equal timestamps may occur due to rounding, so allow processing when equal
-        if latest_seen and published_at and published_at < latest_seen:
-            return True, 0
+        # Track whether everything in this thread is older than our thresholds to decide early exit.
+        all_old = False
 
-        # Apply cutoff only on first ingest (when we have no latest_seen). If we already have comments,
-        # rely on latest_seen to avoid skipping legitimate new comments posted after a long gap.
-        within_cutoff = (
-            not latest_seen
-            and (not cutoff_created_at or (published_at and published_at >= cutoff_created_at))
-        ) or latest_seen is not None
+        if latest_seen:
+            # For subsequent polls, only treat the top comment as within range if it is newer/equal.
+            within_cutoff = not published_at or published_at >= latest_seen
+            if published_at and published_at < latest_seen:
+                all_old = True
+        else:
+            # Apply cutoff only on first ingest (when we have no latest_seen).
+            within_cutoff = not cutoff_created_at or (published_at and published_at >= cutoff_created_at)
 
         if top_id and within_cutoff:
             created = await self._persist_comment(
@@ -207,13 +208,14 @@ class PollYouTubeCommentsUseCase:
                 raw=top,
             )
             added += int(created)
+            if created:
+                all_old = False
         elif top_id:
-            # Older than cutoff; stop early to avoid processing history
-            return True, added
+            # Older than cutoff; note it as old but still inspect replies
+            all_old = True
 
         # Replies (if expanded)
         replies = thread.get("replies", {}).get("comments", []) or []
-        reply_stop = False
         for reply in replies:
             reply_snippet = reply.get("snippet", {})
             reply_id = reply.get("id")
@@ -221,10 +223,8 @@ class PollYouTubeCommentsUseCase:
                 reply_published_str = reply_snippet.get("publishedAt")
                 reply_published = _parse_datetime(reply_published_str) if reply_published_str else None
                 if latest_seen and reply_published and reply_published < latest_seen:
-                    reply_stop = True
                     continue
                 if not latest_seen and cutoff_created_at and reply_published and reply_published < cutoff_created_at:
-                    reply_stop = True
                     continue
                 created = await self._persist_comment(
                     comment_id=reply_id,
@@ -234,6 +234,8 @@ class PollYouTubeCommentsUseCase:
                     raw=reply,
                 )
                 added += int(created)
+                if created:
+                    all_old = False
 
         # If API didn't return all replies (common), fetch remaining via comments.list
         if top_id and total_reply_count > len(replies):
@@ -245,9 +247,11 @@ class PollYouTubeCommentsUseCase:
             )
             added += fetched
             stop_early = stop_early or stop_due_cutoff
+            if fetched:
+                all_old = False
 
-        # Propagate stop if inline replies indicated historical data only
-        return stop_early or reply_stop, added
+        # Stop paginating threads only if everything we saw was old
+        return (stop_early or all_old), added
 
     async def _fetch_additional_replies(
         self,
