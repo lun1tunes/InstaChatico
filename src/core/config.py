@@ -189,6 +189,8 @@ class YouTubeSettings(BaseModel):
     channel_id: str = Field(default_factory=lambda: os.getenv("YOUTUBE_CHANNEL_ID", "").strip())
     poll_interval_seconds: int = Field(default_factory=lambda: int(os.getenv("YOUTUBE_POLL_INTERVAL_SECONDS", "30")))
     poll_max_videos: int = Field(default_factory=lambda: int(os.getenv("YOUTUBE_POLL_MAX_VIDEOS", "10")))
+    poll_lock_ttl_seconds: int = Field(default_factory=lambda: int(os.getenv("YOUTUBE_POLL_LOCK_TTL_SECONDS", "30")))
+    media_refresh_interval_seconds: int = Field(default_factory=lambda: int(os.getenv("YOUTUBE_MEDIA_REFRESH_INTERVAL_SECONDS", "21600")))
     rate_limit_redis_url: str = Field(default_factory=lambda: os.getenv("YOUTUBE_RATE_LIMIT_REDIS_URL", "redis://localhost:6379/2"))
     redirect_uri: str = Field(default_factory=lambda: os.getenv("YOUTUBE_REDIRECT_URI", "http://localhost:5291/api/v1/auth/google/callback").strip())
 
@@ -210,6 +212,8 @@ class YouTubeSettings(BaseModel):
             )
         if not self.refresh_token:
             logger.info("YOUTUBE_REFRESH_TOKEN not set; relying solely on stored OAuth tokens.")
+        if self.poll_lock_ttl_seconds < self.poll_interval_seconds:
+            self.poll_lock_ttl_seconds = self.poll_interval_seconds
         return self
 
 

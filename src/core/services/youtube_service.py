@@ -92,24 +92,26 @@ class YouTubeService:
         только при наличии токенов в нашей базе (OAuthTokenService). Поэтому здесь
         нет запасного варианта с переменными окружения.
         """
-        _ensure_google_imports()
-        assert Credentials is not None  # for type checkers
-
         tokens = await self._load_tokens()
         if tokens:
             if not self._account_id:
                 self._account_id = tokens.get("account_id")
-            return Credentials(
-                tokens.get("access_token"),
-                refresh_token=tokens.get("refresh_token"),
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id=self.client_id,
-                client_secret=self.client_secret,
-                scopes=[YOUTUBE_SCOPE],
-                expiry=tokens.get("access_token_expires_at") or tokens.get("expires_at"),
-            )
+        else:
+            raise MissingYouTubeAuth("No YouTube OAuth tokens available. Complete Google OAuth first.")
 
-        raise MissingYouTubeAuth("No YouTube OAuth tokens available. Complete Google OAuth first.")
+        _ensure_google_imports()
+        if Credentials is None:  # pragma: no cover - import guard
+            raise ImportError("Google API client libraries are not installed.")
+
+        return Credentials(
+            tokens.get("access_token"),
+            refresh_token=tokens.get("refresh_token"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            scopes=[YOUTUBE_SCOPE],
+            expiry=tokens.get("access_token_expires_at") or tokens.get("expires_at"),
+        )
 
     async def _get_youtube(self) -> Resource:
         _ensure_google_imports()
@@ -362,7 +364,7 @@ class YouTubeService:
             return (
                 youtube.videos()
                 .list(
-                    part="snippet,statistics,contentDetails",
+                    part="snippet,statistics",
                     id=video_id,
                 )
                 .execute()

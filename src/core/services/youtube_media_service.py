@@ -8,6 +8,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.interfaces.services import IYouTubeService
 from core.models import Media
 from core.repositories.media import MediaRepository
@@ -40,7 +41,11 @@ class YouTubeMediaService:
     async def get_or_create_video(self, video_id: str, session: AsyncSession) -> Optional[Media]:
         repo = MediaRepository(session)
         existing = await repo.get_by_id(video_id)
-        # Always fetch latest details to refresh legacy records (title/description/etc.)
+        # Refresh only if stale to minimize YouTube quota usage.
+        if existing and existing.updated_at:
+            age_seconds = (now_db_utc() - existing.updated_at).total_seconds()
+            if age_seconds < settings.youtube.media_refresh_interval_seconds:
+                return existing
 
         try:
             details = await self.youtube_service.get_video_details(video_id)
