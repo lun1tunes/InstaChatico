@@ -87,8 +87,9 @@ class PollYouTubeCommentsUseCase:
 
         new_comments = 0
         api_errors = 0
-        # Any comment older than this will be ignored (prevents ingesting historical backlog on first connect)
-        cutoff_created_at = poll_started - timedelta(seconds=settings.youtube.poll_interval_seconds)
+        # Any comment older than this will be ignored (prevents ingesting deep history on first connect)
+        # Use a generous backfill window to avoid missing real-time comments when polling is delayed.
+        cutoff_created_at = poll_started - timedelta(seconds=settings.youtube.poll_backfill_seconds)
         for video_id in videos:
             media = await self.youtube_media_service.get_or_create_video(video_id, self.session)
             if not media:
