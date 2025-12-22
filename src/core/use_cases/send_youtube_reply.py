@@ -111,7 +111,6 @@ class SendYouTubeReplyUseCase:
                 answer_record.reply_id,
                 answer_record.reply_sent_at.isoformat() if answer_record.reply_sent_at else None,
             )
-            await self.session.rollback()
             return {
                 "status": "skipped",
                 "reason": "reply_already_sent",
