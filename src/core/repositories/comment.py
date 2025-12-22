@@ -213,8 +213,15 @@ class CommentRepository(BaseRepository[InstagramComment]):
 
         return len(comments)
 
-    async def get_latest_comment_timestamp(self, media_id: str) -> Optional[datetime]:
-        """Return latest created_at for a media/video or None if none exist."""
+    async def get_latest_comment_timestamp(
+        self,
+        media_id: str,
+        *,
+        platform: Optional[str] = None,
+    ) -> Optional[datetime]:
+        """Return latest created_at for a media/video (optionally scoped by platform)."""
         stmt = select(func.max(InstagramComment.created_at)).where(InstagramComment.media_id == media_id)
+        if platform:
+            stmt = stmt.where(InstagramComment.platform == platform)
         result = await self.session.execute(stmt)
         return result.scalar()

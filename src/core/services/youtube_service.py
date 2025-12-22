@@ -290,7 +290,7 @@ class YouTubeService:
         self,
         video_id: str,
         page_token: Optional[str] = None,
-        max_results: int = 50,
+        max_results: int = 100,
         order: str = "time",
     ) -> dict:
         """Fetch top-level comment threads (includes replies summary)."""

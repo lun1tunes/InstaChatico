@@ -50,14 +50,21 @@ class SendYouTubeReplyUseCase:
             logger.error("Comment not found | comment_id=%s | operation=send_youtube_reply", comment_id)
             return {"status": "error", "reason": f"Comment {comment_id} not found"}
 
-        # Safety: never reply to replies (prevents responding to our own replies)
-        if comment.parent_id:
-            logger.info(
-                "Skipping reply because target comment is a reply | comment_id=%s | parent_id=%s",
+        # Ensure we only call YouTube APIs for YouTube comments.
+        platform = (getattr(comment, "platform", "") or "").lower()
+        raw_kind = ""
+        try:
+            raw_kind = (comment.raw_data or {}).get("kind", "")
+        except Exception:
+            raw_kind = ""
+        is_youtube = platform == "youtube" or (isinstance(raw_kind, str) and raw_kind.lower().startswith("youtube#"))
+        if not is_youtube:
+            logger.error(
+                "Invalid platform for YouTube reply | comment_id=%s | platform=%s",
                 comment_id,
-                comment.parent_id,
+                platform or "unknown",
             )
-            return {"status": "skipped", "reason": "target_is_reply"}
+            return {"status": "error", "reason": "comment_not_youtube"}
 
         # Safety: avoid replying to our own channel's comments
         author_channel_id = None
@@ -96,8 +103,29 @@ class SendYouTubeReplyUseCase:
         if not answer_record:
             answer_record = await self.answer_repo.create_for_comment(comment_id)
 
+        # Avoid duplicate replies for the same comment (idempotency)
+        if answer_record.reply_sent and answer_record.reply_id:
+            logger.info(
+                "Reply already sent | comment_id=%s | reply_id=%s | sent_at=%s",
+                comment_id,
+                answer_record.reply_id,
+                answer_record.reply_sent_at.isoformat() if answer_record.reply_sent_at else None,
+            )
+            await self.session.rollback()
+            return {
+                "status": "skipped",
+                "reason": "reply_already_sent",
+                "reply_id": answer_record.reply_id,
+                "reply_sent_at": answer_record.reply_sent_at.isoformat() if answer_record.reply_sent_at else None,
+            }
+
+        # YouTube replies are always attached to the top-level comment in the thread.
+        # When the triggering comment is itself a reply, use its parent_id (top-level comment id)
+        # so we stay inside the same commentThread.
+        target_parent_id = comment.parent_id or comment_id
+
         try:
-            result = await self.youtube_service.reply_to_comment(parent_id=comment_id, text=reply_text)
+            result = await self.youtube_service.reply_to_comment(parent_id=target_parent_id, text=reply_text)
         except Exception as exc:  # noqa: BLE001
             logger.error("YouTube reply failed | comment_id=%s | error=%s", comment_id, exc, exc_info=True)
             return {"status": "error", "reason": str(exc)}

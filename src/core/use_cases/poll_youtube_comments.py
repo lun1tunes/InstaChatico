@@ -6,10 +6,12 @@ import logging
 from datetime import datetime, timedelta
 from typing import Callable, Optional, Sequence
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.interfaces.services import IYouTubeService
+from core.models.question_answer import QuestionAnswer
 from core.repositories.comment import CommentRepository
 from core.repositories.media import MediaRepository
 from core.repositories.classification import ClassificationRepository
@@ -50,6 +52,8 @@ class PollYouTubeCommentsUseCase:
         self.comment_repo = comment_repository_factory(session=session)
         self.media_repo = media_repository_factory(session=session)
         self.classification_repo = classification_repository_factory(session=session)
+        self._my_channel_id: str | None = None
+        self._known_reply_ids: set[str] = set()
 
     async def execute(
         self,
@@ -59,6 +63,9 @@ class PollYouTubeCommentsUseCase:
     ) -> dict:
         """Poll comments for provided videos or latest channel uploads."""
         poll_started = now_db_utc()
+        # Reset per-run caches so failures don't leave stale filters.
+        self._my_channel_id = None
+        self._known_reply_ids = set()
         try:
             videos = list(video_ids) if video_ids else await self._fetch_recent_video_ids(channel_id, page_token)
         except MissingYouTubeAuth as exc:
@@ -84,6 +91,10 @@ class PollYouTubeCommentsUseCase:
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to fetch video list | error=%s", exc)
             return {"status": "error", "reason": str(exc)}
+
+        # Cache our channel id and known bot reply ids so we don't ingest/answer our own replies.
+        self._my_channel_id = await self._resolve_my_channel_id()
+        self._known_reply_ids = await self._load_known_reply_ids(videos)
 
         new_comments = 0
         api_errors = 0
@@ -148,10 +159,46 @@ class PollYouTubeCommentsUseCase:
                 ids.append(video_id)
         return ids
 
+    async def _resolve_my_channel_id(self) -> str | None:
+        """Resolve and cache the authenticated channel id (best-effort)."""
+        if hasattr(self.youtube_service, "get_account_id"):
+            try:
+                return await self.youtube_service.get_account_id()  # type: ignore[attr-defined]
+            except Exception:
+                return None
+        return None
+
+    async def _load_known_reply_ids(self, video_ids: Sequence[str]) -> set[str]:
+        """
+        Load reply IDs we've already sent for the target videos.
+
+        This prevents ingesting our own bot replies (which would pollute classification/answer flows).
+        """
+        if not video_ids:
+            return set()
+
+        try:
+            stmt = (
+                select(QuestionAnswer.reply_id)
+                .join(InstagramComment, InstagramComment.id == QuestionAnswer.comment_id)
+                .where(
+                    InstagramComment.media_id.in_(list(video_ids)),
+                    InstagramComment.platform == "youtube",
+                    QuestionAnswer.reply_id.is_not(None),
+                    QuestionAnswer.reply_sent.is_(True),
+                    QuestionAnswer.is_deleted.is_(False),
+                )
+            )
+            result = await self.session.execute(stmt)
+            return {rid for rid in result.scalars().all() if rid}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to load known YouTube reply ids | error=%s", exc)
+            return set()
+
     async def _process_video_comments(self, video_id: str, cutoff_created_at: datetime) -> int:
         page_token = None
         added = 0
-        latest_seen = await self.comment_repo.get_latest_comment_timestamp(video_id)
+        latest_seen = await self.comment_repo.get_latest_comment_timestamp(video_id, platform="youtube")
         while True:
             resp = await self.youtube_service.list_comment_threads(video_id=video_id, page_token=page_token)
             threads = resp.get("items", [])
@@ -230,7 +277,7 @@ class PollYouTubeCommentsUseCase:
                     comment_id=reply_id,
                     video_id=video_id,
                     snippet=reply_snippet,
-                    parent_id=top_id,
+                    parent_id=top_id or reply_snippet.get("parentId"),
                     raw=reply,
                 )
                 added += int(created)
@@ -311,14 +358,27 @@ class PollYouTubeCommentsUseCase:
         parent_id: Optional[str],
         raw: dict,
     ) -> bool:
-        existing = await self.comment_repo.get_by_id(comment_id)
-        if existing:
+        # Skip our own replies/comments (prevents bot-loop ingestion and keeps conversation clean)
+        if self._known_reply_ids and comment_id in self._known_reply_ids:
+            logger.debug("Skipping known bot reply from poll | comment_id=%s", comment_id)
             return False
 
         author_channel_id = None
         author_channel_obj = snippet.get("authorChannelId") or {}
         if isinstance(author_channel_obj, dict):
             author_channel_id = author_channel_obj.get("value")
+
+        if self._my_channel_id and author_channel_id and self._my_channel_id == author_channel_id:
+            logger.debug(
+                "Skipping own-channel comment from poll | comment_id=%s | channel_id=%s",
+                comment_id,
+                self._my_channel_id,
+            )
+            return False
+
+        existing = await self.comment_repo.get_by_id(comment_id)
+        if existing:
+            return False
 
         new_comment = InstagramComment(
             id=comment_id,

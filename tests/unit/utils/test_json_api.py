@@ -83,9 +83,18 @@ def test_serialize_media_returns_dto():
 
     assert isinstance(dto, MediaDTO)
     assert dto.id == media.id
+    assert dto.platform == "instagram"  # Default platform
     assert dto.type == 1  # IMAGE
     assert dto.posted_at is not None
     assert dto.is_processing_enabled is True
+
+
+def test_serialize_media_detects_youtube_platform():
+    media = _build_media()
+    media.raw_data = {"kind": "youtube#video"}
+    dto = serialize_media(media)
+
+    assert dto.platform == "youtube"
 
 
 def test_serialize_comment_with_relations():

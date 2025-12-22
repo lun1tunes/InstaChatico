@@ -1,6 +1,7 @@
 {
   "MediaDTO": [
     "id",
+    "platform",
     "permalink",
     "caption",
     "url",

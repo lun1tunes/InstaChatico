@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator, ConfigDict
 
@@ -100,6 +100,7 @@ class MediaQuickStats(BaseModel):
 
 class MediaDTO(BaseModel):
     id: str
+    platform: Literal["instagram", "youtube"] = Field(..., description="Platform where the media is hosted")
     permalink: Optional[str] = None
     caption: Optional[str] = None
     url: Optional[str] = None

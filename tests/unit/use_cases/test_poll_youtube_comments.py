@@ -90,3 +90,49 @@ class TestPollYouTubeCommentsUseCase:
         assert result["status"] == "auth_error"
         assert result["video_count"] == 0
         assert result["new_comments"] == 0
+
+    async def test_persist_thread_uses_reply_parent_id_when_top_missing(
+        self,
+        db_session,
+    ):
+        youtube_service = MagicMock()
+        use_case = PollYouTubeCommentsUseCase(
+            session=db_session,
+            youtube_service=youtube_service,
+            youtube_media_service=MagicMock(),
+            task_queue=MagicMock(),
+            comment_repository_factory=lambda session: MagicMock(),
+            media_repository_factory=lambda session: MagicMock(),
+            classification_repository_factory=lambda session: MagicMock(),
+        )
+
+        use_case._persist_comment = AsyncMock(return_value=True)
+
+        thread = {
+            "snippet": {"totalReplyCount": 1},
+            "replies": {
+                "comments": [
+                    {
+                        "id": "reply_1",
+                        "snippet": {
+                            "parentId": "top_123",
+                            "publishedAt": "2024-01-01T00:00:00Z",
+                            "textOriginal": "reply text",
+                        },
+                    }
+                ]
+            },
+        }
+
+        stop_early, created = await use_case._persist_thread(
+            thread=thread,
+            video_id="video_1",
+            latest_seen=None,
+            cutoff_created_at=None,
+        )
+
+        use_case._persist_comment.assert_awaited_once()
+        kwargs = use_case._persist_comment.await_args.kwargs
+        assert kwargs["parent_id"] == "top_123"
+        assert stop_early is False
+        assert created == 1

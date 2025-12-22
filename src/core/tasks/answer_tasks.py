@@ -64,9 +64,15 @@ async def generate_answer_task(self, comment_id: str):
                         raw_kind = ""
                     is_youtube = platform == "youtube" or (isinstance(raw_kind, str) and raw_kind.startswith("youtube#"))
 
-                    # Skip replying to replies (avoid replying to our own answers) for all platforms
-                    if comment.parent_id:
-                        logger.info("Skipping reply for nested comment | comment_id=%s | parent_id=%s", comment_id, comment.parent_id)
+                    # Skip replying to nested comments for Instagram only.
+                    # YouTube conversations happen inside comment threads (replies), so replies must be allowed.
+                    if comment.parent_id and not is_youtube:
+                        logger.info(
+                            "Skipping reply for nested comment | comment_id=%s | parent_id=%s | platform=%s",
+                            comment_id,
+                            comment.parent_id,
+                            platform,
+                        )
                         return result
 
                     if is_youtube:
