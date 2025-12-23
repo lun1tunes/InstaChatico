@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, List, Literal, Optional
+from typing import Any, List, Optional
 
 from api_v1.comments.schemas import (
     AnswerDTO,
@@ -103,20 +103,13 @@ def processing_status_code_to_enum(code: int) -> Optional[ProcessingStatus]:
     return PROCESSING_STATUS_CODE_TO_ENUM.get(code)
 
 
-def detect_media_platform(media: Media) -> Literal["instagram", "youtube"]:
-    """Detect the platform (instagram or youtube) from media data."""
-    explicit = (getattr(media, "platform", None) or "").lower()
-    if explicit in ("instagram", "youtube"):
-        return explicit  # type: ignore[return-value]
-    # Default to instagram if not YouTube
-    return "instagram"
-
-
 def serialize_media(media: Media, stats: Optional[MediaQuickStats] = None) -> MediaDTO:
     media_type = (media.media_type or "").upper()
     type_code = MEDIA_TYPE_CODES.get(media_type)
     children = media.children_media_urls or []
-    platform = detect_media_platform(media)
+    platform = (getattr(media, "platform", None) or "instagram").lower()
+    if platform not in ("instagram", "youtube"):
+        platform = "instagram"
     subtitles = media.subtitles if platform == "youtube" else None
     return MediaDTO(
         id=media.id,

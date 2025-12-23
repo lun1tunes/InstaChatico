@@ -53,6 +53,8 @@ from core.utils.time import now_db_utc
 from core.use_cases.proxy_media_image import MediaImageProxyError
 from core.use_cases.replace_answer import ReplaceAnswerError
 from core.use_cases.create_manual_answer import ManualAnswerCreateError
+from core.use_cases.create_manual_youtube_answer import ManualYouTubeAnswerCreateError
+from core.use_cases.replace_youtube_answer import ReplaceYouTubeAnswerError
 from .schemas import (
     AnswerCreateRequest,
     AnswerUpdateRequest,
@@ -568,8 +570,18 @@ async def delete_comment(
     comment_id: str = Path(..., alias="id"),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_by_id(comment_id)
+    if not comment:
+        raise JsonApiError(404, 4041, "Comment not found")
+
+    platform = (getattr(comment, "platform", None) or "").lower()
     container = get_container()
-    use_case: DeleteCommentUseCase = container.delete_comment_use_case(session=session)
+    if platform == "youtube":
+        use_case = container.delete_youtube_comment_use_case(session=session)
+    else:
+        use_case = container.delete_comment_use_case(session=session)
+
     result = await use_case.execute(comment_id, initiator="manual")
     status = result.get("status")
     if status == "error":
@@ -587,6 +599,14 @@ async def patch_comment_visibility(
     is_hidden: bool = Query(..., description="True to hide the comment, False to unhide"),
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_by_id(comment_id)
+    if not comment:
+        raise JsonApiError(404, 4041, "Comment not found")
+    platform = (getattr(comment, "platform", None) or "").lower()
+    if platform == "youtube":
+        raise JsonApiError(400, 4015, "YouTube comment visibility updates are not supported")
+
     hide = bool(is_hidden)
     container = get_container()
     use_case: HideCommentUseCase = container.hide_comment_use_case(session=session)
@@ -664,10 +684,19 @@ async def create_answer(
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     container = get_container()
-    use_case = container.create_manual_answer_use_case(session=session)
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_by_id(comment_id)
+    if not comment:
+        raise JsonApiError(404, 4041, "Comment not found")
+
+    platform = (getattr(comment, "platform", None) or "").lower()
+    if platform == "youtube":
+        use_case = container.create_manual_youtube_answer_use_case(session=session)
+    else:
+        use_case = container.create_manual_answer_use_case(session=session)
     try:
         answer = await use_case.execute(comment_id=comment_id, answer_text=str(body.answer))
-    except ManualAnswerCreateError as exc:
+    except (ManualAnswerCreateError, ManualYouTubeAnswerCreateError) as exc:
         if exc.status_code == 404:
             raise JsonApiError(404, 4041, "Comment not found")
         raise JsonApiError(502, 5007, str(exc))
@@ -683,13 +712,35 @@ async def patch_answer(
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     container = get_container()
-    use_case = container.replace_answer_use_case(session=session)
+    answer = await _get_answer_for_update_or_404(session, answer_id)
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_by_id(answer.comment_id) if answer.comment_id else None
+    if not comment:
+        raise JsonApiError(404, 4041, "Comment not found")
+
+    platform = (getattr(comment, "platform", None) or "").lower()
+    if platform == "youtube":
+        use_case = container.replace_youtube_answer_use_case(session=session)
+    else:
+        use_case = container.replace_answer_use_case(session=session)
     try:
-        new_answer = await use_case.execute(
-            answer_id=answer_id,
-            new_answer_text=str(body.answer),
-            quality_score=body.quality_score,
-        )
+        if platform == "youtube":
+            new_answer = await use_case.execute(
+                answer_id=answer_id,
+                new_answer_text=str(body.answer),
+                quality_score=body.quality_score,
+            )
+        else:
+            new_answer = await use_case.execute(
+                answer_id=answer_id,
+                new_answer_text=str(body.answer),
+                quality_score=body.quality_score,
+            )
+    except ReplaceYouTubeAnswerError as exc:
+        message = str(exc)
+        if message == "Answer not found":
+            raise JsonApiError(404, 4042, "Answer not found")
+        raise JsonApiError(502, 5005, message)
     except ReplaceAnswerError as exc:
         message = str(exc)
         if message == "Answer not found":
@@ -709,13 +760,26 @@ async def delete_answer(
     session: AsyncSession = Depends(db_helper.scoped_session_dependency),
 ):
     answer = await _get_answer_for_update_or_404(session, answer_id)
-    if not answer.reply_id or answer.reply_status == "deleted":
-        raise JsonApiError(400, 4012, "Answer does not have an Instagram reply")
+    comment_repo = CommentRepository(session)
+    comment = await comment_repo.get_by_id(answer.comment_id) if answer.comment_id else None
+    if not comment:
+        raise JsonApiError(404, 4041, "Comment not found")
 
-    instagram_service = get_container().instagram_service()
-    result = await instagram_service.delete_comment_reply(answer.reply_id)
-    if not result.get("success"):
-        raise JsonApiError(502, 5004, "Failed to delete reply on Instagram")
+    platform = (getattr(comment, "platform", None) or "").lower()
+    if not answer.reply_id or answer.reply_status == "deleted":
+        raise JsonApiError(400, 4012, "Answer does not have a reply to delete")
+
+    if platform == "youtube":
+        youtube_service = get_container().youtube_service()
+        try:
+            await youtube_service.delete_comment(answer.reply_id)
+        except Exception:
+            raise JsonApiError(502, 5004, "Failed to delete reply on YouTube")
+    else:
+        instagram_service = get_container().instagram_service()
+        result = await instagram_service.delete_comment_reply(answer.reply_id)
+        if not result.get("success"):
+            raise JsonApiError(502, 5004, "Failed to delete reply on Instagram")
 
     answer.reply_sent = False
     answer.reply_status = "deleted"

@@ -47,6 +47,8 @@ from .use_cases.process_document import ProcessDocumentUseCase
 from .use_cases.test_comment_processing import TestCommentProcessingUseCase
 from .use_cases.proxy_media_image import ProxyMediaImageUseCase
 from .use_cases.replace_answer import ReplaceAnswerUseCase
+from .use_cases.replace_youtube_answer import ReplaceYouTubeAnswerUseCase
+from .use_cases.create_manual_youtube_answer import CreateManualYouTubeAnswerUseCase
 from .use_cases.create_manual_answer import CreateManualAnswerUseCase
 from .use_cases.generate_stats_report import GenerateStatsReportUseCase
 from .use_cases.generate_moderation_stats import GenerateModerationStatsUseCase
@@ -287,6 +289,22 @@ class Container(containers.DeclarativeContainer):
         answer_repository_factory=answer_repository_factory.provider,
         instagram_service=instagram_service,
         replace_answer_use_case_factory=replace_answer_use_case.provider,
+        session_service=agent_session_service,
+    )
+
+    replace_youtube_answer_use_case = providers.Factory(
+        ReplaceYouTubeAnswerUseCase,
+        answer_repository_factory=answer_repository_factory.provider,
+        comment_repository_factory=comment_repository_factory.provider,
+        youtube_service=youtube_service,
+    )
+
+    create_manual_youtube_answer_use_case = providers.Factory(
+        CreateManualYouTubeAnswerUseCase,
+        comment_repository_factory=comment_repository_factory.provider,
+        answer_repository_factory=answer_repository_factory.provider,
+        youtube_service=youtube_service,
+        replace_answer_use_case_factory=replace_youtube_answer_use_case.provider,
         session_service=agent_session_service,
     )
 
