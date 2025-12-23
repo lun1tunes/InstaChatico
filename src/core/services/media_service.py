@@ -72,6 +72,7 @@ class MediaService:
             # Create new Media object
             media = Media(
                 id=media_id,
+                platform="instagram",
                 permalink=media_info.get("permalink"),
                 caption=media_info.get("caption"),
                 media_url=media_url,

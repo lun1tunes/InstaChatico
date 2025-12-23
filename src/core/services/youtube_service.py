@@ -347,6 +347,34 @@ class YouTubeService:
 
         return await self._execute(_call)
 
+    async def list_captions(self, video_id: str) -> dict:
+        """List caption tracks for a video."""
+        youtube = await self._get_youtube()
+
+        def _call():
+            return youtube.captions().list(part="snippet", videoId=video_id).execute()
+
+        return await self._execute(_call)
+
+    async def download_caption(
+        self,
+        caption_id: str,
+        tfmt: str | None = None,
+        tlang: str | None = None,
+    ) -> bytes | str | None:
+        """Download a caption track by ID."""
+        youtube = await self._get_youtube()
+
+        def _call():
+            params = {"id": caption_id}
+            if tfmt:
+                params["tfmt"] = tfmt
+            if tlang:
+                params["tlang"] = tlang
+            return youtube.captions().download(**params).execute()
+
+        return await self._execute(_call)
+
     async def delete_comment(self, comment_id: str) -> None:
         """Delete a comment (moderation action)."""
         youtube = await self._get_youtube()

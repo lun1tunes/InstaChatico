@@ -103,6 +103,7 @@ class MediaDTO(BaseModel):
     platform: Literal["instagram", "youtube"] = Field(..., description="Platform where the media is hosted")
     permalink: Optional[str] = None
     caption: Optional[str] = None
+    subtitles: Optional[str] = None
     url: Optional[str] = None
     type: Optional[int] = None
     context: Optional[str] = None

@@ -14,8 +14,15 @@ if TYPE_CHECKING:
 class Media(Base):
     __tablename__ = "media"
 
-    id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="Instagram media ID")
-    permalink: Mapped[str] = mapped_column(Text, nullable=False, comment="Instagram post permalink URL")
+    id: Mapped[str] = mapped_column(String(100), primary_key=True, comment="Media ID (Instagram or YouTube)")
+    platform: Mapped[str] = mapped_column(
+        String(20),
+        default="instagram",
+        nullable=False,
+        index=True,
+        comment="Origin platform of the media (instagram|youtube|...)",
+    )
+    permalink: Mapped[str] = mapped_column(Text, nullable=False, comment="Media permalink URL")
     title: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="Post/video title")
     caption: Mapped[str | None] = mapped_column(String, nullable=True, comment="Post caption text")
     media_url: Mapped[str | None] = mapped_column(Text, nullable=True, comment="URL to the media file (first image for carousels)")
@@ -24,6 +31,11 @@ class Media(Base):
     )
     media_context: Mapped[str | None] = mapped_column(
         String, nullable=True, comment="AI-generated detailed description and context of the media image"
+    )
+    subtitles: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="YouTube subtitles/captions text (only for YouTube media)",
     )
     children_media_urls = mapped_column(
         JSONB, nullable=True, comment="Array of all media URLs for CAROUSEL_ALBUM (includes all children images/videos)"

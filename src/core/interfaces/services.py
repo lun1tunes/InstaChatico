@@ -260,6 +260,19 @@ class IYouTubeService(Protocol):
         """Post a reply to an existing comment."""
         ...
 
+    async def list_captions(self, video_id: str) -> dict:
+        """List caption tracks for a video."""
+        ...
+
+    async def download_caption(
+        self,
+        caption_id: str,
+        tfmt: str | None = None,
+        tlang: str | None = None,
+    ) -> bytes | str | None:
+        """Download a caption track by ID."""
+        ...
+
     async def delete_comment(self, comment_id: str) -> None:
         """Delete a comment."""
         ...

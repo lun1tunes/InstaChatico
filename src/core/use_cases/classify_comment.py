@@ -250,6 +250,7 @@ class ClassifyCommentUseCase:
             "channel_title": raw_snippet.get("channelTitle"),
             "media_type": media.media_type,
             "media_context": media.media_context,
+            "subtitles": getattr(media, "subtitles", None),
             "username": media.username,
             "comments_count": media.comments_count,
             "like_count": media.like_count,

@@ -162,6 +162,7 @@ def instagram_comment_factory(db_session):
             conversation_id=conversation_id,
             is_hidden=kwargs.get("is_hidden", False),
             is_deleted=kwargs.get("is_deleted", False),
+            platform=kwargs.get("platform", "instagram"),
         )
         db_session.add(comment)
         await db_session.commit()

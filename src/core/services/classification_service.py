@@ -83,6 +83,13 @@ class CommentClassificationService(BaseService):
         if media_context.get("media_url"):
             description_parts.append(f"Media URL: {media_context['media_url']}")
 
+        subtitles = media_context.get("subtitles")
+        if subtitles:
+            clipped = subtitles[:1000]
+            if len(subtitles) > 1000:
+                clipped += "..."
+            description_parts.append(f"Subtitles: {clipped}")
+
         # Engagement metrics
         engagement_parts = []
         if media_context.get("comments_count") is not None:

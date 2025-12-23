@@ -82,6 +82,7 @@ class YouTubeMediaService:
 
         if existing:
             # Refresh missing/critical fields for legacy records
+            existing.platform = "youtube"
             existing.title = existing.title or snippet.get("title")
             existing.caption = existing.caption or snippet.get("description")
             existing.username = existing.username or snippet.get("channelTitle")
@@ -97,13 +98,17 @@ class YouTubeMediaService:
             await session.refresh(existing)
             return existing
 
+        subtitles = await self._fetch_subtitles(video_id)
+
         media = Media(
             id=video_id,
+            platform="youtube",
             permalink=f"https://www.youtube.com/watch?v={video_id}",
             title=snippet.get("title"),
             caption=snippet.get("description"),
             media_url=thumb_url,
             media_type="VIDEO",
+            subtitles=subtitles,
             comments_count=_safe_int(stats.get("commentCount")),
             like_count=_safe_int(stats.get("likeCount")),
             shortcode=None,
@@ -122,9 +127,60 @@ class YouTubeMediaService:
         await session.refresh(media)
         return media
 
+    async def _fetch_subtitles(self, video_id: str) -> Optional[str]:
+        """Best-effort subtitle fetch for new YouTube media."""
+        try:
+            caption_list = await self.youtube_service.list_captions(video_id=video_id)
+        except QuotaExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Captions list failed | video_id=%s | error=%s", video_id, exc)
+            return None
+
+        items = caption_list.get("items") or []
+        caption_id = _select_caption_id(items)
+        if not caption_id:
+            return None
+
+        try:
+            payload = await self.youtube_service.download_caption(caption_id=caption_id, tfmt="vtt")
+        except QuotaExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Caption download failed | video_id=%s | caption_id=%s | error=%s", video_id, caption_id, exc)
+            return None
+
+        if payload is None:
+            return None
+        if isinstance(payload, bytes):
+            return payload.decode("utf-8", errors="replace")
+        if isinstance(payload, str):
+            return payload
+        return str(payload)
+
 
 def _safe_int(value) -> Optional[int]:
     try:
         return int(value)
     except Exception:
         return None
+
+
+def _select_caption_id(items: list[dict]) -> Optional[str]:
+    if not items:
+        return None
+
+    def score(item: dict) -> tuple[int, int]:
+        snippet = item.get("snippet", {}) or {}
+        track_kind = (snippet.get("trackKind") or "").lower()
+        status = (snippet.get("status") or "").lower()
+        is_asr = 1 if track_kind == "asr" else 0
+        is_failed = 1 if status == "failed" else 0
+        return (is_failed, is_asr)
+
+    sorted_items = sorted(items, key=score)
+    for item in sorted_items:
+        caption_id = item.get("id")
+        if caption_id:
+            return caption_id
+    return None

@@ -105,11 +105,9 @@ def processing_status_code_to_enum(code: int) -> Optional[ProcessingStatus]:
 
 def detect_media_platform(media: Media) -> Literal["instagram", "youtube"]:
     """Detect the platform (instagram or youtube) from media data."""
-    raw_data = getattr(media, "raw_data", None)
-    if isinstance(raw_data, dict):
-        raw_kind = raw_data.get("kind", "")
-        if isinstance(raw_kind, str) and raw_kind.lower().startswith("youtube#"):
-            return "youtube"
+    explicit = (getattr(media, "platform", None) or "").lower()
+    if explicit in ("instagram", "youtube"):
+        return explicit  # type: ignore[return-value]
     # Default to instagram if not YouTube
     return "instagram"
 
@@ -119,11 +117,13 @@ def serialize_media(media: Media, stats: Optional[MediaQuickStats] = None) -> Me
     type_code = MEDIA_TYPE_CODES.get(media_type)
     children = media.children_media_urls or []
     platform = detect_media_platform(media)
+    subtitles = media.subtitles if platform == "youtube" else None
     return MediaDTO(
         id=media.id,
         platform=platform,
         permalink=media.permalink,
         caption=media.caption,
+        subtitles=subtitles,
         url=media.media_url,
         type=type_code,
         context=media.media_context,
