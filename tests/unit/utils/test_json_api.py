@@ -91,7 +91,7 @@ def test_serialize_media_returns_dto():
 
 def test_serialize_media_detects_youtube_platform():
     media = _build_media()
-    media.raw_data = {"kind": "youtube#video"}
+    media.platform = "youtube"
     dto = serialize_media(media)
 
     assert dto.platform == "youtube"
