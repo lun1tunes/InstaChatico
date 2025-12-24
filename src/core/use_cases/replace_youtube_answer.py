@@ -70,7 +70,66 @@ class ReplaceYouTubeAnswerUseCase:
         if platform != "youtube":
             raise ReplaceYouTubeAnswerError("Comment is not YouTube")
 
-        # Step 1: Delete previous reply on YouTube (if any)
+        # Step 1: Attempt to update existing reply (cheaper than delete+insert)
+        if answer.reply_id:
+            try:
+                update_result = await self.youtube_service.update_comment(
+                    comment_id=answer.reply_id,
+                    text=new_answer_text,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "YouTube reply update failed; falling back to delete+insert | answer_id=%s | reply_id=%s | error=%s",
+                    answer_id,
+                    answer.reply_id,
+                    exc,
+                )
+            else:
+                reply_id = update_result.get("id") or answer.reply_id
+                now = now_db_utc()
+
+                try:
+                    answer.is_deleted = True
+                    answer.reply_sent = True
+                    answer.reply_status = "updated"
+                    answer.reply_error = None
+
+                    new_answer = QuestionAnswer(
+                        comment_id=comment_id,
+                        processing_status=AnswerStatus.COMPLETED,
+                        answer=new_answer_text,
+                        answer_confidence=1.0,  # 100%
+                        answer_quality_score=quality_score or 100,
+                        last_error=None,
+                        retry_count=0,
+                        max_retries=answer.max_retries,
+                        reply_sent=True,
+                        reply_sent_at=now,
+                        reply_status="sent",
+                        reply_error=None,
+                        reply_response=update_result,
+                        reply_id=reply_id,
+                        is_ai_generated=False,
+                    )
+
+                    self.session.add(new_answer)
+                    await self.session.flush()
+                    await self.session.commit()
+                    await self.session.refresh(new_answer)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Failed to persist updated YouTube answer | answer_id=%s", answer_id)
+                    await self.session.rollback()
+                    raise
+
+                logger.info(
+                    "Manual YouTube answer updated | answer_id=%s | new_answer_id=%s | comment_id=%s",
+                    answer_id,
+                    new_answer.id,
+                    comment_id,
+                )
+                return new_answer
+
+        # Step 2: Delete previous reply on YouTube (if any)
         if answer.reply_id:
             try:
                 await self.youtube_service.delete_comment(answer.reply_id)
@@ -89,7 +148,7 @@ class ReplaceYouTubeAnswerUseCase:
                 answer.reply_id,
             )
 
-        # Step 2: Send the new reply
+        # Step 3: Send the new reply
         target_parent_id = comment.parent_id or comment.id
         try:
             send_result = await self.youtube_service.reply_to_comment(

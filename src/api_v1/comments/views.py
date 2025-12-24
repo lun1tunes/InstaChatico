@@ -602,7 +602,8 @@ async def patch_comment_visibility(
     comment_repo = CommentRepository(session)
     comment = await comment_repo.get_by_id(comment_id)
     if not comment:
-        raise JsonApiError(404, 4041, "Comment not found")
+        # Preserve legacy behavior for JSON API: hide/unhide failures surface as 502
+        raise JsonApiError(502, 5003, "Failed to update comment visibility")
     platform = (getattr(comment, "platform", None) or "").lower()
     if platform == "youtube":
         raise JsonApiError(400, 4015, "YouTube comment visibility updates are not supported")
@@ -767,7 +768,8 @@ async def delete_answer(
 
     platform = (getattr(comment, "platform", None) or "").lower()
     if not answer.reply_id or answer.reply_status == "deleted":
-        raise JsonApiError(400, 4012, "Answer does not have a reply to delete")
+        platform_label = "YouTube" if platform == "youtube" else "Instagram"
+        raise JsonApiError(400, 4012, f"Answer does not have an {platform_label} reply to delete")
 
     if platform == "youtube":
         youtube_service = get_container().youtube_service()

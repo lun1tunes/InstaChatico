@@ -96,6 +96,11 @@ class _FakeComments:
     def delete(self, *, id):
         return _FakeRequest({"deleted": id})
 
+    def update(self, *, part, body):
+        assert part == "snippet"
+        self.last_body = body
+        return _FakeRequest(self._response)
+
 
 class _FakeYouTube:
     def __init__(self, comments: _FakeComments):
@@ -122,6 +127,26 @@ async def test_reply_to_comment_executes_with_body(monkeypatch):
 
     assert result["id"] == "reply-1"
     assert comments.last_body == {"snippet": {"parentId": "c1", "textOriginal": "hi there"}}
+    service._execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_comment_executes_with_body(monkeypatch):
+    """Ensure update call flows through _execute and preserves body."""
+    comments = _FakeComments({"id": "reply-1"})
+    service = YouTubeService(token_service_factory=None, session_factory=None)
+    monkeypatch.setattr(youtube_service, "_ensure_google_imports", lambda: None)
+    monkeypatch.setattr(service, "_get_youtube", AsyncMock(return_value=_FakeYouTube(comments)))
+
+    async def fake_execute(call):
+        return call()
+
+    monkeypatch.setattr(service, "_execute", AsyncMock(side_effect=fake_execute))
+
+    result = await service.update_comment(comment_id="c1", text="updated text")
+
+    assert result["id"] == "reply-1"
+    assert comments.last_body == {"id": "c1", "snippet": {"textOriginal": "updated text"}}
     service._execute.assert_awaited_once()
 
 

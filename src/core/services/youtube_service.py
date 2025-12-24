@@ -347,6 +347,17 @@ class YouTubeService:
 
         return await self._execute(_call)
 
+    async def update_comment(self, comment_id: str, text: str) -> dict:
+        """Update an existing comment's text."""
+        youtube = await self._get_youtube()
+
+        body = {"id": comment_id, "snippet": {"textOriginal": text}}
+
+        def _call():
+            return youtube.comments().update(part="snippet", body=body).execute()
+
+        return await self._execute(_call)
+
     async def list_captions(self, video_id: str) -> dict:
         """List caption tracks for a video."""
         youtube = await self._get_youtube()

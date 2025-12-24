@@ -260,6 +260,10 @@ class IYouTubeService(Protocol):
         """Post a reply to an existing comment."""
         ...
 
+    async def update_comment(self, comment_id: str, text: str) -> dict:
+        """Update an existing comment's text."""
+        ...
+
     async def list_captions(self, video_id: str) -> dict:
         """List caption tracks for a video."""
         ...
