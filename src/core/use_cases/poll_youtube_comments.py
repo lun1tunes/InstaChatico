@@ -18,7 +18,7 @@ from core.repositories.classification import ClassificationRepository
 from core.models.instagram_comment import InstagramComment
 from core.models.comment_classification import CommentClassification
 from core.utils.time import now_db_utc
-from core.services.youtube_service import MissingYouTubeAuth, QuotaExceeded
+from core.exceptions.youtube import MissingYouTubeAuth, QuotaExceeded
 
 logger = logging.getLogger(__name__)
 

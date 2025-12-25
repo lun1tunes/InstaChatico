@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.interfaces.services import IYouTubeService
+from core.exceptions.youtube import MissingYouTubeAuth, QuotaExceeded
 from core.repositories.comment import CommentRepository
 from core.utils.decorators import handle_task_errors
 
@@ -44,9 +46,39 @@ class DeleteYouTubeCommentUseCase:
 
         try:
             await self.youtube_service.delete_comment(comment_id)
+        except MissingYouTubeAuth:
+            return {"status": "error", "reason": "forbidden"}
+        except QuotaExceeded:
+            return {"status": "error", "reason": "quota_exceeded"}
         except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to delete comment via YouTube API | comment_id=%s | error=%s", comment_id, exc)
-            return {"status": "error", "reason": str(exc)}
+            status_code, reasons, message = _extract_youtube_error(exc)
+            logger.error(
+                "Failed to delete comment via YouTube API | comment_id=%s | status=%s | reasons=%s | error=%s",
+                comment_id,
+                status_code,
+                reasons,
+                message or exc,
+            )
+            not_found = (
+                status_code == 404
+                or "commentNotFound" in reasons
+                or _contains_phrase(message, "not found")
+                or _contains_phrase(message, "not be found")
+            )
+            if not_found:
+                affected = await self.comment_repo.mark_deleted_with_descendants(
+                    comment_id,
+                    deleted_by_ai=(initiator == "ai"),
+                )
+                await self.session.commit()
+                logger.info("Comment already missing on YouTube; marked deleted in DB | comment_id=%s", comment_id)
+                return {"status": "skipped", "reason": "comment_not_found", "deleted_count": affected}
+
+            forbidden_reasons = {"forbidden", "insufficientPermissions", "ineligibleAccount", "notAuthorized"}
+            if status_code in {401, 403} or reasons.intersection(forbidden_reasons):
+                return {"status": "error", "reason": "forbidden"}
+
+            return {"status": "error", "reason": message or str(exc)}
 
         affected = await self.comment_repo.mark_deleted_with_descendants(
             comment_id, deleted_by_ai=(initiator == "ai")
@@ -58,3 +90,83 @@ class DeleteYouTubeCommentUseCase:
             "status": "success",
             "deleted_count": affected,
         }
+
+
+def _contains_phrase(value: str | None, phrase: str) -> bool:
+    if not value:
+        return False
+    return phrase.lower() in value.lower()
+
+
+def _extract_youtube_error(exc: Exception) -> tuple[int | None, set[str], str | None]:
+    """Best-effort extraction of YouTube error metadata without hard dependency."""
+    status_code = _extract_status_code(exc)
+
+    reasons: set[str] = set()
+    message: str | None = None
+
+    details = getattr(exc, "error_details", None)
+    if isinstance(details, list):
+        for item in details:
+            if isinstance(item, dict):
+                reason = item.get("reason")
+                if reason:
+                    reasons.add(str(reason))
+                if item.get("message") and not message:
+                    message = str(item["message"])
+
+    content = getattr(exc, "content", None)
+    if content:
+        try:
+            raw = content.decode("utf-8") if isinstance(content, (bytes, bytearray)) else str(content)
+            payload = json.loads(raw)
+            error_obj = payload.get("error", {}) if isinstance(payload, dict) else {}
+            for err in error_obj.get("errors", []) if isinstance(error_obj, dict) else []:
+                if isinstance(err, dict):
+                    reason = err.get("reason")
+                    if reason:
+                        reasons.add(str(reason))
+                    if err.get("message") and not message:
+                        message = str(err["message"])
+        except Exception:
+            pass
+
+    if not message:
+        if hasattr(exc, "_get_reason"):
+            try:
+                message = str(exc._get_reason())  # type: ignore[attr-defined]
+            except Exception:
+                message = None
+    if not message:
+        message = str(exc) if exc else None
+
+    return status_code, reasons, message
+
+
+def _extract_status_code(exc: Exception) -> int | None:
+    status_code = _coerce_status_code(getattr(exc, "status_code", None))
+    if status_code is not None:
+        return status_code
+    status_code = _coerce_status_code(getattr(exc, "status", None))
+    if status_code is not None:
+        return status_code
+    resp = getattr(exc, "resp", None)
+    if resp is None:
+        return None
+    if isinstance(resp, dict):
+        return _coerce_status_code(resp.get("status") or resp.get("status_code"))
+    status_code = _coerce_status_code(getattr(resp, "status", None))
+    if status_code is not None:
+        return status_code
+    return _coerce_status_code(getattr(resp, "status_code", None))
+
+
+def _coerce_status_code(value) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None

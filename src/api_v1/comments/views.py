@@ -160,6 +160,49 @@ def _token_identifier(token: str, payload: dict[str, Any]) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _raw_data_is_youtube(raw: Any) -> bool:
+    if not isinstance(raw, dict):
+        return False
+    kind = raw.get("kind")
+    return isinstance(kind, str) and kind.startswith("youtube#")
+
+
+def _looks_like_youtube_comment_id(comment_id: Any) -> bool:
+    if not isinstance(comment_id, str):
+        return False
+    stripped = comment_id.strip()
+    if not stripped:
+        return False
+    return not stripped.isdigit()
+
+
+async def _resolve_comment_platform(session: AsyncSession, comment: Any) -> str:
+    platform = (getattr(comment, "platform", None) or "").lower()
+    if platform == "youtube":
+        return "youtube"
+
+    if platform == "instagram" and _raw_data_is_youtube(getattr(comment, "raw_data", None)):
+        return "youtube"
+
+    media_platform = None
+    media_id = getattr(comment, "media_id", None)
+    if media_id:
+        media = await MediaRepository(session).get_by_id(media_id)
+        if media and getattr(media, "platform", None):
+            media_platform = str(media.platform).lower()
+
+    if media_platform == "youtube":
+        return "youtube"
+    if media_platform == "instagram":
+        return "instagram"
+
+    if _raw_data_is_youtube(getattr(comment, "raw_data", None)):
+        return "youtube"
+    if _looks_like_youtube_comment_id(getattr(comment, "id", None)):
+        return "youtube"
+    return platform or "instagram"
+
+
 async def _record_expired_token(
     session: AsyncSession,
     repo: ExpiredTokenRepository,
@@ -575,7 +618,7 @@ async def delete_comment(
     if not comment:
         raise JsonApiError(404, 4041, "Comment not found")
 
-    platform = (getattr(comment, "platform", None) or "").lower()
+    platform = await _resolve_comment_platform(session, comment)
     container = get_container()
     if platform == "youtube":
         use_case = container.delete_youtube_comment_use_case(session=session)
@@ -588,6 +631,10 @@ async def delete_comment(
         reason = result.get("reason")
         if isinstance(reason, str) and "not found" in reason.lower():
             raise JsonApiError(404, 4041, "Comment not found")
+        if isinstance(reason, str) and reason == "forbidden":
+            raise JsonApiError(403, 4002, "Not authorized to delete comment")
+        if isinstance(reason, str) and reason == "quota_exceeded":
+            raise JsonApiError(429, 5008, "YouTube quota exceeded")
         raise JsonApiError(502, 5004, "Failed to delete comment")
     return EmptyResponse(meta=SimpleMeta())
 
@@ -604,7 +651,7 @@ async def patch_comment_visibility(
     if not comment:
         # Preserve legacy behavior for JSON API: hide/unhide failures surface as 502
         raise JsonApiError(502, 5003, "Failed to update comment visibility")
-    platform = (getattr(comment, "platform", None) or "").lower()
+    platform = await _resolve_comment_platform(session, comment)
     if platform == "youtube":
         raise JsonApiError(400, 4015, "YouTube comment visibility updates are not supported")
 
@@ -690,7 +737,7 @@ async def create_answer(
     if not comment:
         raise JsonApiError(404, 4041, "Comment not found")
 
-    platform = (getattr(comment, "platform", None) or "").lower()
+    platform = await _resolve_comment_platform(session, comment)
     if platform == "youtube":
         use_case = container.create_manual_youtube_answer_use_case(session=session)
     else:
@@ -719,7 +766,7 @@ async def patch_answer(
     if not comment:
         raise JsonApiError(404, 4041, "Comment not found")
 
-    platform = (getattr(comment, "platform", None) or "").lower()
+    platform = await _resolve_comment_platform(session, comment)
     if platform == "youtube":
         use_case = container.replace_youtube_answer_use_case(session=session)
     else:
@@ -766,7 +813,7 @@ async def delete_answer(
     if not comment:
         raise JsonApiError(404, 4041, "Comment not found")
 
-    platform = (getattr(comment, "platform", None) or "").lower()
+    platform = await _resolve_comment_platform(session, comment)
     if not answer.reply_id or answer.reply_status == "deleted":
         platform_label = "YouTube" if platform == "youtube" else "Instagram"
         raise JsonApiError(400, 4012, f"Answer does not have an {platform_label} reply to delete")

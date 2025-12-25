@@ -13,7 +13,7 @@ from core.interfaces.services import IYouTubeService
 from core.models import Media
 from core.repositories.media import MediaRepository
 from core.utils.time import now_db_utc
-from core.services.youtube_service import QuotaExceeded
+from core.exceptions.youtube import QuotaExceeded
 
 logger = logging.getLogger(__name__)
 

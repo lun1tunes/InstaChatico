@@ -31,14 +31,7 @@ except Exception as _exc:  # pragma: no cover - fallback for missing deps
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.config import settings
-
-
-class MissingYouTubeAuth(Exception):
-    """Raised when no valid YouTube OAuth tokens are available."""
-
-
-class QuotaExceeded(Exception):
-    """Raised when YouTube Data API quota is exhausted."""
+from core.exceptions.youtube import MissingYouTubeAuth, QuotaExceeded
 
 
 logger = logging.getLogger(__name__)
@@ -426,7 +419,8 @@ class YouTubeService:
                     if any(d.get("reason") in {"invalidGrant", "invalidCredentials"} for d in http_err.error_details if isinstance(d, dict)):
                         raise MissingYouTubeAuth("YouTube credentials invalid; reconnect required.") from http_err
                     # Detect quota exhaustion explicitly
-                    if any(d.get("reason") == "quotaExceeded" for d in http_err.error_details if isinstance(d, dict)):
+                    quota_reasons = {"quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded", "userRateLimitExceeded"}
+                    if any(d.get("reason") in quota_reasons for d in http_err.error_details if isinstance(d, dict)):
                         raise QuotaExceeded("YouTube quota exceeded") from http_err
                 # Basic quota/backoff handling
                 if getattr(http_err, "res", None) and getattr(http_err.res, "status", None) == 403:
