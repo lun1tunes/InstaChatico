@@ -35,6 +35,7 @@ class DeleteYouTubeCommentUseCase:
     async def execute(self, comment_id: str, initiator: str = "ai") -> Dict[str, Any]:
         logger.info("Starting delete comment flow (YouTube) | comment_id=%s", comment_id)
 
+        comment_id = comment_id.strip()
         comment = await self.comment_repo.get_by_id(comment_id)
         if not comment:
             logger.error("Comment not found | comment_id=%s | operation=delete_youtube_comment", comment_id)
@@ -44,8 +45,15 @@ class DeleteYouTubeCommentUseCase:
             logger.info("Comment already marked deleted | comment_id=%s", comment_id)
             return {"status": "skipped", "reason": "Comment already deleted"}
 
+        author_channel_id = _extract_author_channel_id(comment)
+        my_channel_id = await _resolve_my_channel_id(self.youtube_service)
+        should_moderate = bool(author_channel_id and my_channel_id and author_channel_id != my_channel_id)
+
         try:
-            await self.youtube_service.delete_comment(comment_id)
+            if should_moderate and hasattr(self.youtube_service, "set_comment_moderation_status"):
+                await self.youtube_service.set_comment_moderation_status(comment_id, status="rejected")
+            else:
+                await self.youtube_service.delete_comment(comment_id)
         except MissingYouTubeAuth:
             return {"status": "error", "reason": "forbidden"}
         except QuotaExceeded:
@@ -78,6 +86,31 @@ class DeleteYouTubeCommentUseCase:
             if status_code in {401, 403} or reasons.intersection(forbidden_reasons):
                 return {"status": "error", "reason": "forbidden"}
 
+            if (
+                "processingFailure" in reasons
+                and not should_moderate
+                and hasattr(self.youtube_service, "set_comment_moderation_status")
+            ):
+                try:
+                    await self.youtube_service.set_comment_moderation_status(comment_id, status="rejected")
+                    affected = await self.comment_repo.mark_deleted_with_descendants(
+                        comment_id,
+                        deleted_by_ai=(initiator == "ai"),
+                    )
+                    await self.session.commit()
+                    logger.info(
+                        "Comment rejected via moderation fallback | comment_id=%s | affected_rows=%s",
+                        comment_id,
+                        affected,
+                    )
+                    return {"status": "success", "deleted_count": affected, "action": "moderated"}
+                except Exception as moderation_exc:  # noqa: BLE001
+                    logger.warning(
+                        "Moderation fallback failed | comment_id=%s | error=%s",
+                        comment_id,
+                        moderation_exc,
+                    )
+
             return {"status": "error", "reason": message or str(exc)}
 
         affected = await self.comment_repo.mark_deleted_with_descendants(
@@ -96,6 +129,27 @@ def _contains_phrase(value: str | None, phrase: str) -> bool:
     if not value:
         return False
     return phrase.lower() in value.lower()
+
+
+def _extract_author_channel_id(comment) -> str | None:
+    raw = getattr(comment, "raw_data", None)
+    if not isinstance(raw, dict):
+        return None
+    snippet = raw.get("snippet") if isinstance(raw.get("snippet"), dict) else {}
+    author = snippet.get("authorChannelId") if isinstance(snippet, dict) else {}
+    if isinstance(author, dict):
+        value = author.get("value")
+        return str(value) if value else None
+    return None
+
+
+async def _resolve_my_channel_id(youtube_service: IYouTubeService) -> str | None:
+    if hasattr(youtube_service, "get_account_id"):
+        try:
+            return await youtube_service.get_account_id()  # type: ignore[attr-defined]
+        except Exception:
+            return None
+    return None
 
 
 def _extract_youtube_error(exc: Exception) -> tuple[int | None, set[str], str | None]:

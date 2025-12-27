@@ -388,6 +388,15 @@ class YouTubeService:
 
         await self._execute(_call)
 
+    async def set_comment_moderation_status(self, comment_id: str, status: str = "rejected") -> dict:
+        """Moderate a comment (reject/hold/publish)."""
+        youtube = await self._get_youtube()
+
+        def _call():
+            return youtube.comments().setModerationStatus(id=comment_id, moderationStatus=status).execute()
+
+        return await self._execute(_call)
+
     async def get_video_details(self, video_id: str) -> dict:
         """Fetch video metadata + stats for media context."""
         youtube = await self._get_youtube()

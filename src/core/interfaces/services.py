@@ -281,6 +281,14 @@ class IYouTubeService(Protocol):
         """Delete a comment."""
         ...
 
+    async def set_comment_moderation_status(self, comment_id: str, status: str = "rejected") -> dict:
+        """Moderate a comment (e.g., reject/hold/publish)."""
+        ...
+
+    async def get_account_id(self) -> Optional[str]:
+        """Return the authenticated channel/account id, if available."""
+        ...
+
     async def get_video_details(self, video_id: str) -> dict:
         """Fetch video metadata/context (title, description, thumbnails, stats)."""
         ...
