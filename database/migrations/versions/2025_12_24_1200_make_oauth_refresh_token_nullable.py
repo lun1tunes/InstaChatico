@@ -1,6 +1,6 @@
 """Make OAuth refresh token nullable for providers without refresh tokens.
 
-Revision ID: make_oauth_refresh_token_nullable
+Revision ID: make_oauth_refresh_token
 Revises: add_media_platform_subtitles
 Create Date: 2025-12-24 12:00:00.000000
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = "make_oauth_refresh_token_nullable"
+revision = "make_oauth_refresh_token"
 down_revision = "add_media_platform_subtitles"
 branch_labels = None
 depends_on = None
