@@ -157,9 +157,18 @@ class Container(containers.DeclarativeContainer):
         session_service=agent_session_service,
     )
 
+    oauth_token_service = providers.Factory(
+        OAuthTokenService,
+        repository_factory=oauth_token_repository_factory.provider,
+        encryption_key=settings.oauth_encryption_key,
+    )
+
     instagram_service = providers.Singleton(
         InstagramGraphAPIService,
         rate_limiter=instagram_rate_limiter,
+        token_service_factory=oauth_token_service.provider,
+        session_factory=db_session_factory.provider,
+        default_account_id=settings.instagram.base_account_id,
     )
 
     media_service = providers.Factory(
@@ -183,12 +192,6 @@ class Container(containers.DeclarativeContainer):
 
     media_analysis_service = providers.Factory(
         MediaAnalysisService,
-    )
-
-    oauth_token_service = providers.Factory(
-        OAuthTokenService,
-        repository_factory=oauth_token_repository_factory.provider,
-        encryption_key=settings.oauth_encryption_key,
     )
 
     youtube_service = providers.Singleton(

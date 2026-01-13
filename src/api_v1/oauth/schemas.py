@@ -17,7 +17,7 @@ class EncryptedTokenPayload(BaseModel):
     provider: str
     account_id: Optional[str] = None
     access_token_encrypted: str
-    refresh_token_encrypted: str
+    refresh_token_encrypted: Optional[str] = None
     token_type: Optional[str] = None
     scope: Optional[Union[str, List[str]]] = None
     # Access token expiry (usually ~1 hour)

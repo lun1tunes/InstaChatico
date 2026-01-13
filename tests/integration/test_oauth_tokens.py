@@ -113,3 +113,75 @@ async def test_delete_oauth_tokens_is_idempotent(integration_environment):
         repo = OAuthTokenRepository(session)
         record = await repo.get_by_provider_account("google", account_id)
         assert record is None
+
+
+@pytest.mark.asyncio
+async def test_store_instagram_tokens_upserts_record(integration_environment):
+    client = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+    headers = {"X-Internal-Secret": "test_app_secret"}
+
+    account_id = "ig-acc-1"
+    payload = {
+        "provider": "instagram",
+        "account_id": account_id,
+        "access_token_encrypted": "enc-access-1",
+        "token_type": "bearer",
+        "scope": "instagram_business_basic",
+        "access_token_expires_in": 3600,
+    }
+
+    resp = await client.post("/api/v1/oauth/tokens", json=payload, headers=headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["provider"] == "instagram"
+    assert body["account_id"] == account_id
+    assert body["has_refresh_token"] is False
+
+    async with session_factory() as session:
+        repo = OAuthTokenRepository(session)
+        record = await repo.get_by_provider_account("instagram", account_id)
+        assert record is not None
+        assert record.refresh_token_encrypted is None
+        first_encrypted = record.access_token_encrypted
+
+    payload["access_token_encrypted"] = "enc-access-2"
+    resp = await client.post("/api/v1/oauth/tokens", json=payload, headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    async with session_factory() as session:
+        repo = OAuthTokenRepository(session)
+        record = await repo.get_by_provider_account("instagram", account_id)
+        assert record is not None
+        assert record.access_token_encrypted != first_encrypted
+
+
+@pytest.mark.asyncio
+async def test_delete_instagram_tokens_authorized_deletes_record(integration_environment):
+    client = integration_environment["client"]
+    session_factory = integration_environment["session_factory"]
+
+    account_id = "ig-del"
+    async with session_factory() as session:
+        repo = OAuthTokenRepository(session)
+        await repo.upsert(
+            provider="instagram",
+            account_id=account_id,
+            access_token_encrypted="enc-access",
+            refresh_token_encrypted=None,
+            token_type=None,
+            scope=None,
+            access_token_expires_at=None,
+            refresh_token_expires_at=None,
+        )
+        await session.commit()
+
+    headers = _internal_jwt_headers(settings.app_secret)
+    payload = {"provider": "instagram", "account_id": account_id}
+    resp = await client.request("DELETE", "/api/v1/oauth/tokens", json=payload, headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    async with session_factory() as session:
+        repo = OAuthTokenRepository(session)
+        record = await repo.get_by_provider_account("instagram", account_id)
+        assert record is None

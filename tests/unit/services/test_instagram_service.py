@@ -8,7 +8,6 @@ Tests cover:
 - Edge cases and error handling
 """
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 from unittest.mock import AsyncMock, MagicMock, call, patch
@@ -37,8 +36,41 @@ class DummyLimiter:
         return None
 
 
+class StubTokenService:
+    def __init__(self, tokens):
+        self.tokens = tokens
+
+    async def get_tokens(self, provider: str, account_id: Optional[str] = None):
+        return self.tokens
+
+
+class DummySession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 def make_service(limiter: Optional[DummyLimiter] = None) -> InstagramGraphAPIService:
     return InstagramGraphAPIService(access_token="test_token", rate_limiter=limiter or DummyLimiter())
+
+
+def make_service_with_tokens(tokens: dict) -> InstagramGraphAPIService:
+    token_service = StubTokenService(tokens)
+
+    def token_factory(session=None):
+        return token_service
+
+    def session_factory():
+        return DummySession()
+
+    return InstagramGraphAPIService(
+        access_token=None,
+        rate_limiter=DummyLimiter(),
+        token_service_factory=token_factory,
+        session_factory=session_factory,
+    )
 
 
 @pytest.mark.unit
@@ -136,13 +168,13 @@ class TestInstagramServiceSessionManagement:
 
         assert session.closed
 
-    def test_missing_token_raises_error(self):
-        """Test that missing access token raises ValueError."""
-        with patch('core.services.instagram_service.settings') as mock_settings:
-            mock_settings.instagram.access_token = None
+    async def test_missing_token_raises_error(self):
+        """Test that missing access token returns a clear error."""
+        service = InstagramGraphAPIService(access_token=None)
+        result = await service.send_reply_to_comment("comment_1", "Test")
 
-            with pytest.raises(ValueError, match="Instagram access token is required"):
-                InstagramGraphAPIService(access_token=None)
+        assert result["success"] is False
+        assert result["error_code"] == "missing_access_token"
 
 
 @pytest.mark.unit
@@ -303,6 +335,22 @@ class TestInstagramServiceTokenMonitoring:
 
         assert result["success"] is False
         assert result["error"] == {"error": {"message": "invalid"}}
+
+    @pytest.mark.asyncio
+    async def test_expired_access_token_returns_error(self):
+        expired_at = datetime.utcnow() - timedelta(seconds=10)
+        service = make_service_with_tokens(
+            {
+                "access_token": "token",
+                "access_token_expires_at": expired_at,
+                "account_id": "ig-acc",
+            }
+        )
+
+        result = await service.send_reply_to_comment("comment_1", "Test")
+
+        assert result["success"] is False
+        assert result["error_code"] == "access_token_expired"
 
     @patch("core.services.instagram_service.aiohttp.ClientSession")
     async def test_multiple_requests_within_limit(self, mock_session_class):

@@ -1,10 +1,11 @@
 import inspect
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, Optional, Protocol, Tuple
+from typing import Any, Dict, Optional, Protocol, Tuple, Callable
 
 import aiohttp
 from aiolimiter import AsyncLimiter
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..config import settings
 
@@ -44,14 +45,18 @@ class InstagramGraphAPIService:
         access_token: str = None,
         session: Optional[aiohttp.ClientSession] = None,
         rate_limiter: Optional[RateLimiterProtocol] = None,
+        token_service_factory: Optional[Callable[..., Any]] = None,
+        session_factory: Optional[Callable[..., Any]] = None,
+        default_account_id: Optional[str] = None,
     ):
-        resolved_token = access_token if access_token is not None else settings.instagram.access_token
-        if not resolved_token:
-            raise ValueError("Instagram access token is required")
-
-        self.access_token = resolved_token
+        self._explicit_access_token = access_token
+        self.access_token = access_token
         self.base_url = f"https://graph.instagram.com/{settings.instagram.api_version}"
         self._enabled = bool(self.access_token)
+        self.token_service_factory = token_service_factory
+        self.session_factory = session_factory
+        self._account_id = default_account_id
+        self._token_expires_at: Optional[datetime] = None
 
         self._session = session
         self._should_close_session = session is None
@@ -67,7 +72,86 @@ class InstagramGraphAPIService:
             )
             self._owns_rate_limiter = True
 
-    def _require_access_token(self, operation: str) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def _normalize_expires_at(value: Optional[datetime]) -> Optional[datetime]:
+        if not value:
+            return None
+        if value.tzinfo:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    @classmethod
+    def _is_expired(cls, value: Optional[datetime]) -> bool:
+        if not value:
+            return False
+        normalized = cls._normalize_expires_at(value)
+        return normalized <= datetime.utcnow()
+
+    async def _load_tokens(self) -> Optional[Dict[str, Any]]:
+        """Load Instagram tokens from secure storage if configured."""
+        if not self.token_service_factory or not self.session_factory:
+            return None
+        try:
+            session_factory = self.session_factory
+            factory_result = session_factory() if callable(session_factory) else session_factory
+
+            if isinstance(factory_result, async_sessionmaker):
+                session_cm = factory_result()
+            else:
+                session_cm = factory_result
+
+            async with session_cm as session:  # type: ignore
+                token_service = self.token_service_factory(session=session)
+                return await token_service.get_tokens("instagram", self._account_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to load stored Instagram tokens | error=%s", exc)
+            return None
+
+    async def _require_access_token(self, operation: str) -> Optional[Dict[str, Any]]:
+        if self._explicit_access_token:
+            self.access_token = self._explicit_access_token
+            return None
+
+        if self.token_service_factory and self.session_factory:
+            tokens = await self._load_tokens()
+            if tokens:
+                access_token = tokens.get("access_token")
+                if not access_token:
+                    logger.warning("Instagram token payload missing access_token | operation=%s", operation)
+                    return {
+                        "success": False,
+                        "error": "Instagram access token is missing from storage",
+                        "status_code": 400,
+                        "error_code": "missing_access_token",
+                        "operation": operation,
+                    }
+
+                expires_at = tokens.get("access_token_expires_at") or tokens.get("expires_at")
+                if self._is_expired(expires_at):
+                    normalized = self._normalize_expires_at(expires_at)
+                    logger.warning(
+                        "Instagram access token expired | operation=%s | expires_at=%s",
+                        operation,
+                        normalized.isoformat() if normalized else None,
+                    )
+                    return {
+                        "success": False,
+                        "error": "Instagram access token has expired; reconnect Instagram to continue.",
+                        "status_code": 401,
+                        "error_code": "access_token_expired",
+                        "operation": operation,
+                        "expires_at": normalized.isoformat() if normalized else None,
+                    }
+
+                self.access_token = access_token
+                self._token_expires_at = self._normalize_expires_at(expires_at)
+                account_id = tokens.get("account_id")
+                if account_id:
+                    self._account_id = account_id
+                return None
+            if self.access_token and not self._is_expired(self._token_expires_at):
+                return None
+
         if self.access_token:
             return None
 
@@ -77,7 +161,7 @@ class InstagramGraphAPIService:
         )
         return {
             "success": False,
-            "error": "Instagram access token is not configured; Instagram features are disabled",
+            "error": "Instagram access token is not configured; sync tokens via /api/v1/oauth/tokens",
             "status_code": 400,
             "error_code": "missing_access_token",
             "operation": operation,
@@ -117,7 +201,7 @@ class InstagramGraphAPIService:
 
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
         """Send reply to Instagram comment via Graph API."""
-        if error := self._require_access_token("send_reply_to_comment"):
+        if error := await self._require_access_token("send_reply_to_comment"):
             return error
 
         url = f"{self.base_url}/{comment_id}/replies"
@@ -196,7 +280,7 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing comment information
         """
-        if error := self._require_access_token("get_comment_info"):
+        if error := await self._require_access_token("get_comment_info"):
             return error
 
         url = f"{self.base_url}/{comment_id}"
@@ -246,7 +330,7 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing validation result
         """
-        if error := self._require_access_token("validate_token"):
+        if error := await self._require_access_token("validate_token"):
             return error
 
         try:
@@ -280,7 +364,7 @@ class InstagramGraphAPIService:
         Returns:
             Dict with success flag, expires_at (datetime | None), expires_in (seconds | None)
         """
-        if error := self._require_access_token("get_token_expiration"):
+        if error := await self._require_access_token("get_token_expiration"):
             return error
 
         try:
@@ -348,7 +432,7 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing media information
         """
-        if error := self._require_access_token("get_media_info"):
+        if error := await self._require_access_token("get_media_info"):
             return error
 
         url = f"{self.base_url}/{media_id}"
@@ -395,7 +479,7 @@ class InstagramGraphAPIService:
 
     async def get_insights(self, account_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Fetch insights from Instagram Graph API for the given account."""
-        if error := self._require_access_token("get_insights"):
+        if error := await self._require_access_token("get_insights"):
             return error
 
         if not account_id:
@@ -443,7 +527,7 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing page information
         """
-        if error := self._require_access_token("get_page_info"):
+        if error := await self._require_access_token("get_page_info"):
             return error
 
         url = f"{self.base_url}/me"
@@ -480,10 +564,10 @@ class InstagramGraphAPIService:
 
     async def get_account_profile(self, account_id: Optional[str] = None) -> Dict[str, Any]:
         """Fetch account profile information: username, media_count, followers, follows."""
-        if error := self._require_access_token("get_account_profile"):
+        if error := await self._require_access_token("get_account_profile"):
             return error
 
-        target_id = account_id or settings.instagram.base_account_id
+        target_id = account_id or self._account_id or settings.instagram.base_account_id
         if not target_id:
             return {"success": False, "error": "Missing Instagram base account ID", "status_code": 400}
 
@@ -523,7 +607,7 @@ class InstagramGraphAPIService:
 
     async def set_media_comment_status(self, media_id: str, enabled: bool) -> Dict[str, Any]:
         """Enable or disable comments for a specific media item."""
-        if error := self._require_access_token("set_media_comment_status"):
+        if error := await self._require_access_token("set_media_comment_status"):
             return error
 
         url = f"{self.base_url}/{media_id}"
@@ -580,7 +664,7 @@ class InstagramGraphAPIService:
         Returns:
             Dict containing success status, response data, and status code
         """
-        if error := self._require_access_token("hide_comment"):
+        if error := await self._require_access_token("hide_comment"):
             return error
 
         url = f"{self.base_url}/{comment_id}"
@@ -639,7 +723,7 @@ class InstagramGraphAPIService:
 
     async def delete_comment(self, comment_id: str, *, resource_type: str = "comment") -> Dict[str, Any]:
         """Delete an Instagram comment or reply by ID."""
-        if error := self._require_access_token("delete_comment"):
+        if error := await self._require_access_token("delete_comment"):
             return error
 
         url = f"{self.base_url}/{comment_id}"

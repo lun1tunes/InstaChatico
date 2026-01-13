@@ -58,12 +58,8 @@ async def lifespan(app: FastAPI):
 
     from core.container import get_container
     container = get_container()
-    instagram_service = None
-    if settings.instagram.access_token:
-        instagram_service = container.instagram_service()
-        logger.info("Instagram service initialized")
-    else:
-        logger.info("Instagram access token not set; skipping Instagram service initialization (YouTube-only mode)")
+    instagram_service = container.instagram_service()
+    logger.info("Instagram service initialized")
 
     yield
 

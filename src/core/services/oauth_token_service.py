@@ -14,6 +14,8 @@ from core.repositories.oauth_token import OAuthTokenRepository
 
 logger = logging.getLogger(__name__)
 
+REFRESH_TOKEN_OPTIONAL_PROVIDERS = {"instagram"}
+
 
 class OAuthTokenService:
     """Handles encryption at rest and persistence of OAuth tokens."""
@@ -109,8 +111,10 @@ class OAuthTokenService:
         """
         access_token = token_response.get("access_token")
         refresh_token = token_response.get("refresh_token")
-        if not access_token or not refresh_token:
-            raise ValueError("Token response missing access_token or refresh_token")
+        if not access_token:
+            raise ValueError("Token response missing access_token")
+        if not refresh_token and provider not in REFRESH_TOKEN_OPTIONAL_PROVIDERS:
+            raise ValueError("Token response missing refresh_token")
 
         access_expires_in = token_response.get("access_token_expires_in")
         if access_expires_in is None:
@@ -125,7 +129,7 @@ class OAuthTokenService:
         refresh_expires_at_raw = token_response.get("refresh_token_expires_at")
         refresh_expires_at = self._resolve_refresh_token_expires_at(refresh_expires_at_raw, refresh_expires_in)
 
-        encrypted_refresh = self._encrypt(refresh_token)
+        encrypted_refresh = self._encrypt(refresh_token) if refresh_token else None
 
         record = await self.repo.upsert(
             provider=provider,
@@ -155,7 +159,7 @@ class OAuthTokenService:
             ),
             "scope": record.scope,
             "token_type": record.token_type,
-            "has_refresh_token": True,
+            "has_refresh_token": bool(refresh_token),
         }
 
     async def store_encrypted_tokens(
@@ -164,7 +168,7 @@ class OAuthTokenService:
         provider: str,
         account_id: str,
         access_token_encrypted: str,
-        refresh_token_encrypted: str,
+        refresh_token_encrypted: Optional[str],
         token_type: Optional[str] = None,
         scope: Optional[str] = None,
         access_token_expires_at: Optional[datetime] = None,
@@ -175,29 +179,57 @@ class OAuthTokenService:
         """
         Persist already-encrypted tokens (encrypted with the shared Fernet key).
         """
-        try:
-            access_token = self._decrypt(access_token_encrypted)
-            refresh_token = self._decrypt(refresh_token_encrypted)
-        except ValueError:
-            # If ciphertext cannot be decrypted (e.g., tests pass plaintext), fall back to treating
-            # provided values as raw tokens and re-encrypt them with our key.
-            logger.debug("Falling back to raw tokens for storage; provided values were not decryptable.")
-            access_token = access_token_encrypted
-            refresh_token = refresh_token_encrypted
-        return await self.store_tokens(
+        if not access_token_encrypted:
+            raise ValueError("access_token_encrypted is required")
+        if not refresh_token_encrypted and provider not in REFRESH_TOKEN_OPTIONAL_PROVIDERS:
+            raise ValueError("refresh_token_encrypted is required")
+
+        def _coerce_encrypted(value: Optional[str]) -> Optional[str]:
+            if not value:
+                return None
+            try:
+                self._decrypt(value)
+                return value
+            except ValueError:
+                logger.debug("Provided token was not decryptable; encrypting before storage.")
+                return self._encrypt(value)
+
+        encrypted_access = _coerce_encrypted(access_token_encrypted)
+        encrypted_refresh = _coerce_encrypted(refresh_token_encrypted)
+
+        access_expires_at = self._resolve_access_token_expires_at(access_token_expires_at, access_token_expires_in)
+        refresh_expires_at = self._resolve_refresh_token_expires_at(refresh_token_expires_at, refresh_token_expires_in)
+
+        record = await self.repo.upsert(
             provider=provider,
             account_id=account_id,
-            token_response={
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "token_type": token_type,
-                "scope": scope,
-                "access_token_expires_at": access_token_expires_at,
-                "access_token_expires_in": access_token_expires_in,
-                "refresh_token_expires_at": refresh_token_expires_at,
-                "refresh_token_expires_in": refresh_token_expires_in,
-            },
+            access_token_encrypted=encrypted_access,
+            refresh_token_encrypted=encrypted_refresh,
+            token_type=token_type,
+            scope=scope,
+            access_token_expires_at=access_expires_at,
+            refresh_token_expires_at=refresh_expires_at,
         )
+
+        await self.session.commit()
+
+        return {
+            "provider": record.provider,
+            "account_id": record.account_id,
+            "access_token_expires_at": (
+                record.access_token_expires_at.isoformat() if record.access_token_expires_at else None
+            ),
+            "refresh_token_expires_at": (
+                record.refresh_token_expires_at.isoformat() if record.refresh_token_expires_at else None
+            ),
+            # Backwards-compatible alias
+            "expires_at": (
+                record.access_token_expires_at.isoformat() if record.access_token_expires_at else None
+            ),
+            "scope": record.scope,
+            "token_type": record.token_type,
+            "has_refresh_token": bool(encrypted_refresh),
+        }
 
     async def get_tokens(self, provider: str, account_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         record = None
@@ -208,9 +240,13 @@ class OAuthTokenService:
         if not record:
             return None
 
+        refresh_token = None
+        if record.refresh_token_encrypted:
+            refresh_token = self._decrypt(record.refresh_token_encrypted)
+
         return {
             "access_token": self._decrypt(record.access_token_encrypted),
-            "refresh_token": self._decrypt(record.refresh_token_encrypted),
+            "refresh_token": refresh_token,
             "token_type": record.token_type,
             "scope": record.scope,
             "access_token_expires_at": record.access_token_expires_at,
@@ -233,14 +269,16 @@ class OAuthTokenService:
         Update access token (and optionally refresh token) after refresh.
         """
         record = await self.repo.get_by_provider_account(provider, account_id)
-        if not record and not refresh_token:
+        if not record and not refresh_token and provider not in REFRESH_TOKEN_OPTIONAL_PROVIDERS:
             # Without refresh token we cannot create a new record safely
             raise ValueError("No existing token found; refresh token required to create a new record.")
 
-        refresh_encrypted = (
-            self._encrypt(refresh_token) if refresh_token else (record.refresh_token_encrypted if record else None)
-        )
-        if not refresh_encrypted:
+        refresh_encrypted = None
+        if refresh_token:
+            refresh_encrypted = self._encrypt(refresh_token)
+        elif record:
+            refresh_encrypted = record.refresh_token_encrypted
+        elif provider not in REFRESH_TOKEN_OPTIONAL_PROVIDERS:
             raise ValueError("Missing refresh token for persistence.")
 
         if record:

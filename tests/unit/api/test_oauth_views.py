@@ -24,7 +24,7 @@ class _FakeOAuthService:
             "expires_at": None,
             "scope": kwargs.get("scope"),
             "token_type": kwargs.get("token_type"),
-            "has_refresh_token": True,
+            "has_refresh_token": bool(kwargs.get("refresh_token_encrypted")),
         }
 
 
@@ -63,3 +63,32 @@ async def test_store_tokens_impl_prefers_new_zero_expires_field():
     assert service.captured_kwargs["access_token_expires_in"] == 0
     # Backward-compatible alias should reflect what service returned
     assert result["expires_at"] == result["access_token_expires_at"]
+
+
+@pytest.mark.asyncio
+async def test_store_tokens_impl_allows_instagram_without_refresh_token():
+    payload = EncryptedTokenPayload(
+        provider="instagram",
+        account_id="ig-123",
+        access_token_encrypted="enc_access",
+        refresh_token_encrypted=None,
+        token_type="bearer",
+        scope="instagram_basic",
+    )
+
+    service = _FakeOAuthService()
+    container = _FakeContainer(service)
+
+    result = await _store_tokens_impl(
+        payload=payload,
+        session=object(),
+        container=container,
+        x_internal_secret=settings.app_secret,
+        authorization=None,
+    )
+
+    assert result["status"] == "ok"
+    assert result["provider"] == "instagram"
+    assert result["has_refresh_token"] is False
+    assert service.captured_kwargs["provider"] == "instagram"
+    assert service.captured_kwargs["refresh_token_encrypted"] is None

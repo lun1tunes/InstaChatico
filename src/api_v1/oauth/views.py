@@ -204,6 +204,15 @@ async def google_account_status(
     }
 
 
+def _resolve_oauth_provider(provider: str) -> tuple[str, str]:
+    normalized = (provider or "").strip().lower()
+    if normalized == "youtube":
+        return normalized, "google"
+    if normalized == "instagram":
+        return normalized, "instagram"
+    raise HTTPException(status_code=400, detail="provider must be 'youtube' or 'instagram'")
+
+
 async def _store_tokens_impl(
     payload: EncryptedTokenPayload,
     session: AsyncSession,
@@ -216,9 +225,7 @@ async def _store_tokens_impl(
     """
     _authorize_internal_request(authorization=authorization, x_internal_secret=x_internal_secret)
 
-    provider = (payload.provider or "").strip().lower()
-    if provider != "youtube":
-        raise HTTPException(status_code=400, detail="provider must be 'youtube'")
+    provider, storage_provider = _resolve_oauth_provider(payload.provider)
     account_id = (payload.account_id or "").strip()
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id is required")
@@ -228,7 +235,7 @@ async def _store_tokens_impl(
     if isinstance(scope_value, list):
         scope_value = " ".join(scope_value)
     refresh_token_enc = payload.refresh_token_encrypted
-    if not refresh_token_enc:
+    if provider == "youtube" and not refresh_token_enc:
         raise HTTPException(status_code=400, detail="refresh_token_encrypted is required for offline access")
 
     oauth_service: OAuthTokenService = container.oauth_token_service(session=session)
@@ -244,7 +251,7 @@ async def _store_tokens_impl(
             else payload.expires_in
         )
         stored = await oauth_service.store_encrypted_tokens(
-            provider="google",  # internal canonical provider for YouTube tokens
+            provider=storage_provider,
             account_id=account_id,
             access_token_encrypted=payload.access_token_encrypted,
             refresh_token_encrypted=refresh_token_enc,
@@ -256,7 +263,7 @@ async def _store_tokens_impl(
             refresh_token_expires_in=payload.refresh_token_expires_in,
         )
         # Ensure refresh token presence for offline access
-        if not stored.get("has_refresh_token"):
+        if provider == "youtube" and not stored.get("has_refresh_token"):
             raise ValueError("refresh_token is required for offline access")
     except ValueError as exc:
         logger.error("Failed to store encrypted tokens | provider=%s | account_id=%s | error=%s", provider, account_id, exc)
@@ -313,9 +320,7 @@ async def delete_tokens_root(
     )
     _authorize_internal_request(authorization=authorization, x_internal_secret=x_internal_secret)
 
-    provider = (payload.provider or "").strip().lower()
-    if provider != "youtube":
-        raise HTTPException(status_code=400, detail="provider must be 'youtube'")
+    provider, storage_provider = _resolve_oauth_provider(payload.provider)
     account_id = (payload.account_id or "").strip()
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id is required")
@@ -323,7 +328,7 @@ async def delete_tokens_root(
     logger.info("Internal token delete requested | provider=%s | account_id=%s", provider, account_id)
 
     oauth_service: OAuthTokenService = container.oauth_token_service(session=session)
-    deleted = await oauth_service.delete_tokens(provider="google", account_id=account_id)
+    deleted = await oauth_service.delete_tokens(provider=storage_provider, account_id=account_id)
 
     logger.info(
         "Internal token delete completed | provider=%s | account_id=%s | deleted=%s",

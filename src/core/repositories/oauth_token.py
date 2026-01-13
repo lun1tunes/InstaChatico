@@ -40,7 +40,7 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
         provider: str,
         account_id: str,
         access_token_encrypted: str,
-        refresh_token_encrypted: str,
+        refresh_token_encrypted: Optional[str],
         token_type: Optional[str],
         scope: Optional[str],
         access_token_expires_at: Optional[datetime],
