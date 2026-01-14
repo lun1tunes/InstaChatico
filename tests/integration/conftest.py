@@ -107,6 +107,12 @@ class StubInstagramService:
             },
         }
         self.account_profile_error: Optional[Exception] = None
+        self.page_info_calls: int = 0
+        self.page_info_response: Dict[str, Any] = {
+            "success": True,
+            "page_info": {"id": "acct", "name": "Test Page", "username": "test_account"},
+        }
+        self.page_info_error: Optional[Exception] = None
 
     async def send_reply_to_comment(self, comment_id: str, message: str) -> Dict[str, Any]:
         self.reply_counter += 1
@@ -154,6 +160,12 @@ class StubInstagramService:
         if self.account_profile_error:
             raise self.account_profile_error
         return self.account_profile_response
+
+    async def get_page_info(self) -> Dict[str, Any]:
+        self.page_info_calls += 1
+        if self.page_info_error:
+            raise self.page_info_error
+        return self.page_info_response
 
     async def get_insights(self, account_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         self.insights_calls.append({"account_id": account_id, "params": params})
@@ -288,7 +300,6 @@ async def integration_environment(test_engine):
     original_development_mode = os.environ.get("DEVELOPMENT_MODE")
     original_bucket = settings.s3.bucket_name
     original_s3_url = settings.s3.s3_url
-    original_base_account_id = settings.instagram.base_account_id
     original_json_api_secret = settings.json_api.secret_key
     original_json_api_algorithm = settings.json_api.algorithm
     original_json_api_expire = settings.json_api.expire_minutes
@@ -299,7 +310,6 @@ async def integration_environment(test_engine):
     os.environ["DEVELOPMENT_MODE"] = "false"
     settings.s3.bucket_name = "test-bucket"
     settings.s3.s3_url = "s3.test.local"
-    settings.instagram.base_account_id = "acct"
     settings.json_api.secret_key = "test-json-secret"
     settings.json_api.algorithm = "HS256"
     settings.json_api.expire_minutes = 60
@@ -365,7 +375,6 @@ async def integration_environment(test_engine):
         settings.app_webhook_verify_token = original_verify_token
         settings.s3.bucket_name = original_bucket
         settings.s3.s3_url = original_s3_url
-        settings.instagram.base_account_id = original_base_account_id
         settings.json_api.secret_key = original_json_api_secret
         settings.json_api.algorithm = original_json_api_algorithm
         settings.json_api.expire_minutes = original_json_api_expire

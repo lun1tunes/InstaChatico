@@ -47,7 +47,6 @@ class InstagramGraphAPIService:
         rate_limiter: Optional[RateLimiterProtocol] = None,
         token_service_factory: Optional[Callable[..., Any]] = None,
         session_factory: Optional[Callable[..., Any]] = None,
-        default_account_id: Optional[str] = None,
     ):
         self._explicit_access_token = access_token
         self.access_token = access_token
@@ -55,7 +54,7 @@ class InstagramGraphAPIService:
         self._enabled = bool(self.access_token)
         self.token_service_factory = token_service_factory
         self.session_factory = session_factory
-        self._account_id = default_account_id
+        self._account_id: Optional[str] = None
         self._token_expires_at: Optional[datetime] = None
 
         self._session = session
@@ -567,9 +566,9 @@ class InstagramGraphAPIService:
         if error := await self._require_access_token("get_account_profile"):
             return error
 
-        target_id = account_id or self._account_id or settings.instagram.base_account_id
+        target_id = account_id or self._account_id
         if not target_id:
-            return {"success": False, "error": "Missing Instagram base account ID", "status_code": 400}
+            return {"success": False, "error": "Missing Instagram account ID", "status_code": 400}
 
         url = f"{self.base_url}/{target_id}"
         params = {

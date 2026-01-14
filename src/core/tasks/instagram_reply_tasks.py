@@ -40,6 +40,18 @@ async def send_instagram_reply_task(self, comment_id: str, answer_text: str = No
         try:
             async with get_db_session() as session:
                 container = get_container()
+                oauth_service = container.oauth_token_service(session=session)
+                try:
+                    tokens = await oauth_service.get_tokens("instagram")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        f"Instagram reply skipped: failed to load OAuth tokens | error={exc}"
+                    )
+                    tokens = None
+                if not tokens:
+                    logger.info("Instagram reply skipped: no OAuth tokens found in storage.")
+                    return {"status": "skipped", "reason": "missing_auth"}
+
                 use_case = container.send_reply_use_case(session=session)
                 result = await use_case.execute(
                     comment_id=comment_id, reply_text=answer_text, use_generated_answer=not answer_text
@@ -92,6 +104,18 @@ async def hide_instagram_comment_task(self, comment_id: str):
         try:
             async with get_db_session() as session:
                 container = get_container()
+                oauth_service = container.oauth_token_service(session=session)
+                try:
+                    tokens = await oauth_service.get_tokens("instagram")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        f"Instagram hide skipped: failed to load OAuth tokens | error={exc}"
+                    )
+                    tokens = None
+                if not tokens:
+                    logger.info("Instagram hide skipped: no OAuth tokens found in storage.")
+                    return {"status": "skipped", "reason": "missing_auth"}
+
                 use_case = container.hide_comment_use_case(session=session)
                 result = await use_case.execute(comment_id, hide=True, initiator="ai")
 

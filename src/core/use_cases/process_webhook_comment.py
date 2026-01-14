@@ -7,7 +7,6 @@ from typing import Callable, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, MissingGreenlet
 
-from ..config import settings
 from ..models.instagram_comment import InstagramComment
 from ..models.comment_classification import CommentClassification, ProcessingStatus
 from ..interfaces.services import IMediaService, ITaskQueue
@@ -63,7 +62,6 @@ class ProcessWebhookCommentUseCase:
         entry_timestamp: int,
         parent_id: Optional[str] = None,
         raw_data: Optional[dict] = None,
-        entry_owner_id: Optional[str] = None,
     ) -> dict:
         """
         Process incoming webhook comment.
@@ -80,8 +78,6 @@ class ProcessWebhookCommentUseCase:
             f"Processing webhook comment | comment_id={comment_id} | media_id={media_id} | "
             f"username={username} | has_parent={bool(parent_id)} | text_length={len(text)}"
         )
-
-        expected_owner_id = settings.instagram.base_account_id
 
         try:
             # Check if comment already exists
@@ -126,21 +122,6 @@ class ProcessWebhookCommentUseCase:
                     "comment_id": comment_id,
                     "should_classify": False,
                     "reason": "Failed to create media record",
-                }
-
-            # Validate media owner when available
-            if expected_owner_id and entry_owner_id and entry_owner_id != expected_owner_id:
-                logger.warning(
-                    "Webhook account mismatch detected | comment_id=%s | entry_id=%s | expected_id=%s",
-                    comment_id,
-                    entry_owner_id,
-                    expected_owner_id,
-                )
-                return {
-                    "status": "forbidden",
-                    "comment_id": comment_id,
-                    "should_classify": False,
-                    "reason": "Invalid webhook account",
                 }
 
             # Create comment record

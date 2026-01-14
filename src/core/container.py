@@ -168,7 +168,6 @@ class Container(containers.DeclarativeContainer):
         rate_limiter=instagram_rate_limiter,
         token_service_factory=oauth_token_service.provider,
         session_factory=db_session_factory.provider,
-        default_account_id=settings.instagram.base_account_id,
     )
 
     media_service = providers.Factory(

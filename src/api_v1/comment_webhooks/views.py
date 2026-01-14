@@ -93,17 +93,9 @@ async def process_webhook(
                     entry_timestamp=entry.time,
                     parent_id=comment_data.get("parent_id"),
                     raw_data=comment_data.get("raw_data"),
-                    entry_owner_id=entry.id,
                 )
 
                 status = result.get("status", "error")
-                if status == "forbidden":
-                    logger.warning(
-                        "Rejecting webhook due to media owner validation | comment_id=%s | reason=%s",
-                        comment_id,
-                        result.get("reason"),
-                    )
-                    raise HTTPException(status_code=403, detail=result.get("reason", "Invalid webhook account"))
 
                 # Queue classification if needed
                 if result.get("should_classify"):

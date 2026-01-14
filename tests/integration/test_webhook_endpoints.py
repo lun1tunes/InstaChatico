@@ -201,9 +201,6 @@ async def test_webhook_media_owner_mismatch(integration_environment, sign_payloa
         stored = await session.get(Media, "media_mismatch")
         assert stored is not None
         assert stored.owner == "other_account"
-    from core.config import settings
-    assert settings.instagram.base_account_id == "acct"
-
     payload = {
         "object": "instagram",
         "entry": [
@@ -235,8 +232,8 @@ async def test_webhook_media_owner_mismatch(integration_environment, sign_payloa
         )
     )
 
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Invalid webhook account"
+    assert response.status_code == 200
+    assert response.json()["message"] == "Processed 1 new comments, skipped 0"
 
 
 @pytest.mark.asyncio

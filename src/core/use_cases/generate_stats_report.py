@@ -8,9 +8,7 @@ from typing import Any, Callable, Dict, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
 from ..interfaces.repositories import IStatsReportRepository
-from ..interfaces.services import IInstagramService
 from ..interfaces.services import IInstagramService
 
 logger = logging.getLogger(__name__)
@@ -62,9 +60,7 @@ class GenerateStatsReportUseCase:
         self.stats_repo: IStatsReportRepository = stats_report_repository_factory(session=session)
 
     async def execute(self, period: StatsPeriod) -> Dict[str, Any]:
-        account_id = settings.instagram.base_account_id
-        if not account_id:
-            raise StatsReportError("Instagram base account ID is not configured", status_code=503)
+        account_id = await self._resolve_account_id()
 
         month_ranges = self._build_month_ranges(period)
         logger.info(
@@ -86,6 +82,29 @@ class GenerateStatsReportUseCase:
 
         await self.session.commit()
         return consolidated
+
+    async def _resolve_account_id(self) -> str:
+        try:
+            result = await self.instagram_service.get_page_info()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to resolve Instagram account ID | error=%s", exc)
+            raise StatsReportError("Failed to resolve Instagram account ID", status_code=502) from exc
+        if not result.get("success"):
+            error_code = result.get("error_code")
+            if error_code == "missing_access_token":
+                raise StatsReportError(
+                    "Instagram OAuth tokens are not configured; connect Instagram first.",
+                    status_code=503,
+                )
+            message = result.get("error") or "Failed to resolve Instagram account ID"
+            logger.error("Failed to resolve Instagram account ID | error=%s", message)
+            raise StatsReportError("Failed to resolve Instagram account ID", status_code=502)
+
+        page_info = result.get("page_info") or {}
+        account_id = (page_info.get("id") or "").strip()
+        if not account_id:
+            raise StatsReportError("Instagram account ID is missing from page info", status_code=502)
+        return account_id
 
     def _build_month_ranges(self, period: StatsPeriod) -> List[MonthRange]:
         previous_months = self._PERIOD_TO_MONTHS.get(period)

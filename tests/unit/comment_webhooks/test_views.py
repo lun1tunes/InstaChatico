@@ -176,19 +176,22 @@ def test_process_webhook_skips_bot_comment(make_client, monkeypatch):
     assert task_queue.enqueued == []
 
 
-def test_process_webhook_forbidden_media_owner(make_client, monkeypatch):
+def test_process_webhook_existing_comment_counts_skipped(make_client, monkeypatch):
     app, client = make_client()
     monkeypatch.setattr(settings.instagram, "bot_username", "", raising=False)
 
-    use_case = StubProcessWebhookUseCase({"status": "forbidden", "reason": "owner mismatch"})
+    use_case = StubProcessWebhookUseCase({"status": "exists", "should_classify": False})
+    task_queue = StubTaskQueue()
     app.dependency_overrides[get_process_webhook_comment_use_case] = lambda: use_case
     app.dependency_overrides[get_answer_repository] = lambda: StubAnswerRepository()
-    app.dependency_overrides[get_task_queue] = lambda: StubTaskQueue()
+    app.dependency_overrides[get_task_queue] = lambda: task_queue
 
     response = client.post("/webhook", json=_build_payload())
 
-    assert response.status_code == 403
-    assert "owner mismatch" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["message"] == "Processed 0 new comments, skipped 1"
+    assert len(use_case.calls) == 1
+    assert task_queue.enqueued == []
 
 
 def test_process_webhook_handles_processing_errors(make_client, monkeypatch):

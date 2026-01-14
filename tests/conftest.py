@@ -531,7 +531,6 @@ def test_env_vars():
         "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
         "CELERY_BROKER_URL": "redis://localhost:6379/0",
         "OPENAI_API_KEY": "test_key",
-        "INSTA_TOKEN": "test_token",
         "APP_SECRET": "test_secret",
         "DEVELOPMENT_MODE": "true",
     }

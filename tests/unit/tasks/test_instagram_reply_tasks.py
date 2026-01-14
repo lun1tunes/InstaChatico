@@ -33,16 +33,31 @@ class DummyTask:
         raise Retry("retry requested")
 
 
+class DummyOAuthService:
+    """Token service double for OAuth storage checks."""
+
+    def __init__(self, tokens: Optional[dict[str, Any]]):
+        self._tokens = tokens
+        self.calls = 0
+
+    async def get_tokens(self, *_args, **_kwargs):
+        self.calls += 1
+        return self._tokens
+
+
 @dataclass
 class DummyContainer:
     """Container double that captures provided sessions."""
 
     send_use_case: Optional[AsyncMock] = None
     hide_use_case: Optional[AsyncMock] = None
+    oauth_tokens: Optional[dict[str, Any]] = None
 
     def __post_init__(self):
         self.send_sessions: List[Any] = []
         self.hide_sessions: List[Any] = []
+        self.oauth_sessions: List[Any] = []
+        self.oauth_service = DummyOAuthService(self.oauth_tokens)
 
     def send_reply_use_case(self, *, session):
         self.send_sessions.append(session)
@@ -51,6 +66,10 @@ class DummyContainer:
     def hide_comment_use_case(self, *, session):
         self.hide_sessions.append(session)
         return self.hide_use_case
+
+    def oauth_token_service(self, *, session):
+        self.oauth_sessions.append(session)
+        return self.oauth_service
 
 
 class DummyLockManager:
@@ -105,7 +124,7 @@ def _make_use_case(result=None, *, side_effect=None):
 
 
 def test_send_reply_skips_when_lock_held(monkeypatch):
-    container = DummyContainer()
+    container = DummyContainer(oauth_tokens={"access_token": "token"})
     session_obj = object()
     lock = _patch_common_dependencies(monkeypatch, lock_acquired=False, container=container, session_obj=session_obj)
 
@@ -119,7 +138,7 @@ def test_send_reply_skips_when_lock_held(monkeypatch):
 
 def test_send_reply_success(monkeypatch):
     use_case = _make_use_case({"status": "success", "reply_id": "r1"})
-    container = DummyContainer(send_use_case=use_case)
+    container = DummyContainer(send_use_case=use_case, oauth_tokens={"access_token": "token"})
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
@@ -131,9 +150,23 @@ def test_send_reply_success(monkeypatch):
     assert container.send_sessions == [session_obj]
 
 
+def test_send_reply_skips_when_missing_tokens(monkeypatch):
+    use_case = _make_use_case({"status": "success"})
+    container = DummyContainer(send_use_case=use_case, oauth_tokens=None)
+    session_obj = object()
+    _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
+
+    task = DummyTask()
+    result = _run_send_task(task, "c1")
+
+    assert result == {"status": "skipped", "reason": "missing_auth"}
+    assert use_case.execute.await_count == 0
+    assert container.send_sessions == []
+
+
 def test_send_reply_retries_with_countdown(monkeypatch):
     use_case = _make_use_case({"status": "retry", "retry_after": 12.3})
-    container = DummyContainer(send_use_case=use_case)
+    container = DummyContainer(send_use_case=use_case, oauth_tokens={"access_token": "token"})
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
@@ -150,7 +183,7 @@ def test_send_reply_retries_with_countdown(monkeypatch):
 def test_send_reply_returns_when_max_retries_reached(monkeypatch):
     retry_result = {"status": "retry", "retry_after": 5}
     use_case = _make_use_case(retry_result)
-    container = DummyContainer(send_use_case=use_case)
+    container = DummyContainer(send_use_case=use_case, oauth_tokens={"access_token": "token"})
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
@@ -163,7 +196,7 @@ def test_send_reply_returns_when_max_retries_reached(monkeypatch):
 
 def test_send_reply_propagates_exceptions(monkeypatch):
     use_case = _make_use_case(side_effect=ValueError("boom"))
-    container = DummyContainer(send_use_case=use_case)
+    container = DummyContainer(send_use_case=use_case, oauth_tokens={"access_token": "token"})
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
@@ -173,7 +206,7 @@ def test_send_reply_propagates_exceptions(monkeypatch):
 
 
 def test_hide_comment_skips_when_lock_held(monkeypatch):
-    container = DummyContainer()
+    container = DummyContainer(oauth_tokens={"access_token": "token"})
     session_obj = object()
     lock = _patch_common_dependencies(monkeypatch, lock_acquired=False, container=container, session_obj=session_obj)
 
@@ -187,7 +220,7 @@ def test_hide_comment_skips_when_lock_held(monkeypatch):
 
 def test_hide_comment_success(monkeypatch):
     use_case = _make_use_case({"status": "success"})
-    container = DummyContainer(hide_use_case=use_case)
+    container = DummyContainer(hide_use_case=use_case, oauth_tokens={"access_token": "token"})
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
@@ -199,9 +232,23 @@ def test_hide_comment_success(monkeypatch):
     assert container.hide_sessions == [session_obj]
 
 
+def test_hide_comment_skips_when_missing_tokens(monkeypatch):
+    use_case = _make_use_case({"status": "success"})
+    container = DummyContainer(hide_use_case=use_case, oauth_tokens=None)
+    session_obj = object()
+    _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
+
+    task = DummyTask()
+    result = _run_hide_task(task, "c1")
+
+    assert result == {"status": "skipped", "reason": "missing_auth"}
+    assert use_case.execute.await_count == 0
+    assert container.hide_sessions == []
+
+
 def test_hide_comment_retries_with_fixed_delay(monkeypatch):
     use_case = _make_use_case({"status": "retry"})
-    container = DummyContainer(hide_use_case=use_case)
+    container = DummyContainer(hide_use_case=use_case, oauth_tokens={"access_token": "token"})
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
@@ -216,7 +263,7 @@ def test_hide_comment_retries_with_fixed_delay(monkeypatch):
 def test_hide_comment_returns_when_retry_limit_hit(monkeypatch):
     result_payload = {"status": "retry"}
     use_case = _make_use_case(result_payload)
-    container = DummyContainer(hide_use_case=use_case)
+    container = DummyContainer(hide_use_case=use_case, oauth_tokens={"access_token": "token"})
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 
@@ -229,7 +276,7 @@ def test_hide_comment_returns_when_retry_limit_hit(monkeypatch):
 
 def test_hide_comment_propagates_exceptions(monkeypatch):
     use_case = _make_use_case(side_effect=RuntimeError("failure"))
-    container = DummyContainer(hide_use_case=use_case)
+    container = DummyContainer(hide_use_case=use_case, oauth_tokens={"access_token": "token"})
     session_obj = object()
     _patch_common_dependencies(monkeypatch, lock_acquired=True, container=container, session_obj=session_obj)
 

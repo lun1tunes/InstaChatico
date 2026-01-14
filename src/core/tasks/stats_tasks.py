@@ -14,6 +14,16 @@ async def record_follower_snapshot_task_async():
     """Core implementation for recording followers snapshot."""
     async with get_db_session() as session:
         container = get_container()
+        oauth_service = container.oauth_token_service(session=session)
+        try:
+            tokens = await oauth_service.get_tokens("instagram")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Followers snapshot skipped: failed to load OAuth tokens | error=%s", exc)
+            tokens = None
+        if not tokens:
+            logger.info("Followers snapshot skipped: no OAuth tokens found in storage.")
+            return {"status": "skipped", "reason": "missing_auth"}
+
         use_case = container.record_follower_snapshot_use_case(session=session)
 
         try:

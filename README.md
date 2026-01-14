@@ -24,8 +24,6 @@ cat /proc/sys/vm/overcommit_memory  # Should output: 1
 
 Edit `.env` with:
 - `OPENAI_API_KEY` - OpenAI API key
-- `INSTA_TOKEN` - Instagram Graph API token
 - `APP_SECRET` - Instagram app secret
 - `TG_TOKEN`, `TG_CHAT_ID` - Telegram bot credentials
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` - S3 storage
-

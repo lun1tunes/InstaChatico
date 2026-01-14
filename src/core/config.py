@@ -50,11 +50,9 @@ class EmbeddingSettings(BaseModel):
 
 
 class InstagramSettings(BaseModel):
-    access_token: str = Field(default_factory=lambda: os.getenv("INSTA_TOKEN", "").strip())
     api_version: str = os.getenv("INSTAGRAM_API_VERSION", "v23.0")
     base_url: str = f"https://graph.instagram.com/{os.getenv('INSTAGRAM_API_VERSION', 'v23.0')}"
     bot_username: str = os.getenv("INSTAGRAM_BOT_USERNAME", "")
-    base_account_id: str = os.getenv("INSTAGRAM_BASE_ACC_ID", os.getenv("INSTAGRAM_BASE_ACCOUNT_ID", "")).strip()
     app_id: str = os.getenv("INSTAGRAM_APP_ID", "")
     app_secret: str = os.getenv("INSTAGRAM_APP_SECRET", "")
     app_access_token: str = os.getenv("INSTAGRAM_APP_ACCESS_TOKEN", "")
@@ -64,13 +62,6 @@ class InstagramSettings(BaseModel):
     )
     replies_rate_limit_per_hour: int = int(os.getenv("INSTAGRAM_REPLIES_RATE_LIMIT_PER_HOUR", "750"))
     replies_rate_period_seconds: int = int(os.getenv("INSTAGRAM_REPLIES_RATE_PERIOD_SECONDS", "3600"))
-
-    @model_validator(mode="after")
-    def _validate(self) -> Self:
-        if not self.access_token:
-            # Optional for YouTube-only deployments; log-friendly error
-            self.access_token = ""
-        return self
 
 
 class TelegramSettings(BaseModel):

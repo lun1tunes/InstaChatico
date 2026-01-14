@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-from core.config import settings
 from core.use_cases import generate_stats_report as stats_module
 from core.use_cases.generate_stats_report import (
     GenerateStatsReportUseCase,
@@ -43,13 +42,26 @@ class FakeStatsReportRepository:
 
 
 class FakeInstagramService:
-    def __init__(self, success=True):
-        self.success = success
+    def __init__(self, insights_success=True, page_info_success=True, page_info_id="17841476998475313"):
+        self.insights_success = insights_success
+        self.page_info_success = page_info_success
+        self.page_info_id = page_info_id
         self.calls = []
+        self.page_info_calls = 0
+
+    async def get_page_info(self):
+        self.page_info_calls += 1
+        if not self.page_info_success:
+            return {
+                "success": False,
+                "error_code": "missing_access_token",
+                "error": "missing token",
+            }
+        return {"success": True, "page_info": {"id": self.page_info_id}}
 
     async def get_insights(self, account_id: str, params: dict):
         self.calls.append({"account_id": account_id, **params})
-        if not self.success:
+        if not self.insights_success:
             return {"success": False, "error": "boom"}
         return {
             "success": True,
@@ -87,7 +99,6 @@ def _freeze_now(monkeypatch, target):
 @pytest.mark.asyncio
 async def test_generate_stats_report_reuses_cached_months(monkeypatch, db_session):
     _freeze_now(monkeypatch, stats_module)
-    monkeypatch.setattr(settings.instagram, "base_account_id", "17841476998475313")
 
     cached = {}
     for label, (start, end) in {
@@ -131,6 +142,7 @@ async def test_generate_stats_report_reuses_cached_months(monkeypatch, db_sessio
     metric_name = engagement_payload.get("metric") or engagement_payload.get("data", [{}])[0].get("metric")
     assert metric_name.split(",")[0] == "views"
     assert len(service.calls) == 4  # four metrics for current month
+    assert service.page_info_calls == 1
     assert len(repo.saved) == 1  # only current month stored
     # Ensure cached ranges were looked up
     assert len(repo.range_queries) == 3
@@ -139,10 +151,9 @@ async def test_generate_stats_report_reuses_cached_months(monkeypatch, db_sessio
 @pytest.mark.asyncio
 async def test_generate_stats_report_handles_missing_account(monkeypatch, db_session):
     _freeze_now(monkeypatch, stats_module)
-    monkeypatch.setattr(settings.instagram, "base_account_id", "")
 
     repo = FakeStatsReportRepository()
-    service = FakeInstagramService()
+    service = FakeInstagramService(page_info_success=False)
 
     use_case = GenerateStatsReportUseCase(
         session=db_session,
@@ -157,10 +168,9 @@ async def test_generate_stats_report_handles_missing_account(monkeypatch, db_ses
 @pytest.mark.asyncio
 async def test_generate_stats_report_raises_on_failed_insights(monkeypatch, db_session):
     _freeze_now(monkeypatch, stats_module)
-    monkeypatch.setattr(settings.instagram, "base_account_id", "17841476998475313")
 
     repo = FakeStatsReportRepository()
-    service = FakeInstagramService(success=False)
+    service = FakeInstagramService(insights_success=False)
 
     use_case = GenerateStatsReportUseCase(
         session=db_session,

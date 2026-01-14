@@ -25,9 +25,6 @@ class TestProcessWebhookCommentUseCase:
         """Test successfully creating a new comment."""
         # Arrange
         media = await media_factory(media_id="media_1", owner="acct_1")
-        from core.config import settings
-        original_owner = settings.instagram.base_account_id
-        settings.instagram.base_account_id = "acct_1"
 
         # Mock services
         mock_media_service = MagicMock()
@@ -70,7 +67,6 @@ class TestProcessWebhookCommentUseCase:
 
         # Verify media service called
         mock_media_service.get_or_create_media.assert_awaited_once_with("media_1", db_session)
-        settings.instagram.base_account_id = original_owner
 
     async def test_execute_existing_comment_needs_classification(
         self, db_session
@@ -230,41 +226,6 @@ class TestProcessWebhookCommentUseCase:
         assert result["comment_id"] == "comment_1"
         assert result["should_classify"] is False
         assert "failed to create media" in result["reason"].lower()
-
-    async def test_execute_account_mismatch_entry_id(self, db_session, media_factory):
-        """Webhook entry account mismatch should block processing."""
-        media = await media_factory(media_id="media_1")
-        from core.config import settings
-        original_owner = settings.instagram.base_account_id
-        settings.instagram.base_account_id = "expected_owner"
-
-        mock_media_service = MagicMock()
-        mock_media_service.get_or_create_media = AsyncMock(return_value=media)
-        mock_comment_repo = MagicMock()
-        mock_comment_repo.get_by_id = AsyncMock(return_value=None)
-
-        use_case = ProcessWebhookCommentUseCase(
-            session=db_session,
-            media_service=mock_media_service,
-            task_queue=MagicMock(),
-            comment_repository_factory=lambda session: mock_comment_repo,
-            media_repository_factory=lambda session: MagicMock(),
-        )
-
-        result = await use_case.execute(
-            comment_id="comment_forbidden",
-            media_id="media_1",
-            user_id="user_123",
-            username="tester",
-            text="Should be rejected",
-            entry_timestamp=1234567890,
-            entry_owner_id="other_owner",
-        )
-
-        assert result["status"] == "forbidden"
-        assert result["should_classify"] is False
-        assert result["reason"] == "Invalid webhook account"
-        settings.instagram.base_account_id = original_owner
 
     async def test_execute_with_parent_comment(self, db_session, media_factory):
         """Test creating comment with parent_id (reply to another comment)."""
