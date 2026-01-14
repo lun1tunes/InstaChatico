@@ -37,6 +37,8 @@ async def test_store_encrypted_tokens_accepts_zero_expiry(integration_environmen
         record = await repo.get_by_provider_account("google", "acc-int")
         assert record is not None
         assert record.access_token_expires_at is not None
+        assert record.instagram_user_id is None
+        assert record.username is None
         # expires_in=0 should set expiry ~now
         assert abs(record.access_token_expires_at - datetime.utcnow()) < timedelta(seconds=2)
 
@@ -122,9 +124,13 @@ async def test_store_instagram_tokens_upserts_record(integration_environment):
     headers = {"X-Internal-Secret": "test_app_secret"}
 
     account_id = "ig-acc-1"
+    instagram_user_id = "ig-user-1"
+    username = "ig-user-handle"
     payload = {
         "provider": "instagram",
         "account_id": account_id,
+        "instagram_user_id": instagram_user_id,
+        "username": username,
         "access_token_encrypted": "enc-access-1",
         "token_type": "bearer",
         "scope": "instagram_business_basic",
@@ -136,6 +142,8 @@ async def test_store_instagram_tokens_upserts_record(integration_environment):
     body = resp.json()
     assert body["provider"] == "instagram"
     assert body["account_id"] == account_id
+    assert body["instagram_user_id"] == instagram_user_id
+    assert body["username"] == username
     assert body["has_refresh_token"] is False
 
     async with session_factory() as session:
@@ -143,6 +151,8 @@ async def test_store_instagram_tokens_upserts_record(integration_environment):
         record = await repo.get_by_provider_account("instagram", account_id)
         assert record is not None
         assert record.refresh_token_encrypted is None
+        assert record.instagram_user_id == instagram_user_id
+        assert record.username == username
         first_encrypted = record.access_token_encrypted
 
     payload["access_token_encrypted"] = "enc-access-2"

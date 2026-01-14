@@ -98,6 +98,8 @@ class OAuthTokenService:
         provider: str,
         account_id: str,
         token_response: Dict[str, Any],
+        instagram_user_id: Optional[str] = None,
+        username: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Persist tokens securely.
@@ -129,11 +131,18 @@ class OAuthTokenService:
         refresh_expires_at_raw = token_response.get("refresh_token_expires_at")
         refresh_expires_at = self._resolve_refresh_token_expires_at(refresh_expires_at_raw, refresh_expires_in)
 
+        if instagram_user_id is None:
+            instagram_user_id = token_response.get("instagram_user_id")
+        if username is None:
+            username = token_response.get("username")
+
         encrypted_refresh = self._encrypt(refresh_token) if refresh_token else None
 
         record = await self.repo.upsert(
             provider=provider,
             account_id=account_id,
+            instagram_user_id=instagram_user_id,
+            username=username,
             access_token_encrypted=self._encrypt(access_token),
             refresh_token_encrypted=encrypted_refresh,
             token_type=token_response.get("token_type"),
@@ -147,6 +156,8 @@ class OAuthTokenService:
         return {
             "provider": record.provider,
             "account_id": record.account_id,
+            "instagram_user_id": record.instagram_user_id,
+            "username": record.username,
             "access_token_expires_at": (
                 record.access_token_expires_at.isoformat() if record.access_token_expires_at else None
             ),
@@ -167,6 +178,8 @@ class OAuthTokenService:
         *,
         provider: str,
         account_id: str,
+        instagram_user_id: Optional[str] = None,
+        username: Optional[str] = None,
         access_token_encrypted: str,
         refresh_token_encrypted: Optional[str],
         token_type: Optional[str] = None,
@@ -203,6 +216,8 @@ class OAuthTokenService:
         record = await self.repo.upsert(
             provider=provider,
             account_id=account_id,
+            instagram_user_id=instagram_user_id,
+            username=username,
             access_token_encrypted=encrypted_access,
             refresh_token_encrypted=encrypted_refresh,
             token_type=token_type,
@@ -216,6 +231,8 @@ class OAuthTokenService:
         return {
             "provider": record.provider,
             "account_id": record.account_id,
+            "instagram_user_id": record.instagram_user_id,
+            "username": record.username,
             "access_token_expires_at": (
                 record.access_token_expires_at.isoformat() if record.access_token_expires_at else None
             ),
@@ -254,6 +271,8 @@ class OAuthTokenService:
             # Backwards-compatible alias
             "expires_at": record.access_token_expires_at,
             "account_id": record.account_id,
+            "instagram_user_id": record.instagram_user_id,
+            "username": record.username,
         }
 
     async def update_access_token(

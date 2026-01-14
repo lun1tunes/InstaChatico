@@ -19,6 +19,8 @@ class _FakeOAuthService:
         return {
             "provider": kwargs["provider"],
             "account_id": kwargs["account_id"],
+            "instagram_user_id": kwargs.get("instagram_user_id"),
+            "username": kwargs.get("username"),
             "access_token_expires_at": None,
             "refresh_token_expires_at": None,
             "expires_at": None,
@@ -70,6 +72,8 @@ async def test_store_tokens_impl_allows_instagram_without_refresh_token():
     payload = EncryptedTokenPayload(
         provider="instagram",
         account_id="ig-123",
+        instagram_user_id="ig-user-123",
+        username="ig-user",
         access_token_encrypted="enc_access",
         refresh_token_encrypted=None,
         token_type="bearer",
@@ -91,4 +95,6 @@ async def test_store_tokens_impl_allows_instagram_without_refresh_token():
     assert result["provider"] == "instagram"
     assert result["has_refresh_token"] is False
     assert service.captured_kwargs["provider"] == "instagram"
+    assert service.captured_kwargs["instagram_user_id"] == "ig-user-123"
+    assert service.captured_kwargs["username"] == "ig-user"
     assert service.captured_kwargs["refresh_token_encrypted"] is None

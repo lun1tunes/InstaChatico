@@ -221,7 +221,7 @@ async def _store_tokens_impl(
     authorization: str | None,
 ):
     """
-    Shared implementation for storing encrypted YouTube OAuth tokens.
+    Shared implementation for storing encrypted OAuth tokens.
     """
     _authorize_internal_request(authorization=authorization, x_internal_secret=x_internal_secret)
 
@@ -229,6 +229,20 @@ async def _store_tokens_impl(
     account_id = (payload.account_id or "").strip()
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id is required")
+
+    instagram_user_id = (payload.instagram_user_id or "").strip()
+    username = (payload.username or "").strip()
+    if provider == "instagram":
+        missing = []
+        if not instagram_user_id:
+            missing.append("instagram_user_id")
+        if not username:
+            missing.append("username")
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing required fields for instagram: {', '.join(missing)}",
+            )
 
     # Normalize scope to space-delimited string
     scope_value = payload.scope
@@ -253,6 +267,8 @@ async def _store_tokens_impl(
         stored = await oauth_service.store_encrypted_tokens(
             provider=storage_provider,
             account_id=account_id,
+            instagram_user_id=instagram_user_id or None,
+            username=username or None,
             access_token_encrypted=payload.access_token_encrypted,
             refresh_token_encrypted=refresh_token_enc,
             token_type=payload.token_type,

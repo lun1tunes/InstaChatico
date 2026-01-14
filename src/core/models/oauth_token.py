@@ -12,6 +12,8 @@ class OAuthToken(Base):
 
     provider: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     account_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    instagram_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     access_token_encrypted: Mapped[str] = mapped_column(String(2048), nullable=False)
     refresh_token_encrypted: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     token_type: Mapped[str] = mapped_column(String(50), nullable=True)

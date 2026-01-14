@@ -39,6 +39,8 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
         *,
         provider: str,
         account_id: str,
+        instagram_user_id: Optional[str] = None,
+        username: Optional[str] = None,
         access_token_encrypted: str,
         refresh_token_encrypted: Optional[str],
         token_type: Optional[str],
@@ -54,6 +56,8 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
             existing.scope = scope
             existing.access_token_expires_at = access_token_expires_at
             existing.refresh_token_expires_at = refresh_token_expires_at
+            existing.instagram_user_id = instagram_user_id
+            existing.username = username
             existing.updated_at = datetime.utcnow()
             await self.session.flush()
             return existing
@@ -61,6 +65,8 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
         record = OAuthToken(
             provider=provider,
             account_id=account_id,
+            instagram_user_id=instagram_user_id,
+            username=username,
             access_token_encrypted=access_token_encrypted,
             refresh_token_encrypted=refresh_token_encrypted,
             token_type=token_type,
