@@ -56,6 +56,7 @@ from .use_cases.record_follower_snapshot import RecordFollowerSnapshotUseCase
 from .use_cases.poll_youtube_comments import PollYouTubeCommentsUseCase
 from .use_cases.send_youtube_reply import SendYouTubeReplyUseCase
 from .use_cases.delete_youtube_comment import DeleteYouTubeCommentUseCase
+from .use_cases.delete_account_data import DeleteAccountDataUseCase
 
 # Repositories
 from .repositories.comment import CommentRepository
@@ -363,6 +364,11 @@ class Container(containers.DeclarativeContainer):
         DeleteYouTubeCommentUseCase,
         youtube_service=youtube_service,
         comment_repository_factory=comment_repository_factory.provider,
+    )
+
+    delete_account_data_use_case = providers.Factory(
+        DeleteAccountDataUseCase,
+        oauth_token_repository_factory=oauth_token_repository_factory.provider,
     )
 
     process_document_use_case = providers.Factory(

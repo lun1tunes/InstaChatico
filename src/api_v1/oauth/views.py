@@ -23,6 +23,7 @@ from .schemas import (
     AuthUrlResponse,
     AccountStatusResponse,
     EncryptedTokenPayload,
+    DataDeletionPayload,
     TokenDeletePayload,
     TokenStoreResponse,
 )
@@ -341,7 +342,13 @@ async def delete_tokens_root(
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id is required")
 
-    logger.info("Internal token delete requested | provider=%s | account_id=%s", provider, account_id)
+    logger.info(
+        "Internal token delete requested | provider=%s | account_id=%s | instagram_user_id=%s | username=%s",
+        provider,
+        account_id,
+        payload.instagram_user_id,
+        payload.username,
+    )
 
     oauth_service: OAuthTokenService = container.oauth_token_service(session=session)
     deleted = await oauth_service.delete_tokens(provider=storage_provider, account_id=account_id)
@@ -353,6 +360,47 @@ async def delete_tokens_root(
         deleted,
     )
     return {"status": "ok", "account_id": account_id, "deleted": deleted}
+
+
+@tokens_router.post("/oauth/data-deletion")
+async def delete_account_data(
+    payload: DataDeletionPayload,
+    session: AsyncSession = Depends(db_helper.scoped_session_dependency),
+    container: Container = Depends(get_container),
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    """Delete stored Instagram data via /oauth/data-deletion (mapper GDPR path)."""
+    logger.debug(
+        "Received internal data deletion | has_auth_header=%s | has_internal_header=%s",
+        bool(authorization),
+        bool(x_internal_secret),
+    )
+    _authorize_internal_request(authorization=authorization, x_internal_secret=x_internal_secret)
+
+    provider, storage_provider = _resolve_oauth_provider(payload.provider)
+    if provider != "instagram":
+        raise HTTPException(status_code=400, detail="provider must be 'instagram'")
+
+    account_ids = [value.strip() for value in payload.account_ids if value and value.strip()]
+    instagram_user_id = (payload.instagram_user_id or "").strip() or None
+    if not account_ids and not instagram_user_id:
+        raise HTTPException(status_code=400, detail="account_ids or instagram_user_id is required")
+
+    logger.info(
+        "Internal data deletion requested | provider=%s | account_ids=%s | instagram_user_id=%s",
+        provider,
+        account_ids,
+        instagram_user_id,
+    )
+
+    use_case = container.delete_account_data_use_case(session=session)
+    result = await use_case.execute(
+        provider=storage_provider,
+        account_ids=account_ids,
+        instagram_user_id=instagram_user_id,
+    )
+    return {"status": "ok", **result}
 
 
 def _authorize_internal_request(

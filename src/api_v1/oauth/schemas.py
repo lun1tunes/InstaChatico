@@ -1,4 +1,4 @@
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 from typing import Optional, List, Union
 
@@ -66,3 +66,19 @@ class TokenStoreResponse(BaseModel):
 class TokenDeletePayload(BaseModel):
     provider: str
     account_id: str
+    instagram_user_id: Optional[str] = None
+    username: Optional[str] = None
+
+
+class DataDeletionPayload(BaseModel):
+    provider: str
+    instagram_user_id: Optional[str] = None
+    account_ids: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_payload(self):
+        has_accounts = bool([value for value in self.account_ids if value and value.strip()])
+        has_user_id = bool((self.instagram_user_id or "").strip())
+        if not has_accounts and not has_user_id:
+            raise ValueError("account_ids or instagram_user_id is required")
+        return self
