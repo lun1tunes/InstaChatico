@@ -171,7 +171,8 @@ class InstagramGraphAPIService:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=30),
-                connector=aiohttp.TCPConnector(limit=100, limit_per_host=30)
+                connector=aiohttp.TCPConnector(limit=100, limit_per_host=30),
+                headers={"Accept-Encoding": "gzip, deflate"},
             )
             self._should_close_session = True
             logger.debug("Created new aiohttp.ClientSession")
